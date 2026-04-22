@@ -35,6 +35,44 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # State Management
+  provider: ^6.1.1
+  equatable: ^2.0.5
+  dartz: ^0.10.1
+
+  # Location & Maps
+  geolocator: ^12.0.0
+  google_maps_flutter: ^2.6.1
+
+  # Permissions
+  permission_handler: ^11.3.0
+
+  # Offline Storage
+  shared_preferences: ^2.2.2
+  flutter_secure_storage: ^9.0.0
+  sqflite: ^2.3.0
+  path_provider: ^2.1.2
+
+  # Network & Connectivity
+  http: ^1.2.0
+  connectivity_plus: ^5.0.2
+
+  # Voice Detection
+  speech_to_text: ^7.0.0
+
+  # Notifications
+  flutter_local_notifications: ^17.2.3
+
+  # Emergency Features
+  url_launcher: ^6.2.3
+
+  # UI Components
+  flutter_svg: ^2.0.9
+  shimmer: ^3.0.0
+
+  # Utilities
+  intl: ^0.18.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
