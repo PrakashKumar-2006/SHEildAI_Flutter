@@ -33,12 +33,14 @@ class LocationRepositoryImpl implements LocationRepository {
   }
 
   @override
-  Future<Either<Failure, void>> startLocationUpdates() async {
+  Future<Either<Failure, void>> startLocationUpdates({bool background = false}) async {
     try {
       final hasPermission = await _locationService.requestPermission();
       if (!hasPermission) {
         return const Left(PermissionFailure('Location permission denied'));
       }
+
+      _locationService.startLocationUpdates(background: background);
 
       _positionSubscription = _locationService.positionStream.listen(
         (position) {

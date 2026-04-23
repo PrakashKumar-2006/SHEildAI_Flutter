@@ -49,12 +49,12 @@ class LocationProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> startTracking() async {
+  Future<void> startTracking({bool background = false}) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final result = await _locationRepository.startLocationUpdates();
+      final result = await _locationRepository.startLocationUpdates(background: background);
       result.fold(
         (failure) {
           _errorMessage = failure.toString();
@@ -64,13 +64,13 @@ class LocationProvider extends ChangeNotifier {
         (_) {
           _isTracking = true;
           _isLoading = false;
-          
+
           // Listen to location stream
           _locationRepository.getLocationStream()?.listen((location) {
             _currentLocation = location;
             notifyListeners();
           });
-          
+
           notifyListeners();
         },
       );

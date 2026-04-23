@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/services/location_service.dart';
 import '../../data/repositories/sos_repository_impl.dart';
 import '../../domain/models/sos_model.dart';
+import '../../../location/presentation/providers/location_provider.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
   final LocationService _locationService;
+  final LocationProvider _locationProvider;
 
   SOSModel? _activeSOS;
   bool _isLoading = false;
@@ -14,8 +16,10 @@ class SOSProvider extends ChangeNotifier {
   SOSProvider({
     required SOSRepositoryImpl sosRepository,
     required LocationService locationService,
+    required LocationProvider locationProvider,
   })  : _sosRepository = sosRepository,
-        _locationService = locationService;
+        _locationService = locationService,
+        _locationProvider = locationProvider;
 
   SOSModel? get activeSOS => _activeSOS;
   bool get isLoading => _isLoading;
@@ -54,6 +58,8 @@ class SOSProvider extends ChangeNotifier {
         (sos) {
           _activeSOS = sos;
           _isLoading = false;
+          // Start background location tracking during SOS
+          _locationProvider.startTracking(background: true);
           notifyListeners();
         },
       );
@@ -74,6 +80,8 @@ class SOSProvider extends ChangeNotifier {
       await _sosRepository.cancelSOS(_activeSOS!.id);
       _activeSOS = null;
       _isLoading = false;
+      // Stop background location tracking
+      await _locationProvider.stopTracking();
       notifyListeners();
     } catch (e) {
       _errorMessage = e.toString();

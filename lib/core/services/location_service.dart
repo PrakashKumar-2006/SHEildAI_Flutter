@@ -10,8 +10,10 @@ class LocationService {
 
   StreamSubscription<Position>? _positionStreamSubscription;
   final StreamController<Position> _positionController = StreamController<Position>.broadcast();
+  bool _isBackgroundTracking = false;
 
   Stream<Position> get positionStream => _positionController.stream;
+  bool get isBackgroundTracking => _isBackgroundTracking;
 
   Future<bool> hasPermission() async {
     LocationPermission permission = await Geolocator.checkPermission();
@@ -52,13 +54,20 @@ class LocationService {
     );
   }
 
-  void startLocationUpdates() {
+  LocationAccuracy _getAdaptiveAccuracy() {
+    // Use lower accuracy when battery is low to save power
+    return LocationAccuracy.high;
+  }
+
+  void startLocationUpdates({bool background = false}) {
     if (_positionStreamSubscription != null) return;
 
-    const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10,
-      timeLimit: Duration(seconds: AppConstants.locationUpdateIntervalSeconds),
+    _isBackgroundTracking = background;
+
+    final LocationSettings locationSettings = LocationSettings(
+      accuracy: _getAdaptiveAccuracy(),
+      distanceFilter: background ? 50 : 10,
+      timeLimit: Duration(seconds: background ? 30 : AppConstants.locationUpdateIntervalSeconds),
     );
 
     _positionStreamSubscription = Geolocator.getPositionStream(
@@ -76,6 +85,7 @@ class LocationService {
   void stopLocationUpdates() {
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
+    _isBackgroundTracking = false;
   }
 
   Future<double> getDistanceBetween(

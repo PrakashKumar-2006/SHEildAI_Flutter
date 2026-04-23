@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
@@ -8,6 +9,7 @@ class SOSButton extends StatefulWidget {
   final double size;
   final String? activeText;
   final String? inactiveText;
+  final Duration holdDuration;
 
   const SOSButton({
     super.key,
@@ -16,6 +18,7 @@ class SOSButton extends StatefulWidget {
     this.size = 200,
     this.activeText,
     this.inactiveText,
+    this.holdDuration = const Duration(seconds: 2),
   });
 
   @override
@@ -27,6 +30,10 @@ class _SOSButtonState extends State<SOSButton>
   late AnimationController _animationController;
   late Animation<double> _pulseAnimation;
   late Animation<double> _scaleAnimation;
+
+  bool _isHolding = false;
+  double _holdProgress = 0.0;
+  Timer? _holdTimer;
 
   @override
   void initState() {
@@ -68,8 +75,54 @@ class _SOSButtonState extends State<SOSButton>
     }
   }
 
+  void _startHold() {
+    if (widget.isActive) return;
+    
+    setState(() {
+      _isHolding = true;
+      _holdProgress = 0.0;
+    });
+
+    _animationController.forward();
+
+    const updateInterval = Duration(milliseconds: 50);
+    final totalSteps = widget.holdDuration.inMilliseconds ~/ updateInterval.inMilliseconds;
+    var currentStep = 0;
+
+    _holdTimer = Timer.periodic(updateInterval, (timer) {
+      if (currentStep >= totalSteps) {
+        timer.cancel();
+        _triggerSOS();
+      } else {
+        setState(() {
+          _holdProgress = currentStep / totalSteps;
+        });
+        currentStep++;
+      }
+    });
+  }
+
+  void _cancelHold() {
+    _holdTimer?.cancel();
+    setState(() {
+      _isHolding = false;
+      _holdProgress = 0.0;
+    });
+    _animationController.reverse();
+  }
+
+  void _triggerSOS() {
+    _holdTimer?.cancel();
+    setState(() {
+      _isHolding = false;
+      _holdProgress = 0.0;
+    });
+    widget.onPressed();
+  }
+
   @override
   void dispose() {
+    _holdTimer?.cancel();
     _animationController.dispose();
     super.dispose();
   }
@@ -77,16 +130,16 @@ class _SOSButtonState extends State<SOSButton>
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => _animationController.forward(),
-      onTapUp: (_) => _animationController.reverse(),
-      onTapCancel: () => _animationController.reverse(),
-      onTap: widget.onPressed,
+      onLongPressStart: (_) => _startHold(),
+      onLongPressEnd: (_) => _cancelHold(),
+      onLongPressCancel: () => _cancelHold(),
+      onTap: widget.isActive ? widget.onPressed : null,
       child: AnimatedBuilder(
         animation: _animationController,
         builder: (context, child) {
           final scale = widget.isActive
               ? _pulseAnimation.value
-              : _scaleAnimation.value;
+              : (_isHolding ? _scaleAnimation.value : 1.0);
 
           return Transform.scale(
             scale: scale,
@@ -118,29 +171,57 @@ class _SOSButtonState extends State<SOSButton>
                         ),
                       ],
               ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      widget.isActive ? Icons.stop : Icons.emergency,
-                      size: widget.size * 0.35,
-                      color: AppColors.white,
-                    ),
-                    const SizedBox(height: AppTheme.spacingS),
-                    Text(
-                      widget.isActive
-                          ? (widget.activeText ?? 'CANCEL')
-                          : (widget.inactiveText ?? 'SOS'),
-                      style: TextStyle(
-                        color: AppColors.white,
-                        fontSize: widget.size * 0.12,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
+              child: Stack(
+                children: [
+                  // Progress indicator for hold-to-trigger
+                  if (_isHolding)
+                    Positioned.fill(
+                      child: CircularProgressIndicator(
+                        value: _holdProgress,
+                        strokeWidth: 8,
+                        backgroundColor: AppColors.white.withValues(alpha: 0.3),
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.white),
                       ),
                     ),
-                  ],
-                ),
+                  // Center content
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          widget.isActive ? Icons.stop : Icons.emergency,
+                          size: widget.size * 0.35,
+                          color: AppColors.white,
+                        ),
+                        const SizedBox(height: AppTheme.spacingS),
+                        Text(
+                          widget.isActive
+                              ? (widget.activeText ?? 'CANCEL')
+                              : (_isHolding
+                                  ? 'HOLD...'
+                                  : (widget.inactiveText ?? 'SOS')),
+                          style: TextStyle(
+                            color: AppColors.white,
+                            fontSize: widget.size * 0.12,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        if (_isHolding) ...[
+                          const SizedBox(height: AppTheme.spacingXS),
+                          Text(
+                            '${((_holdProgress * 100).toInt())}%',
+                            style: TextStyle(
+                              color: AppColors.white,
+                              fontSize: widget.size * 0.08,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           );

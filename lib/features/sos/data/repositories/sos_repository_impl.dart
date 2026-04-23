@@ -2,18 +2,26 @@ import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/services/hive_service.dart';
+import '../../../../core/services/sync_service.dart';
 import '../../domain/models/sos_model.dart';
 import '../../domain/repositories/sos_repository.dart';
 
 class SOSRepositoryImpl implements SOSRepository {
   final StorageService _storageService;
   final NotificationService _notificationService;
+  final HiveService _hiveService;
+  final SyncService _syncService;
 
   SOSRepositoryImpl({
     required StorageService storageService,
     required NotificationService notificationService,
+    required HiveService hiveService,
+    required SyncService syncService,
   })  : _storageService = storageService,
-        _notificationService = notificationService;
+        _notificationService = notificationService,
+        _hiveService = hiveService,
+        _syncService = syncService;
 
   @override
   Future<Either<Failure, SOSModel>> triggerSOS({
@@ -34,18 +42,14 @@ class SOSRepositoryImpl implements SOSRepository {
         message: message ?? 'SOS activated! Emergency assistance needed.',
       );
 
-      // Save SOS to storage
-      final history = await getSOSHistory();
-      history.fold(
-        (failure) => null,
-        (sosList) {
-          final updatedList = [sosModel, ...sosList];
-          _storageService.setStringList(
-            'sos_history',
-            updatedList.map((e) => _encodeSOS(e)).toList(),
-          );
-        },
-      );
+      // Save SOS to Hive storage
+      await _hiveService.saveSOS(sosModel.toJson());
+
+      // Add to sync queue for offline support
+      await _syncService.addToQueue({
+        'type': 'sos_triggered',
+        'data': sosModel.toJson(),
+      });
 
       // Store active SOS
       await _storageService.setString('active_sos', sosId);
@@ -69,23 +73,8 @@ class SOSRepositoryImpl implements SOSRepository {
       await _storageService.remove('active_sos');
       await _notificationService.cancelSOSNotifications();
 
-      // Update SOS status in history
-      final history = await getSOSHistory();
-      history.fold(
-        (failure) => null,
-        (sosList) {
-          final updatedList = sosList.map((sos) {
-            if (sos.id == sosId) {
-              return sos.copyWith(status: 'cancelled');
-            }
-            return sos;
-          }).toList();
-          _storageService.setStringList(
-            'sos_history',
-            updatedList.map((e) => _encodeSOS(e)).toList(),
-          );
-        },
-      );
+      // Update SOS status in Hive storage
+      await _hiveService.updateSOSStatus(sosId, 'cancelled');
 
       return const Right(null);
     } catch (e) {
@@ -96,12 +85,8 @@ class SOSRepositoryImpl implements SOSRepository {
   @override
   Future<Either<Failure, List<SOSModel>>> getSOSHistory() async {
     try {
-      final historyJson = _storageService.getStringList('sos_history');
-      if (historyJson == null) {
-        return const Right([]);
-      }
-
-      final sosList = historyJson.map((json) => _decodeSOS(json)).toList();
+      final historyData = await _hiveService.getSOSHistory();
+      final sosList = historyData.map((json) => SOSModel.fromJson(json)).toList();
       return Right(sosList);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -118,29 +103,4 @@ class SOSRepositoryImpl implements SOSRepository {
     }
   }
 
-  String _encodeSOS(SOSModel sos) {
-    final json = sos.toJson();
-    return json.entries.map((e) => '${e.key}:${e.value}').join('|');
-  }
-
-  SOSModel _decodeSOS(String encoded) {
-    final map = <String, dynamic>{};
-    for (final item in encoded.split('|')) {
-      final parts = item.split(':');
-      if (parts.length == 2) {
-        final key = parts[0];
-        final value = parts[1];
-        if (key == 'timestamp') {
-          map[key] = DateTime.parse(value);
-        } else if (key == 'latitude' || key == 'longitude') {
-          map[key] = double.tryParse(value);
-        } else if (key == 'contactsNotified') {
-          map[key] = value.split(',');
-        } else {
-          map[key] = value;
-        }
-      }
-    }
-    return SOSModel.fromJson(map);
-  }
 }
