@@ -12,6 +12,8 @@ class SOSProvider extends ChangeNotifier {
   SOSModel? _activeSOS;
   bool _isLoading = false;
   String? _errorMessage;
+  String _sessionDuration = '00:00';
+  String _currentLocation = 'Current Location';
 
   SOSProvider({
     required SOSRepositoryImpl sosRepository,
@@ -25,6 +27,8 @@ class SOSProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isSOSActive => _activeSOS != null;
+  String get sessionDuration => _sessionDuration;
+  String get currentLocation => _currentLocation;
 
   Future<void> triggerSOS({
     List<String>? customContacts,
@@ -106,5 +110,20 @@ class SOSProvider extends ChangeNotifier {
   void clearError() {
     _errorMessage = null;
     notifyListeners();
+  }
+
+  void _startDurationTimer() {
+    final startTime = DateTime.now();
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 1));
+      if (_activeSOS == null) return false;
+      
+      final duration = DateTime.now().difference(startTime);
+      final minutes = duration.inMinutes.toString().padLeft(2, '0');
+      final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+      _sessionDuration = '$minutes:$seconds';
+      notifyListeners();
+      return true;
+    });
   }
 }

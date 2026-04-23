@@ -7,6 +7,9 @@ import 'core/services/storage_service.dart';
 import 'core/services/voice_service.dart';
 import 'core/services/hive_service.dart';
 import 'core/services/sync_service.dart';
+import 'core/services/api_service.dart';
+import 'core/services/background_monitor_service.dart';
+import 'core/services/mongo_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/home/presentation/providers/home_provider.dart';
 import 'features/location/data/repositories/location_repository_impl.dart';
@@ -18,8 +21,12 @@ import 'features/sos/presentation/screens/sos_screen.dart';
 import 'features/voice/presentation/providers/voice_provider.dart';
 import 'features/contacts/data/repositories/contact_repository_impl.dart';
 import 'features/contacts/presentation/providers/contact_provider.dart';
+import 'features/community/data/repositories/community_repository_impl.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'features/routes/presentation/screens/routes_screen.dart';
+import 'features/alerts/presentation/screens/alerts_screen.dart';
+import 'features/profile/presentation/screens/profile_screen.dart';
 import 'shared/widgets/main_navigation.dart';
 
 class App extends StatelessWidget {
@@ -51,6 +58,16 @@ class App extends StatelessWidget {
           create: (_) => SyncService()..initialize(),
           dispose: (_, service) => service.dispose(),
         ),
+        Provider<ApiService>(
+          create: (_) => ApiService(),
+        ),
+        Provider<BackgroundMonitorService>(
+          create: (_) => BackgroundMonitorService()..initialize(),
+        ),
+        Provider<MongoService>(
+          create: (_) => MongoService(),
+          dispose: (_, service) => service.disconnect(),
+        ),
 
         // Repositories
         Provider<SOSRepositoryImpl>(
@@ -70,6 +87,9 @@ class App extends StatelessWidget {
           create: (context) => ContactRepositoryImpl(
             context.read<HiveService>(),
           ),
+        ),
+        Provider<CommunityRepositoryImpl>(
+          create: (_) => CommunityRepositoryImpl(),
         ),
 
         // Providers
@@ -130,6 +150,9 @@ class App extends StatelessWidget {
           '/home': (context) => const MainNavigation(),
           '/sos': (context) => const SOSScreen(),
           '/location': (context) => const LocationScreen(),
+          '/routes': (context) => const RoutesScreen(),
+          '/alerts': (context) => const AlertsScreen(),
+          '/profile': (context) => const ProfileScreen(),
         },
       ),
     );

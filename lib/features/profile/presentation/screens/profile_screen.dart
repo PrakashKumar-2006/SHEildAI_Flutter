@@ -1,301 +1,445 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_theme.dart';
-import '../../../../shared/widgets/custom_app_bar.dart';
-import '../../../../shared/widgets/card_widget.dart';
-import '../../../../shared/widgets/custom_button.dart';
+import 'package:ionicons/ionicons.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _isDarkMode = false;
+
+  @override
   Widget build(BuildContext context) {
+    _isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    
     return Scaffold(
-      backgroundColor: AppColors.grey50,
-      appBar: const CustomAppBar(
-        title: 'Profile',
-      ),
-      body: SingleChildScrollView(
+      backgroundColor: _isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF5F6FA),
+      body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: AppTheme.spacingL),
-            // Profile Header
-            _buildProfileHeader(),
-            const SizedBox(height: AppTheme.spacingL),
-            // Emergency Contacts
-            _buildEmergencyContacts(context),
-            const SizedBox(height: AppTheme.spacingM),
-            // Settings
-            _buildSettings(context),
-            const SizedBox(height: AppTheme.spacingL),
+            // Header
+            _buildHeader(context),
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    // Profile Card
+                    _buildProfileCard(context),
+                    const SizedBox(height: 24),
+                    // Account Settings
+                    _buildSection(context, 'Account Settings', [
+                      _buildOptionItem(
+                        context,
+                        icon: Ionicons.person,
+                        iconColor: const Color(0xFF7B1FA2),
+                        iconBg: const Color(0xFFF3E5F5),
+                        title: 'Personal Information',
+                        onTap: () {},
+                      ),
+                      _buildOptionItem(
+                        context,
+                        icon: Ionicons.star,
+                        iconColor: const Color(0xFF4CAF50),
+                        iconBg: const Color(0xFFE8F5E9),
+                        title: 'Subscription & Plans',
+                        subtitle: 'Free Plan',
+                        onTap: () {},
+                      ),
+                      _buildOptionItem(
+                        context,
+                        icon: Ionicons.heart,
+                        iconColor: const Color(0xFFFF0000),
+                        iconBg: const Color(0xFFFFE5E5),
+                        title: 'SOS Guardians',
+                        subtitle: '0 contacts active',
+                        onTap: () {},
+                      ),
+                    ]),
+                    const SizedBox(height: 24),
+                    // App Preferences
+                    _buildSection(context, 'App Preferences', [
+                      _buildOptionItem(
+                        context,
+                        icon: Ionicons.notifications,
+                        iconColor: const Color(0xFF1976D2),
+                        iconBg: const Color(0xFFE3F2FD),
+                        title: 'Safety Notifications',
+                        onTap: () {},
+                      ),
+                      _buildOptionItem(
+                        context,
+                        icon: Ionicons.language,
+                        iconColor: const Color(0xFFFF8F00),
+                        iconBg: const Color(0xFFFFF8E1),
+                        title: 'App Language',
+                        onTap: () {},
+                      ),
+                      _buildOptionItem(
+                        context,
+                        icon: Ionicons.shield_checkmark,
+                        iconColor: const Color(0xFF009688),
+                        iconBg: const Color(0xFFE4F8F4),
+                        title: 'System Permissions',
+                        onTap: () {},
+                      ),
+                      _buildThemeToggle(context),
+                    ]),
+                    const SizedBox(height: 24),
+                    // Return Home Button
+                    _buildReturnHomeButton(context),
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildProfileHeader() {
-    return CardWidget(
-      padding: const EdgeInsets.all(AppTheme.spacingXL),
-      child: Column(
-        children: [
-          // Profile Picture
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.person,
-              size: 50,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingM),
-          // Name
-          const Text(
-            'User Name',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingXS),
-          // Phone
-          Text(
-            '+91 98765 43210',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: AppTheme.spacingM),
-          // Edit Button
-          CustomButton(
-            text: 'Edit Profile',
-            isOutlined: true,
-            onPressed: () {
-              // TODO: Implement edit profile
-            },
-            width: 150,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmergencyContacts(BuildContext context) {
-    return CardWidget(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Emergency Contacts',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  // TODO: Implement add contact
-                },
-                child: const Text('Add'),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTheme.spacingM),
-          // Contact 1
-          _buildContactItem(
-            name: 'Father',
-            phone: '+91 98765 43211',
-          ),
-          const Divider(),
-          // Contact 2
-          _buildContactItem(
-            name: 'Mother',
-            phone: '+91 98765 43212',
-          ),
-          const Divider(),
-          // Contact 3
-          _buildContactItem(
-            name: 'Sister',
-            phone: '+91 98765 43213',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildContactItem({
-    required String name,
-    required String phone,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacingS),
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
+          IconButton(
+            icon: const Icon(Ionicons.arrow_back, size: 24),
+            onPressed: () => Navigator.pop(context),
+            color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Profile',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(width: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileCard(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Avatar
           Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer,
+            width: 90,
+            height: 90,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0D1B6E), Color(0xFF1976D2)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.person,
-              color: AppColors.primary,
+              Ionicons.person,
+              size: 50,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(width: AppTheme.spacingM),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 16),
+          // Name
+          Text(
+            'Safety Watcher',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Status
+          Text(
+            'Status: SAFE Risk',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Stats
+          Container(
+            padding: const EdgeInsets.only(top: 20),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: _isDarkMode ? const Color(0xFF334155) : const Color(0xFFF0F0F0),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        '85%',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0D1B6E),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Risk Level',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppTheme.spacingXS),
-                Text(
-                  phone,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
+                Container(
+                  width: 1,
+                  height: 30,
+                  color: _isDarkMode ? const Color(0xFF334155) : const Color(0xFFE0E0E0),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Active',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0D1B6E),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Security Model',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.call),
-            color: AppColors.primary,
-            onPressed: () {
-              // TODO: Implement call
-            },
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildSettings(BuildContext context) {
-    return CardWidget(
+  Widget _buildSection(BuildContext context, String title, List<Widget> children) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Settings',
+          Text(
+            title,
             style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
+              letterSpacing: 1.5,
             ),
           ),
-          const SizedBox(height: AppTheme.spacingM),
-          _buildSettingItem(
-            icon: Icons.notifications,
-            title: 'Notifications',
-            onTap: () {
-              // TODO: Implement notifications settings
-            },
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionItem(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 3,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 20,
+                color: iconColor,
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Text
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            // Arrow
+            Icon(
+              Ionicons.chevron_forward,
+              size: 20,
+              color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThemeToggle(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 3,
+            offset: const Offset(0, 2),
           ),
-          const Divider(),
-          _buildSettingItem(
-            icon: Icons.location_on,
-            title: 'Location Settings',
-            onTap: () {
-              // TODO: Implement location settings
-            },
+        ],
+      ),
+      child: Row(
+        children: [
+          // Icon
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8EAF6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              _isDarkMode ? Ionicons.moon : Ionicons.sunny,
+              size: 20,
+              color: const Color(0xFF3F51B5),
+            ),
           ),
-          const Divider(),
-          _buildSettingItem(
-            icon: Icons.mic,
-            title: 'Voice Settings',
-            onTap: () {
-              // TODO: Implement voice settings
-            },
+          const SizedBox(width: 16),
+          // Text
+          Expanded(
+            child: Text(
+              _isDarkMode ? 'Dark Mode' : 'Light Mode',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
+              ),
+            ),
           ),
-          const Divider(),
-          _buildSettingItem(
-            icon: Icons.security,
-            title: 'Privacy & Security',
-            onTap: () {
-              // TODO: Implement privacy settings
+          // Switch
+          Switch(
+            value: _isDarkMode,
+            onChanged: (value) {
+              // TODO: Implement theme toggle
             },
-          ),
-          const Divider(),
-          _buildSettingItem(
-            icon: Icons.help,
-            title: 'Help & Support',
-            onTap: () {
-              // TODO: Implement help
-            },
-          ),
-          const Divider(),
-          _buildSettingItem(
-            icon: Icons.info,
-            title: 'About',
-            onTap: () {
-              // TODO: Implement about
-            },
-          ),
-          const SizedBox(height: AppTheme.spacingM),
-          // Logout
-          CustomButton(
-            text: 'Logout',
-            backgroundColor: AppColors.error,
-            onPressed: () {
-              // TODO: Implement logout
-            },
-            width: double.infinity,
+            activeTrackColor: const Color(0xFF3F51B5),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSettingItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppTheme.radiusS),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppTheme.spacingS),
+  Widget _buildReturnHomeButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: _isDarkMode ? const Color(0xFF1e3a8a) : const Color(0xFFE3F2FD),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              icon,
-              color: AppColors.textSecondary,
-              size: 24,
+              Ionicons.log_out_outline,
+              size: 20,
+              color: _isDarkMode ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
             ),
-            const SizedBox(width: AppTheme.spacingM),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: AppColors.textPrimary,
-                ),
+            const SizedBox(width: 8),
+            Text(
+              'Return Home',
+              style: TextStyle(
+                color: _isDarkMode ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
               ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              color: AppColors.grey400,
             ),
           ],
         ),

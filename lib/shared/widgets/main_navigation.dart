@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:ionicons/ionicons.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
-import '../../features/history/presentation/screens/history_screen.dart';
+import '../../features/routes/presentation/screens/routes_screen.dart';
+import '../../features/alerts/presentation/screens/alerts_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
 import '../../features/home/presentation/providers/home_provider.dart';
 
@@ -17,10 +19,11 @@ class MainNavigation extends StatelessWidget {
         return Scaffold(
           body: IndexedStack(
             index: homeProvider.currentIndex,
-            children: const [
-              HomeScreen(),
-              HistoryScreen(),
-              ProfileScreen(),
+            children: [
+              const HomeScreen(),
+              const RoutesScreen(),
+              const AlertsScreen(),
+              const ProfileScreen(),
             ],
           ),
           bottomNavigationBar: Container(
@@ -44,22 +47,28 @@ class MainNavigation extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildNavItem(
-                      icon: Icons.home,
+                      icon: Ionicons.home,
                       label: 'Home',
                       isSelected: homeProvider.currentIndex == 0,
                       onTap: () => homeProvider.setIndex(0),
                     ),
                     _buildNavItem(
-                      icon: Icons.history,
-                      label: 'History',
+                      icon: Ionicons.navigate,
+                      label: 'Routes',
                       isSelected: homeProvider.currentIndex == 1,
                       onTap: () => homeProvider.setIndex(1),
                     ),
                     _buildNavItem(
-                      icon: Icons.person,
-                      label: 'Profile',
+                      icon: Ionicons.notifications,
+                      label: 'Alerts',
                       isSelected: homeProvider.currentIndex == 2,
                       onTap: () => homeProvider.setIndex(2),
+                    ),
+                    _buildNavItem(
+                      icon: Ionicons.person,
+                      label: 'Profile',
+                      isSelected: homeProvider.currentIndex == 3,
+                      onTap: () => homeProvider.setIndex(3),
                     ),
                   ],
                 ),

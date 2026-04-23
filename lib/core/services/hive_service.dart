@@ -13,10 +13,8 @@ class HiveService {
   Future<void> initialize() async {
     await Hive.initFlutter();
     
-    // Register adapters if needed
-    // Hive.registerAdapter(SOSModelAdapter());
-    // Hive.registerAdapter(LocationModelAdapter());
-    // Hive.registerAdapter(ContactModelAdapter());
+    // Note: Hive adapters for custom models can be registered here when needed
+    // For now, using JSON serialization for simplicity
     
     // Open boxes
     await Hive.openBox(_sosHistoryBox);
@@ -122,6 +120,33 @@ class HiveService {
     await Hive.box(_sosHistoryBox).clear();
     await Hive.box(_contactsBox).clear();
     await Hive.box(_locationLogsBox).clear();
+  }
+
+  // Generic box operations for dynamic box names
+  Future<void> openBox(String boxName) async {
+    if (!Hive.isBoxOpen(boxName)) {
+      await Hive.openBox(boxName);
+    }
+  }
+
+  Future<void> put(String boxName, String key, dynamic value) async {
+    final box = Hive.box(boxName);
+    await box.put(key, value);
+  }
+
+  Future<dynamic> get(String boxName, String key) async {
+    final box = Hive.box(boxName);
+    return box.get(key);
+  }
+
+  Future<List<dynamic>> getAll(String boxName) async {
+    final box = Hive.box(boxName);
+    return box.values.toList();
+  }
+
+  Future<void> delete(String boxName, String key) async {
+    final box = Hive.box(boxName);
+    await box.delete(key);
   }
 
   void dispose() {

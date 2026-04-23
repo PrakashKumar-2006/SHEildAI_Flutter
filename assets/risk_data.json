@@ -1,0 +1,366 @@
+{
+  "zones": [
+    {
+      "name": "Shyamla Hills",
+      "lat": 23.245,
+      "lon": 77.418,
+      "base_score": 16.0
+    },
+    {
+      "name": "TT Nagar",
+      "lat": 23.235,
+      "lon": 77.412,
+      "base_score": 18.0
+    },
+    {
+      "name": "MP Nagar",
+      "lat": 23.2332,
+      "lon": 77.4272,
+      "base_score": 22.0
+    },
+    {
+      "name": "Gandhi Nagar",
+      "lat": 23.248,
+      "lon": 77.408,
+      "base_score": 24.0
+    },
+    {
+      "name": "Kamla Nagar",
+      "lat": 23.218,
+      "lon": 77.438,
+      "base_score": 29.0
+    },
+    {
+      "name": "Habibganj",
+      "lat": 23.2289,
+      "lon": 77.4382,
+      "base_score": 31.0
+    },
+    {
+      "name": "Ashoka Garden",
+      "lat": 23.238,
+      "lon": 77.478,
+      "base_score": 37.0
+    },
+    {
+      "name": "Ayodhya Nagar",
+      "lat": 23.225,
+      "lon": 77.482,
+      "base_score": 40.0
+    },
+    {
+      "name": "Kotwali",
+      "lat": 23.258,
+      "lon": 77.4025,
+      "base_score": 42.0
+    },
+    {
+      "name": "Mangalwara",
+      "lat": 23.265,
+      "lon": 77.42,
+      "base_score": 42.0
+    },
+    {
+      "name": "Aishbag",
+      "lat": 23.25,
+      "lon": 77.4,
+      "base_score": 44.0
+    },
+    {
+      "name": "Shahjahanabad",
+      "lat": 23.27,
+      "lon": 77.408,
+      "base_score": 44.0
+    },
+    {
+      "name": "Tallaiya",
+      "lat": 23.26,
+      "lon": 77.41,
+      "base_score": 46.0
+    },
+    {
+      "name": "Jahangirabad",
+      "lat": 23.272,
+      "lon": 77.415,
+      "base_score": 46.0
+    },
+    {
+      "name": "Nishatpura",
+      "lat": 23.272,
+      "lon": 77.408,
+      "base_score": 48.0
+    },
+    {
+      "name": "Gautam Nagar",
+      "lat": 23.23,
+      "lon": 77.46,
+      "base_score": 48.0
+    },
+    {
+      "name": "Chhola Mandir",
+      "lat": 23.265,
+      "lon": 77.435,
+      "base_score": 49.0
+    },
+    {
+      "name": "Piplani",
+      "lat": 23.2458,
+      "lon": 77.4672,
+      "base_score": 55.0
+    },
+    {
+      "name": "Najirabad",
+      "lat": 23.28,
+      "lon": 77.385,
+      "base_score": 57.0
+    },
+    {
+      "name": "Bairagarh",
+      "lat": 23.285,
+      "lon": 77.372,
+      "base_score": 59.0
+    },
+    {
+      "name": "Govindpura",
+      "lat": 23.262,
+      "lon": 77.472,
+      "base_score": 61.0
+    },
+    {
+      "name": "Parwalia Sadak",
+      "lat": 23.32,
+      "lon": 77.41,
+      "base_score": 61.0
+    },
+    {
+      "name": "Intkhedi",
+      "lat": 23.29,
+      "lon": 77.39,
+      "base_score": 62.0
+    },
+    {
+      "name": "Misrod",
+      "lat": 23.198,
+      "lon": 77.487,
+      "base_score": 66.0
+    },
+    {
+      "name": "Katara Hills",
+      "lat": 23.195,
+      "lon": 77.445,
+      "base_score": 66.0
+    },
+    {
+      "name": "Ratibarh",
+      "lat": 23.22,
+      "lon": 77.51,
+      "base_score": 68.0
+    },
+    {
+      "name": "Shahpura",
+      "lat": 23.185,
+      "lon": 77.432,
+      "base_score": 70.0
+    },
+    {
+      "name": "Kolar Road",
+      "lat": 23.178,
+      "lon": 77.458,
+      "base_score": 74.0
+    },
+    {
+      "name": "Bag Sevania",
+      "lat": 23.21,
+      "lon": 77.398,
+      "base_score": 74.0
+    },
+    {
+      "name": "Sukhi Sevania",
+      "lat": 23.17,
+      "lon": 77.41,
+      "base_score": 74.0
+    },
+    {
+      "name": "Bilkhiria",
+      "lat": 23.295,
+      "lon": 77.42,
+      "base_score": 77.0
+    },
+    {
+      "name": "Khajuri Sadak",
+      "lat": 23.158,
+      "lon": 77.428,
+      "base_score": 79.0
+    },
+    {
+      "name": "Gunga",
+      "lat": 23.31,
+      "lon": 77.36,
+      "base_score": 81.0
+    },
+    {
+      "name": "Berasia",
+      "lat": 23.628,
+      "lon": 77.435,
+      "base_score": 88.0
+    },
+    {
+      "name": "Ratibad",
+      "lat": 23.1452,
+      "lon": 77.358,
+      "base_score": 83.0
+    },
+    {
+      "name": "Neelbad",
+      "lat": 23.158,
+      "lon": 77.372,
+      "base_score": 79.0
+    },
+    {
+      "name": "Bhadbhada Road",
+      "lat": 23.182,
+      "lon": 77.395,
+      "base_score": 70.0
+    },
+    {
+      "name": "Sakshi Dhaba Area",
+      "lat": 23.135,
+      "lon": 77.368,
+      "base_score": 85.0
+    },
+    {
+      "name": "Patel Nagar",
+      "lat": 23.248,
+      "lon": 77.458,
+      "base_score": 51.0
+    },
+    {
+      "name": "Anand Nagar",
+      "lat": 23.262,
+      "lon": 77.472,
+      "base_score": 48.0
+    },
+    {
+      "name": "DR Ambedkar Nagar",
+      "lat": 23.218,
+      "lon": 77.465,
+      "base_score": 55.0
+    },
+    {
+      "name": "Ayodhya Bypass",
+      "lat": 23.204,
+      "lon": 77.476,
+      "base_score": 66.0
+    },
+    {
+      "name": "Neelbad Ratibad Road",
+      "lat": 23.162,
+      "lon": 77.349,
+      "base_score": 86.0
+    },
+    {
+      "name": "SISTEC-R College Area",
+      "lat": 23.17,
+      "lon": 77.31,
+      "base_score": 81.0
+    },
+    {
+      "name": "Ratibad Chowrah",
+      "lat": 23.1661,
+      "lon": 77.3281,
+      "base_score": 75.0
+    },
+    {
+      "name": "Sikandrabad",
+      "lat": 23.175,
+      "lon": 77.318,
+      "base_score": 85.0
+    },
+    {
+      "name": "Near TIT College",
+      "lat": 23.256,
+      "lon": 77.475,
+      "base_score": 49.0
+    },
+    {
+      "name": "Suraj Nagar",
+      "lat": 23.175,
+      "lon": 77.391,
+      "base_score": 66.0
+    },
+    {
+      "name": "Kerwa Dam Road",
+      "lat": 23.225,
+      "lon": 77.357,
+      "base_score": 77.0
+    },
+    {
+      "name": "Chunabhatti",
+      "lat": 23.209,
+      "lon": 77.465,
+      "base_score": 59.0
+    },
+    {
+      "name": "Nehru Nagar",
+      "lat": 23.252,
+      "lon": 77.425,
+      "base_score": 40.0
+    },
+    {
+      "name": "Kokta Raisen Road",
+      "lat": 23.268,
+      "lon": 77.493,
+      "base_score": 55.0
+    },
+    {
+      "name": "Kalchuri Nagar",
+      "lat": 23.263,
+      "lon": 77.489,
+      "base_score": 48.0
+    },
+    {
+      "name": "Phanda",
+      "lat": 23.203,
+      "lon": 77.234,
+      "base_score": 81.0
+    },
+    {
+      "name": "Semra Bazyaft",
+      "lat": 23.158,
+      "lon": 77.305,
+      "base_score": 83.0
+    },
+    {
+      "name": "Mandideep Border",
+      "lat": 23.103,
+      "lon": 77.554,
+      "base_score": 72.0
+    }
+  ],
+  "hour_multipliers": {
+    "0": 16.0,
+    "1": 16.0,
+    "2": 16.0,
+    "3": 16.0,
+    "4": 16.0,
+    "5": 16.0,
+    "6": 0.0,
+    "7": 0.0,
+    "8": 0.0,
+    "9": 0.0,
+    "10": -6.0,
+    "11": -6.0,
+    "12": -2.0,
+    "13": -2.0,
+    "14": -2.0,
+    "15": -2.0,
+    "16": 2.0,
+    "17": 2.0,
+    "18": 10.0,
+    "19": 10.0,
+    "20": 10.0,
+    "21": 14.0,
+    "22": 14.0,
+    "23": 14.0
+  }
+}
