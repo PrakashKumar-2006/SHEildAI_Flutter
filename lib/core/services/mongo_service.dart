@@ -1,3 +1,4 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
 class MongoService {
@@ -6,7 +7,7 @@ class MongoService {
 
   MongoService._internal();
 
-  static const String _connectionString = 'mongodb+srv://prakashkumar_db_user:K665XW6mKjN2P5oP@cluster0.mqceq9m.mongodb.net/?retryWrites=true&w=majority';
+  String? _connectionString;
   
   Db? _db;
   bool _isConnected = false;
@@ -16,7 +17,13 @@ class MongoService {
 
   Future<void> connect() async {
     try {
-      _db = await Db.create(_connectionString);
+      _connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING'];
+      
+      if (_connectionString == null || _connectionString!.isEmpty) {
+        throw Exception('MongoDB connection string not found in environment variables');
+      }
+      
+      _db = await Db.create(_connectionString!);
       await _db!.open();
       _isConnected = true;
     } catch (e) {
