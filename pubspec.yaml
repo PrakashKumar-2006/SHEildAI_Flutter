@@ -1,0 +1,49 @@
+name: shield_ai_flutter
+description: SHEild AI - Women Safety App ported from React Native to Flutter.
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.2
+
+  # Persistence
+  shared_preferences: ^2.2.3
+
+  # Icons & Fonts
+  ionicons: ^0.2.2
+  google_fonts: ^6.2.1
+
+  # Map
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.0
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Image Picker
+  image_picker: ^1.1.2
+
+  # Intl
+  intl: ^0.20.2
+
+  cupertino_icons: ^1.0.6
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/json/
