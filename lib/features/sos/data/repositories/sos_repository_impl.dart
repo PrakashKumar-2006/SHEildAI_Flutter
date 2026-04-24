@@ -4,6 +4,7 @@ import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/hive_service.dart';
 import '../../../../core/services/sync_service.dart';
+import '../../../../core/services/api_service.dart';
 import '../../domain/models/sos_model.dart';
 import '../../domain/repositories/sos_repository.dart';
 
@@ -60,6 +61,10 @@ class SOSRepositoryImpl implements SOSRepository {
         message: sosModel.message ?? 'SOS activated!',
         location: 'Lat: ${latitude.toStringAsFixed(4)}, Lng: ${longitude.toStringAsFixed(4)}',
       );
+
+      // Trigger cloud SOS
+      final userId = _storageService.getString('user_id') ?? 'unknown';
+      ApiService.triggerCloudSOS(userId, latitude, longitude).catchError((_) => null);
 
       return Right(sosModel);
     } catch (e) {

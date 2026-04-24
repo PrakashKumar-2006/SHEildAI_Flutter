@@ -9,6 +9,7 @@ class HiveService {
   static const String _sosHistoryBox = 'sos_history';
   static const String _contactsBox = 'contacts';
   static const String _locationLogsBox = 'location_logs';
+  static const String _reportsBox = 'community_reports';
 
   Future<void> initialize() async {
     await Hive.initFlutter();
@@ -20,6 +21,7 @@ class HiveService {
     await Hive.openBox(_sosHistoryBox);
     await Hive.openBox(_contactsBox);
     await Hive.openBox(_locationLogsBox);
+    await Hive.openBox(_reportsBox);
   }
 
   // SOS History operations
@@ -115,11 +117,28 @@ class HiveService {
     await box.clear();
   }
 
+  // Community reports operations
+  Future<void> saveReport(Map<String, dynamic> reportData) async {
+    final box = Hive.box(_reportsBox);
+    await box.put(reportData['id'], reportData);
+  }
+
+  Future<List<Map<String, dynamic>>> getReports() async {
+    final box = Hive.box(_reportsBox);
+    return box.values.toList().cast<Map<String, dynamic>>();
+  }
+
+  Future<void> deleteReport(String reportId) async {
+    final box = Hive.box(_reportsBox);
+    await box.delete(reportId);
+  }
+
   // Clear all data
   Future<void> clearAll() async {
     await Hive.box(_sosHistoryBox).clear();
     await Hive.box(_contactsBox).clear();
     await Hive.box(_locationLogsBox).clear();
+    await Hive.box(_reportsBox).clear();
   }
 
   // Generic box operations for dynamic box names

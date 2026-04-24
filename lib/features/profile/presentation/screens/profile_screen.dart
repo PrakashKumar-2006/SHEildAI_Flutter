@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
+import 'package:provider/provider.dart';
+import '../../../contacts/presentation/providers/contact_provider.dart';
+import '../../../location/presentation/providers/location_provider.dart';
+import '../../../../core/providers/ml_provider.dart';
+import '../../../../core/services/storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -12,8 +17,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isDarkMode = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Load contacts when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ContactProvider>().loadContacts();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     _isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final mlProvider = context.watch<MLProvider>();
+    final locationProvider = context.watch<LocationProvider>();
     
     return Scaffold(
       backgroundColor: _isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF5F6FA),
@@ -28,37 +44,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   children: [
                     // Profile Card
-                    _buildProfileCard(context),
+                    _buildProfileCard(context, mlProvider, locationProvider),
                     const SizedBox(height: 24),
                     // Account Settings
-                    _buildSection(context, 'Account Settings', [
-                      _buildOptionItem(
-                        context,
-                        icon: Ionicons.person,
-                        iconColor: const Color(0xFF7B1FA2),
-                        iconBg: const Color(0xFFF3E5F5),
-                        title: 'Personal Information',
-                        onTap: () {},
-                      ),
-                      _buildOptionItem(
-                        context,
-                        icon: Ionicons.star,
-                        iconColor: const Color(0xFF4CAF50),
-                        iconBg: const Color(0xFFE8F5E9),
-                        title: 'Subscription & Plans',
-                        subtitle: 'Free Plan',
-                        onTap: () {},
-                      ),
-                      _buildOptionItem(
-                        context,
-                        icon: Ionicons.heart,
-                        iconColor: const Color(0xFFFF0000),
-                        iconBg: const Color(0xFFFFE5E5),
-                        title: 'SOS Guardians',
-                        subtitle: '0 contacts active',
-                        onTap: () {},
-                      ),
-                    ]),
+                    Consumer<ContactProvider>(
+                      builder: (context, contactProvider, child) {
+                        final contactCount = contactProvider.contacts.length;
+                        return _buildSection(context, 'Account Settings', [
+                          _buildOptionItem(
+                            context,
+                            icon: Ionicons.person,
+                            iconColor: const Color(0xFF7B1FA2),
+                            iconBg: const Color(0xFFF3E5F5),
+                            title: 'Personal Information',
+                            subtitle: StorageService().getUserPhone(),
+                            onTap: () {},
+                          ),
+                          _buildOptionItem(
+                            context,
+                            icon: Ionicons.star,
+                            iconColor: const Color(0xFF4CAF50),
+                            iconBg: const Color(0xFFE8F5E9),
+                            title: 'Subscription & Plans',
+                            subtitle: 'Free Plan',
+                            onTap: () {},
+                          ),
+                          _buildOptionItem(
+                            context,
+                            icon: Ionicons.people,
+                            iconColor: const Color(0xFF1976D2),
+                            iconBg: const Color(0xFFE3F2FD),
+                            title: 'SOS Guardians',
+                            subtitle: contactCount == 0 ? 'No contacts' : '$contactCount contact${contactCount > 1 ? 's' : ''}',
+                            onTap: () {},
+                          ),
+                        ]);
+                      }
+                    ),
                     const SizedBox(height: 24),
                     // App Preferences
                     _buildSection(context, 'App Preferences', [
@@ -128,7 +150,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileCard(BuildContext context) {
+  Widget _buildProfileCard(BuildContext context, dynamic mlProvider, dynamic locationProvider) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(24),
@@ -166,7 +188,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 16),
           // Name
           Text(
-            'Safety Watcher',
+            StorageService().getUserName(),
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
@@ -174,9 +196,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          // Status
+          // Status - Dynamic from MLProvider
           Text(
-            'Status: SAFE Risk',
+            'Status: ${mlProvider.riskPrediction?['risk_level']?.toString().toUpperCase() ?? 'SAFE'} Risk',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -201,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     children: [
                       Text(
-                        '85%',
+                        mlProvider.riskPrediction?['risk_score']?.toString() ?? '85',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,

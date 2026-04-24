@@ -3,7 +3,6 @@ import 'package:geolocator/geolocator.dart';
 
 class HomeProvider extends ChangeNotifier {
   bool _isSOSActive = false;
-  bool _isVoiceModeEnabled = false;
   int _currentIndex = 0;
   
   // Safety data
@@ -14,7 +13,6 @@ class HomeProvider extends ChangeNotifier {
   double _currentLongitude = 75.8577;
 
   bool get isSOSActive => _isSOSActive;
-  bool get isVoiceModeEnabled => _isVoiceModeEnabled;
   int get currentIndex => _currentIndex;
   String get currentRiskLevel => _currentRiskLevel;
   int get safetyScore => _safetyScore;
@@ -27,10 +25,7 @@ class HomeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleVoiceMode() {
-    _isVoiceModeEnabled = !_isVoiceModeEnabled;
-    notifyListeners();
-  }
+
 
   void setIndex(int index) {
     _currentIndex = index;

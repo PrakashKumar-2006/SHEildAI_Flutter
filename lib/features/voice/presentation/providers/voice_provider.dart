@@ -1,11 +1,17 @@
 import 'package:flutter/foundation.dart';
 import '../../../../core/services/voice_service.dart';
+import '../../../sos/presentation/providers/sos_provider.dart';
 
 class VoiceProvider extends ChangeNotifier {
   final VoiceService _voiceService;
+  SOSProvider? _sosProvider;
 
   VoiceProvider({required VoiceService voiceService})
       : _voiceService = voiceService;
+
+  void updateSOSProvider(SOSProvider sosProvider) {
+    _sosProvider = sosProvider;
+  }
 
   bool _isEnabled = false;
   bool _isListening = false;
@@ -48,7 +54,8 @@ class VoiceProvider extends ChangeNotifier {
         _lastRecognizedText = text;
         
         if (_voiceService.isVoiceTrigger(text)) {
-          // Voice trigger detected - notify listeners
+          // Voice trigger detected - notify listeners and trigger SOS
+          _sosProvider?.triggerSOS(customMessage: "Triggered via Voice Command");
           notifyListeners();
         }
       },

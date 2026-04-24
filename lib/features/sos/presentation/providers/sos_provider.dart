@@ -3,6 +3,8 @@ import '../../../../core/services/location_service.dart';
 import '../../data/repositories/sos_repository_impl.dart';
 import '../../domain/models/sos_model.dart';
 import '../../../location/presentation/providers/location_provider.dart';
+import '../../../../core/services/sms_service.dart';
+import '../../../../core/services/video_recording_service.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
@@ -12,8 +14,8 @@ class SOSProvider extends ChangeNotifier {
   SOSModel? _activeSOS;
   bool _isLoading = false;
   String? _errorMessage;
-  String _sessionDuration = '00:00';
-  String _currentLocation = 'Current Location';
+  final String _sessionDuration = '00:00';
+  final String _currentLocation = 'Current Location';
 
   SOSProvider({
     required SOSRepositoryImpl sosRepository,
@@ -62,9 +64,20 @@ class SOSProvider extends ChangeNotifier {
         (sos) {
           _activeSOS = sos;
           _isLoading = false;
-          // Start background location tracking during SOS
           _locationProvider.startTracking(background: true);
           notifyListeners();
+
+          // Send SMS to contacts
+          final message = customMessage ?? 'EMERGENCY: I need help! My location: https://maps.google.com/?q=${position.latitude},${position.longitude}';
+          SMSService().sendBulkSMS(
+            phoneNumbers: contacts,
+            message: message,
+          );
+
+          // Start background video recording
+          VideoRecordingService().startRecording().catchError((e) {
+            debugPrint('Failed to start video recording: $e');
+          });
         },
       );
     } catch (e) {
@@ -86,6 +99,10 @@ class SOSProvider extends ChangeNotifier {
       _isLoading = false;
       // Stop background location tracking
       await _locationProvider.stopTracking();
+      // Stop video recording if active
+      if (VideoRecordingService().isRecording) {
+        await VideoRecordingService().stopRecording();
+      }
       notifyListeners();
     } catch (e) {
       _errorMessage = e.toString();
@@ -110,20 +127,5 @@ class SOSProvider extends ChangeNotifier {
   void clearError() {
     _errorMessage = null;
     notifyListeners();
-  }
-
-  void _startDurationTimer() {
-    final startTime = DateTime.now();
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 1));
-      if (_activeSOS == null) return false;
-      
-      final duration = DateTime.now().difference(startTime);
-      final minutes = duration.inMinutes.toString().padLeft(2, '0');
-      final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
-      _sessionDuration = '$minutes:$seconds';
-      notifyListeners();
-      return true;
-    });
   }
 }
