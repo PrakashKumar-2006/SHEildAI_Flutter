@@ -98,16 +98,27 @@ class RoutesProvider extends ChangeNotifier {
           routes: routesForML,
         );
 
-        // Combine OSRM routes with ML risk scores
-        if (mlResult.containsKey('ranked_routes') && mlResult['ranked_routes'] != null) {
-          // Note: In a full implementation, you'd store risk scores with each route
+        if (mlResult.containsKey('ranked_routes')) {
+          final List<dynamic> rankedIndices = mlResult['ranked_routes'];
+          List<OSRMRoute> rankedRoutes = [];
+          for (var index in rankedIndices) {
+            final idx = int.tryParse(index.toString()) ?? 0;
+            if (idx < routes.length) {
+              rankedRoutes.add(routes[idx]);
+            }
+          }
+          if (rankedRoutes.isNotEmpty) {
+            _routes = rankedRoutes;
+          } else {
+            _routes = routes;
+          }
+        } else {
+          _routes = routes;
         }
       } catch (e) {
         debugPrint('[Routes] ML evaluation error: $e');
-        // Continue without ML scores if it fails
+        _routes = routes;
       }
-
-      _routes = routes;
       _selectedRouteIndex = 0;
       _selectedRoute = routes.isNotEmpty ? routes.first : null;
       _isLoading = false;

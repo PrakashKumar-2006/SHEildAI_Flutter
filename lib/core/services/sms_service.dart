@@ -1,88 +1,52 @@
 import 'dart:async';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:sms_advanced/sms_advanced.dart';
+import 'package:flutter/foundation.dart';
 
 class SMSService {
   static final SMSService _instance = SMSService._internal();
   factory SMSService() => _instance;
-
   SMSService._internal();
 
-  final StreamController<Map<String, dynamic>> _smsStatusController = StreamController<Map<String, dynamic>>.broadcast();
+  final SmsSender _sender = SmsSender();
 
-  Stream<Map<String, dynamic>> get smsStatusStream => _smsStatusController.stream;
-
-  Future<void> sendSMS({
+  /// Sends a single SMS directly in the background
+  Future<bool> sendSMS({
     required String phoneNumber,
     required String message,
-    int maxRetries = 3,
-    Duration retryDelay = const Duration(seconds: 5),
   }) async {
-    int attempt = 0;
-    bool success = false;
-
-    while (attempt < maxRetries && !success) {
-      attempt++;
+    try {
+      debugPrint('[SMS] Sending direct SMS to $phoneNumber...');
       
-      try {
-        final uri = Uri.parse('sms:$phoneNumber?body=${Uri.encodeComponent(message)}');
-        
-        if (await canLaunchUrl(uri)) {
-          final launched = await launchUrl(uri);
-          if (launched) {
-            success = true;
-            _smsStatusController.add({
-              'status': 'sent',
-              'phoneNumber': phoneNumber,
-              'attempt': attempt,
-              'timestamp': DateTime.now().toIso8601String(),
-            });
-          }
-        }
-        
-        if (!success && attempt < maxRetries) {
-          await Future.delayed(retryDelay);
-        } else if (!success) {
-          _smsStatusController.addError({
-            'status': 'failed',
-            'phoneNumber': phoneNumber,
-            'attempt': attempt,
-            'error': 'Failed to launch SMS',
-            'timestamp': DateTime.now().toIso8601String(),
-          });
-        }
-      } catch (e) {
-        if (attempt < maxRetries) {
-          await Future.delayed(retryDelay);
-        } else {
-          _smsStatusController.addError({
-            'status': 'failed',
-            'phoneNumber': phoneNumber,
-            'attempt': attempt,
-            'error': e.toString(),
-            'timestamp': DateTime.now().toIso8601String(),
-          });
-        }
-      }
+      final SmsMessage sms = SmsMessage(phoneNumber, message);
+      
+      // sms_advanced doesn't return a Future for sendSms, it's fire and forget
+      // or we can listen to state changes if needed.
+      _sender.sendSms(sms);
+      
+      debugPrint('[SMS] SMS sent request triggered.');
+      return true;
+    } catch (e) {
+      debugPrint('[SMS] Error sending direct SMS: $e');
+      return false;
     }
   }
 
+  /// Sends multiple SMS alerts to a list of contacts
   Future<void> sendBulkSMS({
     required List<String> phoneNumbers,
     required String message,
-    int maxRetries = 3,
-    Duration retryDelay = const Duration(seconds: 5),
+    bool direct = true,
   }) async {
-    for (final phoneNumber in phoneNumbers) {
-      await sendSMS(
-        phoneNumber: phoneNumber,
-        message: message,
-        maxRetries: maxRetries,
-        retryDelay: retryDelay,
-      );
-    }
-  }
+    if (phoneNumbers.isEmpty) return;
 
-  void dispose() {
-    _smsStatusController.close();
+    for (var phone in phoneNumbers) {
+      if (phone.trim().isEmpty) continue;
+      await sendSMS(
+        phoneNumber: phone.trim(),
+        message: message,
+      );
+      // Small delay to prevent carrier rate limiting
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
   }
 }

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class MLService {
-  static const String baseUrl = 'http://10.0.2.2:8000';  // Use 10.0.2.2 for Android emulator
+  static const String baseUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/api';
   
   // Risk Prediction
   Future<Map<String, dynamic>> predictRisk({

@@ -88,6 +88,11 @@ dependencies:
   intl: ^0.20.2
   easy_localization: ^3.0.7
   flutter_dotenv: ^5.1.0
+  google_fonts: ^8.0.2
+  audioplayers: ^6.1.0
+  geocoding: ^3.0.0
+  sms_advanced: ^1.0.3
+  battery_plus: ^6.2.1
 
 dev_dependencies:
   flutter_test:
