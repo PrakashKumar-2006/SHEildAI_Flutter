@@ -1,7 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
@@ -15,30 +15,34 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final MapController _mapController = MapController();
-  String _locationName = 'Scanning safe corridors...';
+  GoogleMapController? _mapController;
+  final Set<Circle> _circles = {};
 
   bool _isNightTime() {
     final hour = DateTime.now().hour;
-    return hour >= 20 || hour < 6;
+    return hour >= 21 || hour < 6;
   }
 
-  Color _getRiskColor(String label) {
-    switch (label) {
-      case 'CRITICAL': return const Color(0xFF8B0000);
-      case 'HIGH': return const Color(0xFFFF4D4D);
-      case 'MEDIUM': return const Color(0xFFFFD700);
-      case 'SAFE': return const Color(0xFF43A047);
-      default: return const Color(0xFF43A047);
-    }
+  Color _parseHexColor(String hex) {
+    hex = hex.replaceAll('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
   }
 
-  Color _getRiskBg(String label, bool isDark) {
-    switch (label) {
-      case 'CRITICAL': return const Color(0xFF8B0000).withOpacity(0.1);
-      case 'HIGH': return const Color(0xFFFF4D4D).withOpacity(0.1);
-      case 'MEDIUM': return const Color(0xFFFFD700).withOpacity(0.1);
-      default: return const Color(0xFF4CAF50).withOpacity(0.1);
+  void _updateCircles(SafetyProvider safety) {
+    _circles.clear();
+    for (final zone in safety.zones) {
+      final color = _parseHexColor(zone.zoneColor);
+      _circles.add(
+        Circle(
+          circleId: CircleId(zone.id),
+          center: LatLng(zone.center.latitude, zone.center.longitude),
+          radius: zone.radius * 1000,
+          fillColor: color.withOpacity(0.3),
+          strokeColor: color,
+          strokeWidth: 2,
+        ),
+      );
     }
   }
 
@@ -51,42 +55,107 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final riskLabel = safety.riskLabel;
     final riskScore = safety.riskScore;
-    final riskColor = _getRiskColor(riskLabel);
-    final riskBg = _getRiskBg(riskLabel, isDark);
+    final riskColor = _parseHexColor(safety.riskColor);
+    final alerts = safety.riskAlerts;
+
+    _updateCircles(safety);
+
+    // Sync map camera
+    if (_mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLng(LatLng(safety.latitude, safety.longitude)),
+      );
+    }
 
     return Scaffold(
       backgroundColor: theme.background,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // Header
-            _buildHeader(theme, lang, context),
-            // Content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 8),
-                    // Safety Score Circle
-                    _buildSafetyScoreCard(riskLabel, riskScore, riskColor, riskBg, isDark, theme, lang, safety),
-                    const SizedBox(height: 20),
-                    // Safety Insights
-                    _buildSafetyInsightsCard(theme, isDark),
-                    const SizedBox(height: 20),
-                    // Search Bar → Routes
-                    _buildSearchCard(theme, lang, context),
-                    const SizedBox(height: 14),
-                    // Voice Detection Toggle
-                    _buildVoiceCard(theme, lang, safety, isDark),
-                    const SizedBox(height: 14),
-                    // Map
-                    _buildMapCard(theme, safety),
-                    const SizedBox(height: 40),
-                  ],
+            Column(
+              children: [
+                // Header
+                _buildHeader(theme, lang, context),
+                // Content
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        // Safety Score Circle
+                        _buildSafetyScoreCard(riskLabel, riskScore, riskColor, isDark, theme, lang, safety),
+                        const SizedBox(height: 20),
+                        // Safety Insights
+                        _buildSafetyInsightsCard(theme, isDark, safety),
+                        const SizedBox(height: 20),
+                        // Risk Alerts (New Dynamic Field)
+                        if (alerts.isNotEmpty) _buildRiskAlertsList(theme, alerts, isDark),
+                        const SizedBox(height: 14),
+                        // Search Bar → Routes
+                        _buildSearchCard(theme, lang, context),
+                        const SizedBox(height: 14),
+                        // Voice Detection Toggle
+                        _buildVoiceCard(theme, lang, safety, isDark),
+                        const SizedBox(height: 14),
+                        // Map
+                        _buildMapCard(theme, safety),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (safety.isSirenPlaying)
+              Positioned(
+                bottom: 20,
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFC62828),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'ZONE ALERT ACTIVE',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1),
+                            ),
+                            Text(
+                              'Siren playing... Be aware!',
+                              style: TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: safety.stopSiren,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -131,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSafetyScoreCard(String riskLabel, int riskScore, Color riskColor,
-      Color riskBg, bool isDark, ThemeProvider theme, LanguageProvider lang, SafetyProvider safety) {
+      bool isDark, ThemeProvider theme, LanguageProvider lang, SafetyProvider safety) {
     return Column(
       children: [
         // Triple circle
@@ -241,9 +310,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-          safety.riskZone,
-          style: TextStyle(color: theme.textSecondary, fontSize: 13, fontWeight: FontWeight.w500),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            safety.readableAddress,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: theme.textSecondary, fontSize: 13, fontWeight: FontWeight.w500),
+          ),
         ),
         if (_isNightTime()) ...[
           const SizedBox(height: 12),
@@ -275,7 +348,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSafetyInsightsCard(ThemeProvider theme, bool isDark) {
+  Widget _buildSafetyInsightsCard(ThemeProvider theme, bool isDark, SafetyProvider safety) {
+    final forecast = safety.forecast;
+    final travelTime = safety.bestTravelTime;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -288,58 +364,137 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: const Color(0xFF0D1B6E),
+                color: isDark ? Colors.white : const Color(0xFF0D1B6E),
                 letterSpacing: 1.2,
               ),
             ),
           ],
         ),
         const SizedBox(height: 10),
-        GestureDetector(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ProfileScreen()),
-          ),
-          child: Container(
+        
+        // 3-Hour Forecast
+        if (forecast != null) ...[
+          Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1e3a8a) : const Color(0xFFF0F2FF),
+              color: theme.surface,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 2)),
               ],
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('3-Hour Forecast', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: (forecast['forecast'] as List? ?? []).take(3).map((f) {
+                    final h = f['hour'] as int;
+                    final s = (f['risk_score'] as num).toInt();
+                    return Column(
+                      children: [
+                        Text('$h:00', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        const SizedBox(height: 4),
+                        Text('$s%', style: TextStyle(fontWeight: FontWeight.w900, color: _parseHexColor(f['risk_color'] ?? '#4CAF50'))),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // Best Travel Time
+        if (travelTime != null) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Row(
               children: [
-                Icon(Icons.workspace_premium_rounded, size: 28, color: isDark ? const Color(0xFF60a5fa) : const Color(0xFF0D1B6E)),
+                const Icon(Icons.timer_outlined, color: Color(0xFF43A047), size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const Text('Best Travel Time', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1B5E20))),
                       Text(
-                        'Upgrade to Premium',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          color: isDark ? const Color(0xFF60a5fa) : theme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Unlock 3-hour risk forecasting and safest travel time analysis.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? const Color(0xFF93c5fd) : theme.textSecondary,
-                        ),
+                        'Next safest hour: ${(travelTime['safest_hours'] as List?)?.first['hour'] ?? 'N/A'}:00',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF2E7D32)),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded, size: 20, color: isDark ? const Color(0xFF60a5fa) : theme.accent),
               ],
             ),
           ),
-        ),
+          const SizedBox(height: 12),
+        ],
+
+        // Upgrade Card (if no data)
+        if (forecast == null && travelTime == null)
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1e3a8a) : const Color(0xFFF0F2FF),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.workspace_premium_rounded, size: 28, color: isDark ? const Color(0xFF60a5fa) : const Color(0xFF0D1B6E)),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Upgrade to Premium to unlock full safety insights.',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRiskAlertsList(ThemeProvider theme, List<String> alerts, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 4),
+        ...alerts.map((alert) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF2D1B1B) : const Color(0xFFFFF1F1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFCDD2).withOpacity(0.5)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFD32F2F)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  alert,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFFD32F2F), fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        )).toList(),
       ],
     );
   }
@@ -356,7 +511,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {/* Navigate to Routes */},
+          onTap: () {
+            // Navigator to Routes
+          },
           borderRadius: BorderRadius.circular(14),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
@@ -438,7 +595,6 @@ class _HomeScreenState extends State<HomeScreen> {
             value: safety.isSafetyModeActive,
             onChanged: (v) => safety.setVoiceListening(v),
             activeColor: const Color(0xFFef4444),
-            activeTrackColor: isDark ? const Color(0xFFef4444).withOpacity(0.5) : const Color(0xFFef4444).withOpacity(0.3),
           ),
         ],
       ),
@@ -447,7 +603,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildMapCard(ThemeProvider theme, SafetyProvider safety) {
     return Container(
-      height: 250,
+      height: 300,
       decoration: BoxDecoration(
         color: theme.surface,
         borderRadius: BorderRadius.circular(16),
@@ -456,38 +612,23 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       clipBehavior: Clip.hardEdge,
-      child: FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: LatLng(safety.latitude, safety.longitude),
-          initialZoom: 14,
+      child: GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: LatLng(safety.latitude, safety.longitude),
+          zoom: 14,
         ),
-        children: [
-          TileLayer(
-            urlTemplate: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-            subdomains: const ['a', 'b', 'c', 'd'],
-            userAgentPackageName: 'com.shieldai.app',
+        onMapCreated: (controller) => _mapController = controller,
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: false,
+        circles: _circles,
+        markers: {
+          Marker(
+            markerId: const MarkerId('current_pos'),
+            position: LatLng(safety.latitude, safety.longitude),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           ),
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: LatLng(safety.latitude, safety.longitude),
-                width: 24,
-                height: 24,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF1976D2).withOpacity(0.2),
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: const Center(
-                    child: CircleAvatar(radius: 5, backgroundColor: Color(0xFF1976D2)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+        },
       ),
     );
   }

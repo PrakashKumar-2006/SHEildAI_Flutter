@@ -162,7 +162,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
           ),
           const SizedBox(width: 8),
           Text(
-            '  ${safety.riskLabel}  ·  ${safety.riskZone}',
+            '  ${safety.riskLabel}  ·  ${safety.readableAddress}',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,

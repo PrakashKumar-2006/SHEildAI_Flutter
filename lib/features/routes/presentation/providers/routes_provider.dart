@@ -1,0 +1,149 @@
+import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
+import '../../../../core/services/osrm_service.dart';
+import '../../../../core/services/ml_service.dart';
+
+class RoutesProvider extends ChangeNotifier {
+  final MLService _mlService = MLService();
+  
+  List<OSRMRoute> _routes = [];
+  OSRMRoute? _selectedRoute;
+  LatLng? _destination;
+  String _destinationName = '';
+  bool _isLoading = false;
+  String? _errorMessage;
+  int _selectedRouteIndex = 0;
+
+  List<OSRMRoute> get routes => _routes;
+  OSRMRoute? get selectedRoute => _selectedRoute;
+  LatLng? get destination => _destination;
+  String get destinationName => _destinationName;
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  int get selectedRouteIndex => _selectedRouteIndex;
+
+  void setDestination(String name) {
+    _destinationName = name;
+    notifyListeners();
+  }
+
+  void selectRoute(int index) {
+    if (index >= 0 && index < _routes.length) {
+      _selectedRouteIndex = index;
+      _selectedRoute = _routes[index];
+      notifyListeners();
+    }
+  }
+
+  Future<bool> searchAndCalculateRoutes(
+    double originLat,
+    double originLon,
+    String destinationQuery, {
+    int hour = 0,
+    int month = 1,
+    int isWeekend = 0,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      // Step 1: Geocode destination
+      final destCoords = await OSRMService.geocodeDestination(
+        destinationQuery,
+        originLat,
+        originLon,
+      );
+
+      if (destCoords == null) {
+        _errorMessage = 'Could not find destination. Please try a different search term.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      _destination = destCoords;
+
+      // Step 2: Get routes from OSRM
+      final routes = await OSRMService.getRoutes(
+        originLat,
+        originLon,
+        destCoords.latitude,
+        destCoords.longitude,
+        alternatives: 3,
+      );
+
+      if (routes.isEmpty) {
+        _errorMessage = 'Could not find any routes to this destination.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      // Step 3: Evaluate routes with ML model for risk scoring
+      final routesForML = routes.map((r) => r.points.map((p) => {
+        'lat': p.latitude,
+        'lon': p.longitude,
+      }).toList()).toList();
+
+      try {
+        final mlResult = await _mlService.getSafeRouteV2(
+          originLat: originLat,
+          originLon: originLon,
+          destLat: destCoords.latitude,
+          destLon: destCoords.longitude,
+          hour: hour,
+          month: month,
+          isWeekend: isWeekend,
+          routes: routesForML,
+        );
+
+        if (mlResult.containsKey('ranked_routes')) {
+          final List<dynamic> rankedIndices = mlResult['ranked_routes'];
+          List<OSRMRoute> rankedRoutes = [];
+          for (var index in rankedIndices) {
+            final idx = int.tryParse(index.toString()) ?? 0;
+            if (idx < routes.length) {
+              rankedRoutes.add(routes[idx]);
+            }
+          }
+          if (rankedRoutes.isNotEmpty) {
+            _routes = rankedRoutes;
+          } else {
+            _routes = routes;
+          }
+        } else {
+          _routes = routes;
+        }
+      } catch (e) {
+        debugPrint('[Routes] ML evaluation error: $e');
+        _routes = routes;
+      }
+      _selectedRouteIndex = 0;
+      _selectedRoute = routes.isNotEmpty ? routes.first : null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Error calculating routes: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void clearRoutes() {
+    _routes = [];
+    _selectedRoute = null;
+    _destination = null;
+    _destinationName = '';
+    _selectedRouteIndex = 0;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+}
