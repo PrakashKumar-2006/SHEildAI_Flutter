@@ -7,6 +7,10 @@ import 'package:ionicons/ionicons.dart';
 import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/services/zone_service.dart';
 import '../providers/routes_provider.dart';
+import '../../../../core/services/osrm_service.dart';
+import '../../../../core/models/zone_model.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 class RoutesScreen extends StatefulWidget {
   const RoutesScreen({super.key});
@@ -19,6 +23,42 @@ class _RoutesScreenState extends State<RoutesScreen> {
   GoogleMapController? _mapController;
   final TextEditingController _destinationController = TextEditingController();
   bool _isDarkMode = false;
+  BitmapDescriptor? _dangerIcon;
+
+  @override
+  void initState() {
+    super.initState();
+    _createDangerIcon();
+  }
+
+  Future<void> _createDangerIcon() async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    final Paint paint = Paint()..color = Colors.red;
+    
+    final Path path = Path();
+    path.moveTo(24, 0);
+    path.lineTo(48, 42);
+    path.lineTo(0, 42);
+    path.close();
+    canvas.drawPath(path, paint);
+
+    final TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = const TextSpan(
+      text: '!',
+      style: TextStyle(fontSize: 28, color: Colors.white, fontWeight: FontWeight.bold),
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, const Offset(18, 8));
+
+    final img = await pictureRecorder.endRecording().toImage(48, 48);
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    if (mounted) {
+      setState(() {
+        _dangerIcon = BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -282,7 +322,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
           Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
         },
-        circles: zones.map((zone) {
+        circles: (destination != null) ? zones.map((zone) {
           final color = zone.riskScore > 75 ? Colors.red : 
                        zone.riskScore > 50 ? Colors.orange : 
                        zone.riskScore > 25 ? Colors.yellow : Colors.green;
@@ -294,17 +334,27 @@ class _RoutesScreenState extends State<RoutesScreen> {
             strokeColor: color,
             strokeWidth: 2,
           );
-        }).toSet(),
+        }).toSet() : {},
         polylines: routes.asMap().entries.map((entry) {
           final index = entry.key;
           final route = entry.value;
           final isSelected = index == routesProvider.selectedRouteIndex;
           
+          Color routeColor;
+          if (isSelected) {
+            routeColor = route.riskScore > 75 ? const Color(0xFFD32F2F) : 
+                        route.riskScore > 50 ? const Color(0xFFF57C00) : 
+                        route.riskScore > 25 ? const Color(0xFFFBC02D) : const Color(0xFF43A047);
+          } else {
+            routeColor = Colors.grey.withOpacity(0.4);
+          }
+
           return Polyline(
             polylineId: PolylineId('route_$index'),
             points: route.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
-            color: isSelected ? const Color(0xFF1976D2) : Colors.grey.withOpacity(0.5),
+            color: routeColor,
             width: isSelected ? 6 : 4,
+            zIndex: isSelected ? 10 : 1,
           );
         }).toSet(),
         markers: {
@@ -321,6 +371,8 @@ class _RoutesScreenState extends State<RoutesScreen> {
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
             infoWindow: const InfoWindow(title: 'Your Location'),
           ),
+          // Add risk markers for the selected route
+          ..._buildRiskMarkers(routesProvider.selectedRoute, zones),
         },
       ),
     );
@@ -371,6 +423,42 @@ class _RoutesScreenState extends State<RoutesScreen> {
         );
       }).toList(),
     );
+  }
+
+  List<Marker> _buildRiskMarkers(OSRMRoute? route, List<ZoneModel> zones) {
+    if (route == null) return [];
+    
+    final markers = <Marker>[];
+    final points = route.points;
+    
+    // Sample points along the route (every ~10th point)
+    for (int i = 0; i < points.length; i += 10) {
+      final point = points[i];
+      for (final zone in zones) {
+        if (zone.riskScore > 50) { // Only high/critical zones
+          final distance = OSRMService.calculateDistance(
+            point.latitude, point.longitude, 
+            zone.center.latitude, zone.center.longitude
+          );
+          
+          if (distance < (zone.radius * 1000)) { // Within zone radius (converted to meters)
+            markers.add(
+              Marker(
+                markerId: MarkerId('risk_${zone.id}_$i'),
+                position: LatLng(point.latitude, point.longitude),
+                icon: _dangerIcon ?? BitmapDescriptor.defaultMarkerWithHue(
+                  zone.riskScore > 75 ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange
+                ),
+                anchor: const Offset(0.5, 0.5),
+                infoWindow: InfoWindow(title: 'Risk Area: ${zone.name}', snippet: 'Score: ${zone.riskScore}%'),
+              ),
+            );
+            break; // Don't add multiple markers for the same point
+          }
+        }
+      }
+    }
+    return markers;
   }
 
   void _searchRoutes() async {

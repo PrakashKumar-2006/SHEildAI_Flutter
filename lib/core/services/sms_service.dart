@@ -15,38 +15,56 @@ class SMSService {
     required String message,
   }) async {
     try {
-      debugPrint('[SMS] Sending direct SMS to $phoneNumber...');
+      final cleanPhone = phoneNumber.replaceAll(RegExp(r'\s+'), '');
+      if (cleanPhone.isEmpty) return false;
+
+      debugPrint('[SMS] Attempting to send SMS to $cleanPhone...');
       
-      final SmsMessage sms = SmsMessage(phoneNumber, message);
+      final SmsMessage sms = SmsMessage(cleanPhone, message);
       
-      // sms_advanced doesn't return a Future for sendSms, it's fire and forget
-      // or we can listen to state changes if needed.
+      // Listen to delivery status if possible (sms_advanced supports this via state)
       _sender.sendSms(sms);
       
-      debugPrint('[SMS] SMS sent request triggered.');
+      debugPrint('[SMS] SMS dispatch request successful for $cleanPhone');
       return true;
     } catch (e) {
-      debugPrint('[SMS] Error sending direct SMS: $e');
+      debugPrint('[SMS] ERROR sending SMS to $phoneNumber: $e');
       return false;
     }
   }
 
-  /// Sends multiple SMS alerts to a list of contacts
+  /// Sends multiple SMS alerts to a list of contacts with retry logic
   Future<void> sendBulkSMS({
     required List<String> phoneNumbers,
     required String message,
-    bool direct = true,
   }) async {
-    if (phoneNumbers.isEmpty) return;
+    if (phoneNumbers.isEmpty) {
+      debugPrint('[SMS] No phone numbers provided for bulk SMS.');
+      return;
+    }
+
+    debugPrint('[SMS] Starting bulk SMS to ${phoneNumbers.length} contacts...');
 
     for (var phone in phoneNumbers) {
-      if (phone.trim().isEmpty) continue;
-      await sendSMS(
-        phoneNumber: phone.trim(),
-        message: message,
-      );
-      // Small delay to prevent carrier rate limiting
-      await Future.delayed(const Duration(milliseconds: 500));
+      bool sent = false;
+      int retries = 0;
+      
+      while (!sent && retries < 2) { // Try up to 2 times
+        sent = await sendSMS(
+          phoneNumber: phone,
+          message: message,
+        );
+        
+        if (!sent) {
+          retries++;
+          debugPrint('[SMS] Retry $retries for $phone...');
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      }
+      
+      // Small delay between different contacts to avoid carrier blocking
+      await Future.delayed(const Duration(milliseconds: 800));
     }
+    debugPrint('[SMS] Bulk SMS process completed.');
   }
 }

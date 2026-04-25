@@ -586,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
       clipBehavior: Clip.hardEdge,
       child: GoogleMap(
         initialCameraPosition: CameraPosition(
-          target: LatLng(safety.latitude, safety.longitude),
+          target: LatLng(safety.latitude ?? 22.7196, safety.longitude ?? 75.8577),
           zoom: 14,
         ),
         onMapCreated: (controller) => _mapController = controller,
@@ -604,7 +604,7 @@ class _HomeScreenState extends State<HomeScreen> {
         markers: {
           Marker(
             markerId: const MarkerId('current_pos'),
-            position: LatLng(safety.latitude, safety.longitude),
+            position: LatLng(safety.latitude ?? 22.7196, safety.longitude ?? 75.8577),
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           ),
         },

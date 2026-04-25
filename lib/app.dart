@@ -103,17 +103,19 @@ class App extends StatelessWidget {
                     locationService: locationService,
                   ),
         ),
-        ChangeNotifierProxyProvider3<SOSRepositoryImpl, LocationService, LocationProvider, SOSProvider>(
+        ChangeNotifierProxyProvider4<SOSRepositoryImpl, LocationService, LocationProvider, ContactRepositoryImpl, SOSProvider>(
           create: (context) => SOSProvider(
             sosRepository: context.read<SOSRepositoryImpl>(),
             locationService: context.read<LocationService>(),
             locationProvider: context.read<LocationProvider>(),
+            contactRepository: context.read<ContactRepositoryImpl>(),
           ),
-          update: (_, sosRepo, locationService, locationProvider, sosProvider) =>
+          update: (_, sosRepo, locationService, locationProvider, contactRepo, sosProvider) =>
               sosProvider ?? SOSProvider(
                     sosRepository: sosRepo,
                     locationService: locationService,
                     locationProvider: locationProvider,
+                    contactRepository: contactRepo,
                   ),
         ),
         ChangeNotifierProxyProvider<ContactRepositoryImpl, ContactProvider>(
@@ -142,11 +144,11 @@ class App extends StatelessWidget {
         // ─── New UI Providers (Bridged) ──────────────────────────────────────
         ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
         ChangeNotifierProvider<LanguageProvider>(create: (_) => LanguageProvider()),
-        ChangeNotifierProxyProvider5<SOSProvider, LocationProvider, MLProvider, ZoneService, VoiceProvider, SafetyProvider>(
+        ChangeNotifierProxyProvider6<SOSProvider, LocationProvider, MLProvider, ZoneService, VoiceProvider, CommunityProvider, SafetyProvider>(
           create: (context) => SafetyProvider(),
-          update: (context, sos, loc, ml, zone, voice, safety) {
+          update: (context, sos, loc, ml, zone, voice, community, safety) {
             final provider = safety ?? SafetyProvider();
-            provider.update(sos, loc, ml, zone, voice);
+            provider.update(sos, loc, ml, zone, voice, community);
             return provider;
           },
         ),
