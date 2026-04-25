@@ -86,6 +86,18 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    // Animate map to actual user location when it first becomes available
+    if (_mapController != null && safety.latitude != null && safety.longitude != null) {
+      final targetLat = safety.latitude!;
+      final targetLon = safety.longitude!;
+      // Only animate if we're still on the default Indore position or far away
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLng(LatLng(targetLat, targetLon)),
+        );
+      });
+    }
+
     return Scaffold(
       backgroundColor: theme.background,
       body: SafeArea(
@@ -519,7 +531,8 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            // Navigator to Routes
+            // Navigate to routes by pushing named route
+            Navigator.of(context).pushNamed('/routes');
           },
           borderRadius: BorderRadius.circular(14),
           child: Padding(

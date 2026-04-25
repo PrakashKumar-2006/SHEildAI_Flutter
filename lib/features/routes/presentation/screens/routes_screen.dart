@@ -322,19 +322,29 @@ class _RoutesScreenState extends State<RoutesScreen> {
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
           Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
         },
-        circles: (destination != null) ? zones.map((zone) {
-          final color = zone.riskScore > 75 ? Colors.red : 
-                       zone.riskScore > 50 ? Colors.orange : 
-                       zone.riskScore > 25 ? Colors.yellow : Colors.green;
-          return Circle(
-            circleId: CircleId(zone.id),
-            center: LatLng(zone.center.latitude, zone.center.longitude),
-            radius: 1000, // Enforce 1km radius
-            fillColor: color.withOpacity(0.2),
-            strokeColor: color,
-            strokeWidth: 2,
-          );
-        }).toSet() : {},
+        circles: (destination != null && routesProvider.selectedRoute != null) 
+          ? zones.where((zone) {
+              // Only show zones near the selected route (within 1km of any point)
+              return routesProvider.selectedRoute!.points.any((point) {
+                final dist = OSRMService.calculateDistance(
+                  point.latitude, point.longitude, 
+                  zone.center.latitude, zone.center.longitude
+                );
+                return dist < 1000; // 1km buffer
+              });
+            }).map((zone) {
+              final color = zone.riskScore > 75 ? Colors.red : 
+                           zone.riskScore > 50 ? Colors.orange : 
+                           zone.riskScore > 25 ? Colors.yellow : Colors.green;
+              return Circle(
+                circleId: CircleId(zone.id),
+                center: LatLng(zone.center.latitude, zone.center.longitude),
+                radius: zone.radius * 1000,
+                fillColor: color.withOpacity(0.2),
+                strokeColor: color,
+                strokeWidth: 2,
+              );
+            }).toSet() : {},
         polylines: routes.asMap().entries.map((entry) {
           final index = entry.key;
           final route = entry.value;

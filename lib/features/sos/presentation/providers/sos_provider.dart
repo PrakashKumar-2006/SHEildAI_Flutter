@@ -6,7 +6,6 @@ import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/services/sms_service.dart';
 import '../../../../core/services/video_recording_service.dart';
 import '../../../../features/contacts/data/repositories/contact_repository_impl.dart';
-import '../../../../features/contacts/domain/models/contact_model.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
@@ -46,29 +45,54 @@ class SOSProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Get current location
-      final position = await _locationService.getCurrentPosition();
+      // Get location — use cached if available, otherwise fetch fresh
+      double lat;
+      double lon;
+
+      final cachedLoc = _locationProvider.currentLocation;
+      if (cachedLoc != null) {
+        lat = cachedLoc.latitude;
+        lon = cachedLoc.longitude;
+        debugPrint('[SOS] Using cached location: $lat, $lon');
+      } else {
+        debugPrint('[SOS] No cached location, fetching fresh...');
+        try {
+          final pos = await _locationService.getCurrentPosition();
+          lat = pos.latitude;
+          lon = pos.longitude;
+        } catch (e) {
+          // Last resort: use 0,0 so SOS still fires
+          lat = 0.0;
+          lon = 0.0;
+          debugPrint('[SOS] Could not get location, using 0,0: $e');
+        }
+      }
 
       // Get emergency contacts from database
       List<String> contacts = customContacts ?? [];
       if (contacts.isEmpty) {
         final contactsResult = await _contactRepository.getContacts();
         contactsResult.fold(
-          (failure) => contacts = ['100', '1091'], // Fallback to emergency if DB fails
+          (failure) {
+            debugPrint('[SOS] Contact DB error, using emergency numbers: $failure');
+            contacts = ['112']; // India emergency
+          },
           (dbContacts) {
             if (dbContacts.isNotEmpty) {
               contacts = dbContacts.map((c) => c.phone).toList();
+              debugPrint('[SOS] Loaded ${contacts.length} guardian contacts: ${contacts.join(", ")}');
             } else {
-              contacts = ['100', '1091']; // Fallback if no contacts saved
+              debugPrint('[SOS] No guardians saved, using emergency number');
+              contacts = ['112'];
             }
           },
         );
       }
 
-      // Trigger SOS
+      // Trigger SOS record
       final result = await _sosRepository.triggerSOS(
-        latitude: position.latitude,
-        longitude: position.longitude,
+        latitude: lat,
+        longitude: lon,
         contacts: contacts,
         message: customMessage,
       );
@@ -85,29 +109,36 @@ class SOSProvider extends ChangeNotifier {
           _locationProvider.startTracking(background: true);
           notifyListeners();
 
-          // Send SMS to contacts
-          final locationUrl = 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
-          final message = customMessage ?? '🚨 EMERGENCY SOS 🚨\nI need help! My live location: $locationUrl\n(Sent via SHEild AI)';
-          debugPrint('[SOS] Triggering bulk SMS to: ${contacts.join(', ')}');
-          
+          // Build precise Google Maps link
+          final locationUrl = lat != 0.0
+              ? 'https://www.google.com/maps?q=$lat,$lon'
+              : 'Location unavailable';
+          final message = customMessage ??
+              '🚨 EMERGENCY SOS 🚨\nI need help! My live location:\n$locationUrl\n(Sent via SHEild AI Safety App)';
+
+          debugPrint('[SOS] Sending SMS to: ${contacts.join(", ")}');
+          debugPrint('[SOS] Message: $message');
+
+          // Send SMS in background - do NOT await to avoid blocking UI
           SMSService().sendBulkSMS(
             phoneNumbers: contacts,
             message: message,
           ).then((_) {
-            debugPrint('[SOS] Bulk SMS sending process completed.');
+            debugPrint('[SOS] SMS dispatch completed.');
           }).catchError((e) {
-            debugPrint('[SOS] Error in bulk SMS sending: $e');
+            debugPrint('[SOS] SMS error: $e');
           });
 
           // Start background video recording
           VideoRecordingService().startRecording().catchError((e) {
-            debugPrint('Failed to start video recording: $e');
+            debugPrint('[SOS] Video recording failed: $e');
           });
         },
       );
     } catch (e) {
       _errorMessage = e.toString();
       _isLoading = false;
+      debugPrint('[SOS] Error: $e');
       notifyListeners();
     }
   }
@@ -122,9 +153,7 @@ class SOSProvider extends ChangeNotifier {
       await _sosRepository.cancelSOS(_activeSOS!.id);
       _activeSOS = null;
       _isLoading = false;
-      // Stop background location tracking
       await _locationProvider.stopTracking();
-      // Stop video recording if active
       if (VideoRecordingService().isRecording) {
         await VideoRecordingService().stopRecording();
       }
