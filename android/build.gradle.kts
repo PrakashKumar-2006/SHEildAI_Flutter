@@ -1,3 +1,5 @@
+import org.gradle.api.Action
+
 allprojects {
     repositories {
         google()
@@ -16,7 +18,25 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
-    project.evaluationDependsOn(":app")
+    val project = this
+    if (project.name == "sms_advanced" || project.name == "telephony") {
+        val action = Action<Project> {
+            val android = extensions.findByName("android")
+            if (android is com.android.build.gradle.BaseExtension) {
+                if (android.namespace == null) {
+                    android.namespace = group.toString()
+                    if (android.namespace == "") {
+                        android.namespace = "com.github.clans.sms_advanced"
+                    }
+                }
+            }
+        }
+        if (project.state.executed) {
+            action.execute(project)
+        } else {
+            project.afterEvaluate(action)
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {

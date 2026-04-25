@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:provider/provider.dart';
 import 'package:ionicons/ionicons.dart';
+import '../../../location/presentation/providers/location_provider.dart';
+import '../../../../core/services/zone_service.dart';
+import '../providers/routes_provider.dart';
+import '../../../../core/services/osrm_service.dart';
+import '../../../../core/models/zone_model.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 class RoutesScreen extends StatefulWidget {
   const RoutesScreen({super.key});
@@ -11,17 +20,58 @@ class RoutesScreen extends StatefulWidget {
 }
 
 class _RoutesScreenState extends State<RoutesScreen> {
-  final MapController _mapController = MapController();
+  GoogleMapController? _mapController;
+  final TextEditingController _destinationController = TextEditingController();
   bool _isDarkMode = false;
-  String _destination = '';
-  String _currentLoc = 'Current Location';
-  bool _loading = false;
-  bool _isNavigating = false;
-  int _selectedRoute = 0;
+  BitmapDescriptor? _dangerIcon;
+
+  @override
+  void initState() {
+    super.initState();
+    _createDangerIcon();
+  }
+
+  Future<void> _createDangerIcon() async {
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    final Paint paint = Paint()..color = Colors.red;
+    
+    final Path path = Path();
+    path.moveTo(24, 0);
+    path.lineTo(48, 42);
+    path.lineTo(0, 42);
+    path.close();
+    canvas.drawPath(path, paint);
+
+    final TextPainter textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = const TextSpan(
+      text: '!',
+      style: TextStyle(fontSize: 28, color: Colors.white, fontWeight: FontWeight.bold),
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, const Offset(18, 8));
+
+    final img = await pictureRecorder.endRecording().toImage(48, 48);
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    if (mounted) {
+      setState(() {
+        _dangerIcon = BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _destinationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     _isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final locationProvider = context.watch<LocationProvider>();
+    final routesProvider = context.watch<RoutesProvider>();
+    final zoneService = context.watch<ZoneService>();
     
     return Scaffold(
       backgroundColor: _isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF5F6FA),
@@ -33,13 +83,17 @@ class _RoutesScreenState extends State<RoutesScreen> {
             // Page Title
             Container(
               padding: const EdgeInsets.only(left: 20, right: 20, bottom: 12),
-              child: Text(
-                'Route Planner',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    'Route Planner',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+                    ),
+                  ),
+                ],
               ),
             ),
             // Content
@@ -48,13 +102,22 @@ class _RoutesScreenState extends State<RoutesScreen> {
                 child: Column(
                   children: [
                     // Route Input Card
-                    _buildRouteInputCard(context),
+                    _buildRouteInputCard(context, routesProvider),
                     const SizedBox(height: 14),
-                    // Map
-                    _buildMapCard(context),
+                    // Map Card with Routes
+                    _buildMapCard(context, locationProvider, routesProvider, zoneService),
                     const SizedBox(height: 14),
+                    // Error Message
+                    if (routesProvider.errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Text(
+                          routesProvider.errorMessage!,
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
                     // Routes Section
-                    _buildRoutesSection(context),
+                    _buildRoutesSection(context, routesProvider),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -100,15 +163,15 @@ class _RoutesScreenState extends State<RoutesScreen> {
             ],
           ),
           Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+              color: _isDarkMode ? const Color(0xFF1E293B) : const Color(0xFFE3E6F0),
               shape: BoxShape.circle,
             ),
             child: IconButton(
               icon: const Icon(Ionicons.notifications_outline, size: 20),
-              onPressed: () {},
+              onPressed: () => Navigator.pushNamed(context, '/alerts'),
               color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
             ),
           ),
@@ -117,382 +180,300 @@ class _RoutesScreenState extends State<RoutesScreen> {
     );
   }
 
-
-  Widget _buildRouteInputCard(BuildContext context) {
+  Widget _buildRouteInputCard(BuildContext context, RoutesProvider routesProvider) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Current Location
-          Row(
-            children: [
-              const Icon(Ionicons.locate, size: 18, color: Color(0xFF0D1B6E)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _currentLoc,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          Container(
-            height: 1,
-            margin: const EdgeInsets.only(left: 30),
-            color: _isDarkMode ? const Color(0xFF334155) : const Color(0xFFF0F0F0),
-          ),
-          const SizedBox(height: 8),
-          // Destination
-          Row(
-            children: [
-              const Icon(Ionicons.location, size: 18, color: Color(0xFF0D1B6E)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Where to?',
-                    hintStyle: TextStyle(
-                      color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
-                    ),
-                    border: InputBorder.none,
-                  ),
-                  onChanged: (value) => setState(() => _destination = value),
-                ),
-              ),
-              GestureDetector(
-                onTap: () => _searchRoutes(),
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0D1B6E),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Ionicons.search,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          // Blue accent
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            height: 4,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              color: Color(0xFF1976D2),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(10),
-                bottomRight: Radius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMapCard(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      height: 450,
-      decoration: BoxDecoration(
-        color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: const LatLng(22.7196, 75.8577),
-            initialZoom: 15.0,
+      child: Column(
+        children: [
+          // Current Location Row
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1976D2).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Ionicons.location,
+                  color: Color(0xFF1976D2),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Current Location',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+                  ),
+                ),
+              ),
+            ],
           ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.sheildai.app',
-            ),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: const LatLng(22.7196, 75.8577),
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.blue.withValues(alpha: 0.2),
-                      border: Border.all(color: Colors.white, width: 1),
+          const SizedBox(height: 12),
+          // Destination Input Row
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFdc2626).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Ionicons.navigate,
+                  color: Color(0xFFdc2626),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _destinationController,
+                  decoration: InputDecoration(
+                    hintText: 'Where are you heading?',
+                    hintStyle: TextStyle(
+                      color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
+                      fontSize: 16,
                     ),
-                    child: Center(
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.blue,
-                        ),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  style: TextStyle(
+                    color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+                    fontSize: 16,
+                  ),
+                  onSubmitted: (_) => _searchRoutes(),
+                ),
+              ),
+              if (routesProvider.isLoading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF0D1B6E),
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: _searchRoutes,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1B6E),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Search',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRoutesSection(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          if (_loading)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              decoration: BoxDecoration(
-                color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                children: [
-                  const Icon(
-                    Ionicons.sync_outline,
-                    size: 40,
-                    color: Color(0xFF0D1B6E),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Analyzing...',
-                    style: TextStyle(
-                      color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (_destination.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              decoration: BoxDecoration(
-                color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                children: [
-                  const Icon(
-                    Ionicons.search_outline,
-                    size: 40,
-                    color: Color(0xFF9E9E9E),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Enter destination',
-                    style: TextStyle(
-                      color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            _buildRouteCard(context, 0, 'Safest Path', '15 mins', '3.2 km', 25),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildRouteCard(BuildContext context, int index, String name, String duration, String distance, int riskLevel) {
-    final isSelected = _selectedRoute == index;
-    final riskColor = riskLevel <= 30 
-        ? const Color(0xFF43A047) 
-        : riskLevel <= 55 
-            ? const Color(0xFFFFD700) 
-            : const Color(0xFFFF4D4D);
+  Widget _buildMapCard(BuildContext context, LocationProvider locationProvider, 
+      RoutesProvider routesProvider, ZoneService zoneService) {
+    final currentLocation = locationProvider.currentLocation;
+    final currentLat = currentLocation?.latitude ?? 22.7196;
+    final currentLng = currentLocation?.longitude ?? 75.8577;
+    final routes = routesProvider.routes;
+    final destination = routesProvider.destination;
+    final zones = zoneService.zones;
     
-    return GestureDetector(
-      onTap: () => setState(() => _selectedRoute = index),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSelected ? riskColor : Colors.transparent,
-            width: 2,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      height: 400,
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: GoogleMap(
+        initialCameraPosition: CameraPosition(
+          target: LatLng(currentLat, currentLng),
+          zoom: 15.0,
+        ),
+        onMapCreated: (controller) => _mapController = controller,
+        myLocationEnabled: true,
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: false,
+        zoomGesturesEnabled: true,
+        scrollGesturesEnabled: true,
+        tiltGesturesEnabled: true,
+        rotateGesturesEnabled: true,
+        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+          Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
+        circles: const {}, // Removed circular zones for a cleaner, more professional look as requested
+        polylines: routes.asMap().entries.map((entry) {
+          final index = entry.key;
+          final route = entry.value;
+          final isSelected = index == routesProvider.selectedRouteIndex;
+          
+          Color routeColor;
+          if (isSelected) {
+            routeColor = route.riskScore > 75 ? const Color(0xFFD32F2F) : 
+                        route.riskScore > 50 ? const Color(0xFFF57C00) : 
+                        route.riskScore > 25 ? const Color(0xFFFBC02D) : const Color(0xFF43A047);
+          } else {
+            routeColor = Colors.grey.withOpacity(0.4);
+          }
+
+          return Polyline(
+            polylineId: PolylineId('route_$index'),
+            points: route.points.map((p) => LatLng(p.latitude, p.longitude)).toList(),
+            color: routeColor,
+            width: isSelected ? 6 : 4,
+            zIndex: isSelected ? 10 : 1,
+          );
+        }).toSet(),
+        markers: {
+          if (destination != null)
+            Marker(
+              markerId: const MarkerId('destination'),
+              position: LatLng(destination.latitude, destination.longitude),
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+              infoWindow: const InfoWindow(title: 'Destination'),
+            ),
+          Marker(
+            markerId: const MarkerId('origin'),
+            position: LatLng(currentLat, currentLng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: const InfoWindow(title: 'Your Location'),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Icon Circle
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _isDarkMode 
-                    ? (riskLevel <= 30 ? const Color(0xFF064e3b) : const Color(0xFF78350f))
-                    : (riskLevel <= 30 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                riskLevel <= 30 ? Ionicons.shield_checkmark : Ionicons.warning,
-                size: 20,
-                color: riskColor,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Score
-            Column(
-              children: [
-                Text(
-                  '$riskLevel%',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: riskColor,
-                  ),
-                ),
-                Text(
-                  'Danger Level',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w600,
-                    color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 10),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
-                    ),
-                  ),
-                  Text(
-                    '$duration • $distance',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF9E9E9E),
-                    ),
-                  ),
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _isDarkMode 
-                          ? (riskLevel <= 25 ? const Color(0xFF064e3b) : const Color(0xFF7f1d1d))
-                          : (riskLevel <= 25 ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0)),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      riskLevel <= 25 ? 'Optimized Safety' : 'High Risk Zone',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: riskLevel <= 25 
-                            ? const Color(0xFF2E7D32) 
-                            : const Color(0xFFea580c),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Navigate Button
-            if (isSelected && !_isNavigating)
-              GestureDetector(
-                onTap: () => setState(() => _isNavigating = true),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0D1B6E),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Ionicons.play_circle,
-                        size: 24,
-                        color: Colors.white,
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        'Navigate',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
+          // Add risk markers for the selected route
+          ..._buildRiskMarkers(routesProvider.selectedRoute, zones),
+        },
       ),
     );
   }
 
-  void _searchRoutes() {
-    if (_destination.isEmpty) return;
-    setState(() => _loading = true);
-    // Simulate API call
-    Future.delayed(const Duration(seconds: 2), () {
-      setState(() => _loading = false);
-    });
+  Widget _buildRoutesSection(BuildContext context, RoutesProvider routesProvider) {
+    final routes = routesProvider.routes;
+    if (routes.isEmpty) return const SizedBox();
+    
+    return Column(
+      children: routes.asMap().entries.map((entry) {
+        final index = entry.key;
+        final route = entry.value;
+        final isSelected = index == routesProvider.selectedRouteIndex;
+        
+        return GestureDetector(
+          onTap: () => routesProvider.selectRoute(index),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF0D1B6E).withOpacity(0.05) : _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: isSelected ? const Color(0xFF0D1B6E) : Colors.transparent),
+            ),
+            child: Row(
+              children: [
+                const Icon(Ionicons.trail_sign_outline),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(index == 0 ? 'Safest Route' : 'Alternative Route ${index + 1}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text('${route.formattedDistance} • ${route.formattedDuration} • Risk: ${route.riskScore.toStringAsFixed(1)}%', 
+                        style: TextStyle(
+                          fontSize: 12, 
+                          color: route.riskScore > 75 ? Colors.red : (route.riskScore > 50 ? Colors.orange : Colors.grey)
+                        )
+                      ),
+                    ],
+                  ),
+                ),
+                if (isSelected) const Icon(Icons.check_circle, color: Color(0xFF0D1B6E)),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  List<Marker> _buildRiskMarkers(OSRMRoute? route, List<ZoneModel> zones) {
+    if (route == null) return [];
+    
+    final markers = <Marker>[];
+    final points = route.points;
+    
+    // Sample points along the route (every ~10th point)
+    for (int i = 0; i < points.length; i += 10) {
+      final point = points[i];
+      for (final zone in zones) {
+        if (zone.riskScore > 50) { // Only high/critical zones
+          final distance = OSRMService.calculateDistance(
+            point.latitude, point.longitude, 
+            zone.center.latitude, zone.center.longitude
+          );
+          
+          if (distance < (zone.radius * 1000)) { // Within zone radius (converted to meters)
+            markers.add(
+              Marker(
+                markerId: MarkerId('risk_${zone.id}_$i'),
+                position: LatLng(point.latitude, point.longitude),
+                icon: _dangerIcon ?? BitmapDescriptor.defaultMarkerWithHue(
+                  zone.riskScore > 75 ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange
+                ),
+                anchor: const Offset(0.5, 0.5),
+                infoWindow: InfoWindow(title: 'Risk Area: ${zone.name}', snippet: 'Score: ${zone.riskScore}%'),
+              ),
+            );
+            break; // Don't add multiple markers for the same point
+          }
+        }
+      }
+    }
+    return markers;
+  }
+
+  void _searchRoutes() async {
+    final dest = _destinationController.text.trim();
+    if (dest.isEmpty) return;
+    
+    final routesProvider = context.read<RoutesProvider>();
+    final loc = context.read<LocationProvider>().currentLocation;
+    if (loc == null) return;
+    
+    await routesProvider.searchAndCalculateRoutes(
+      loc.latitude, loc.longitude, dest,
+      hour: DateTime.now().hour,
+      month: DateTime.now().month,
+    );
+    
+    if (routesProvider.destination != null && _mapController != null) {
+      _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(routesProvider.destination!.latitude, routesProvider.destination!.longitude)));
+    }
   }
 }

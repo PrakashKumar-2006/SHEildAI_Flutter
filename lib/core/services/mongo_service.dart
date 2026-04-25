@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
@@ -18,16 +19,46 @@ class MongoService {
   Future<void> connect() async {
     try {
       _connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING'];
+      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'test';
+      
+      debugPrint('Attempting to connect to MongoDB (DB: $dbName)...');
       
       if (_connectionString == null || _connectionString!.isEmpty) {
+        debugPrint('ERROR: MongoDB connection string is null or empty!');
         throw Exception('MongoDB connection string not found in environment variables');
+      }
+
+      // Ensure DB name is present in the URI for mongo_dart
+      if (!_connectionString!.contains('.net/')) {
+         // Not an Atlas SRV string or already has a path
+      } else {
+        final uri = Uri.parse(_connectionString!);
+        if (uri.path.isEmpty || uri.path == '/') {
+          if (_connectionString!.contains('?')) {
+            _connectionString = _connectionString!.replaceFirst('?', '$dbName?');
+          } else {
+            _connectionString = _connectionString!.endsWith('/') 
+                ? '$_connectionString$dbName' 
+                : '$_connectionString/$dbName';
+          }
+        }
+      }
+      
+      // Add authSource=admin if not present for Atlas compatibility
+      if (_connectionString!.contains('mongodb+srv') && !_connectionString!.contains('authSource')) {
+        _connectionString = _connectionString!.contains('?') 
+            ? '$_connectionString&authSource=admin' 
+            : '$_connectionString?authSource=admin';
       }
       
       _db = await Db.create(_connectionString!);
       await _db!.open();
+      
       _isConnected = true;
+      debugPrint('SUCCESS: Connected to MongoDB Database: $dbName');
     } catch (e) {
       _isConnected = false;
+      debugPrint('FAILED to connect to MongoDB: $e');
       rethrow;
     }
   }
@@ -60,9 +91,12 @@ class MongoService {
   Future<bool> createUser(Map<String, dynamic> userData) async {
     try {
       final collection = getCollection('users');
+      debugPrint('Inserting user into MongoDB: ${userData['email']}');
       await collection.insertOne(userData);
+      debugPrint('SUCCESS: User inserted into MongoDB');
       return true;
     } catch (e) {
+      debugPrint('FAILED to create user in MongoDB: $e');
       return false;
     }
   }

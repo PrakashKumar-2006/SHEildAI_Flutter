@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../../core/services/location_service.dart';
 import '../../data/repositories/location_repository_impl.dart';
@@ -11,17 +12,91 @@ class LocationProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isTracking = false;
   String? _errorMessage;
+  StreamSubscription? _streamSubscription;
 
   LocationProvider({
     required LocationRepositoryImpl locationRepository,
     required LocationService locationService,
   })  : _locationRepository = locationRepository,
-        _locationService = locationService;
+        _locationService = locationService {
+    // Auto-start on creation
+    _bootLocation();
+  }
 
   LocationModel? get currentLocation => _currentLocation;
   bool get isLoading => _isLoading;
   bool get isTracking => _isTracking;
   String? get errorMessage => _errorMessage;
+
+  /// Called automatically at app boot.
+  /// 1. Immediately tries to get a fast position (last known or GPS race)
+  /// 2. Starts a continuous stream for live updates
+  Future<void> _bootLocation() async {
+    debugPrint('[LocationProvider] Booting location...');
+    _isLoading = true;
+    notifyListeners();
+
+    // Step 1: get a quick fix
+    try {
+      final perm = await _locationService.requestPermission();
+      if (!perm) {
+        _errorMessage = 'Location permission denied. Please grant it in settings.';
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      // Fire off immediate fix (doesn't block stream start)
+      _locationService.getCurrentPosition().then((position) {
+        _currentLocation = LocationModel(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+          timestamp: position.timestamp,
+        );
+        _isLoading = false;
+        debugPrint('[LocationProvider] Got initial fix: ${position.latitude}, ${position.longitude}');
+        notifyListeners();
+      }).catchError((e) {
+        debugPrint('[LocationProvider] Initial fix failed: $e');
+        _isLoading = false;
+        _errorMessage = 'Could not get GPS fix. Ensure GPS is enabled.';
+        notifyListeners();
+      });
+    } catch (e) {
+      debugPrint('[LocationProvider] Permission error: $e');
+    }
+
+    // Step 2: start continuous stream for live updates
+    _startStream();
+  }
+
+  void _startStream() {
+    if (_isTracking) return;
+    _locationService.startLocationUpdates(background: false);
+    _isTracking = true;
+
+    _streamSubscription?.cancel();
+    _streamSubscription = _locationService.positionStream.listen(
+      (position) {
+        _currentLocation = LocationModel(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+          timestamp: position.timestamp,
+        );
+        _isLoading = false;
+        _errorMessage = null;
+        debugPrint('[LocationProvider] Stream update: ${position.latitude}, ${position.longitude}');
+        notifyListeners();
+      },
+      onError: (e) {
+        debugPrint('[LocationProvider] Stream error: $e');
+        _errorMessage = e.toString();
+        notifyListeners();
+      },
+    );
+  }
 
   Future<void> getCurrentLocation() async {
     _isLoading = true;
@@ -50,55 +125,45 @@ class LocationProvider extends ChangeNotifier {
   }
 
   Future<void> startTracking({bool background = false}) async {
-    _isLoading = true;
+    if (_isTracking && !background) return;
+
+    _locationService.stopLocationUpdates();
+    _streamSubscription?.cancel();
+    _isTracking = false;
+
+    _locationService.startLocationUpdates(background: background);
+    _isTracking = true;
+
+    _streamSubscription = _locationService.positionStream.listen(
+      (position) {
+        _currentLocation = LocationModel(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+          timestamp: position.timestamp,
+        );
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (e) {
+        debugPrint('[LocationProvider] Tracking error: $e');
+      },
+    );
     notifyListeners();
-
-    try {
-      final result = await _locationRepository.startLocationUpdates(background: background);
-      result.fold(
-        (failure) {
-          _errorMessage = failure.toString();
-          _isLoading = false;
-          notifyListeners();
-        },
-        (_) {
-          _isTracking = true;
-          _isLoading = false;
-
-          // Listen to location stream
-          _locationRepository.getLocationStream()?.listen((location) {
-            _currentLocation = location;
-            notifyListeners();
-          });
-
-          notifyListeners();
-        },
-      );
-    } catch (e) {
-      _errorMessage = e.toString();
-      _isLoading = false;
-      notifyListeners();
-    }
   }
 
   Future<void> stopTracking() async {
-    try {
-      await _locationRepository.stopLocationUpdates();
-      _isTracking = false;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = e.toString();
-      notifyListeners();
-    }
+    _locationService.stopLocationUpdates();
+    _streamSubscription?.cancel();
+    _isTracking = false;
+    notifyListeners();
   }
 
-  Future<bool> hasPermission() async {
-    return await _locationService.hasPermission();
-  }
+  Future<bool> hasPermission() async =>
+      await _locationService.hasPermission();
 
-  Future<bool> requestPermission() async {
-    return await _locationService.requestPermission();
-  }
+  Future<bool> requestPermission() async =>
+      await _locationService.requestPermission();
 
   void clearError() {
     _errorMessage = null;
@@ -107,6 +172,7 @@ class LocationProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _streamSubscription?.cancel();
     _locationRepository.dispose();
     super.dispose();
   }

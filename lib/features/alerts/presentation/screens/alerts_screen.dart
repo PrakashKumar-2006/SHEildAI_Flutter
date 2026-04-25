@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
+import 'package:provider/provider.dart';
+import '../../../community/presentation/providers/community_provider.dart';
+import '../../../location/presentation/providers/location_provider.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart' as ll;
+import '../../../../core/services/storage_service.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -15,6 +21,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   String _reportDesc = '';
   int _reportSeverity = 5;
   bool _submitting = false;
+  GoogleMapController? _mapController;
 
   final List<String> _incidentTypes = [
     "Suspicious person following",
@@ -48,8 +55,19 @@ class _AlertsScreenState extends State<AlertsScreen> {
                         // Report Observation Card
                         _buildObservationCard(context),
                         const SizedBox(height: 16),
-                        // Alert Feed
-                        _buildAlertFeed(context),
+                        // Safety Alert Feed
+                        Consumer<CommunityProvider>(
+                          builder: (context, communityProvider, child) {
+                            return _buildAlertFeed(context, communityProvider);
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        // Map showing alerts
+                        Consumer2<LocationProvider, CommunityProvider>(
+                          builder: (context, locationProvider, communityProvider, child) {
+                            return _buildAlertsMap(context, locationProvider, communityProvider);
+                          },
+                        ),
                         const SizedBox(height: 20),
                       ],
                     ),
@@ -202,75 +220,157 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
   }
 
-  Widget _buildAlertFeed(BuildContext context) {
+  Widget _buildAlertFeed(BuildContext context, CommunityProvider communityProvider) {
+    final reports = communityProvider.reports;
+    
+    if (communityProvider.isLoading) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Safety Alert Feed',
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
               color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
             ),
           ),
           const SizedBox(height: 12),
-          // Status Card
+          if (reports.isEmpty)
+            Text(
+              'No recent alerts in your area',
+              style: TextStyle(
+                fontSize: 14,
+                color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
+              ),
+            )
+          else
+            ...reports.take(5).map((report) => _buildAlertItem(context, report)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlertsMap(BuildContext context, LocationProvider locationProvider, CommunityProvider communityProvider) {
+    final reports = communityProvider.reports;
+    final currentLocation = locationProvider.currentLocation;
+    final currentLat = currentLocation?.latitude ?? 22.7196;
+    final currentLng = currentLocation?.longitude ?? 75.8577;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      height: 200,
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: LatLng(currentLat, currentLng),
+            zoom: 13.0,
+          ),
+          onMapCreated: (controller) => _mapController = controller,
+          myLocationEnabled: true,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          markers: reports.map((report) {
+            return Marker(
+              markerId: MarkerId(report.id.toString()),
+              position: LatLng(report.latitude, report.longitude),
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+              infoWindow: InfoWindow(
+                title: report.incidentType,
+                snippet: report.description,
+              ),
+            );
+          }).toSet(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlertItem(BuildContext context, dynamic report) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
           Container(
-            padding: const EdgeInsets.all(16),
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 2,
-                  offset: const Offset(0, 2),
+              color: const Color(0xFFFFE0E0),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Ionicons.warning,
+              size: 20,
+              color: Color(0xFFDC2626),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  report.incidentType ?? 'Safety Alert',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  report.description ?? 'No description',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
+                  ),
                 ),
               ],
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _isDarkMode ? const Color(0xFF064e3b) : const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(
-                    Ionicons.shield_checkmark,
-                    size: 20,
-                    color: Color(0xFF43A047),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'System Vigilant',
-                        style: const TextStyle(
-                          color: Color(0xFF43A047),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'No alerts in your area',
-                        style: TextStyle(
-                          color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+          ),
+          Text(
+            '${report.severity ?? 5}/10',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
             ),
           ),
         ],
@@ -528,7 +628,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
   }
 
-  void _submitReport() {
+  void _submitReport() async {
     if (_reportDesc.trim().isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -537,20 +637,40 @@ class _AlertsScreenState extends State<AlertsScreen> {
       }
       return;
     }
+    
+    final communityProvider = Provider.of<CommunityProvider>(context, listen: false);
+    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
+    final currentLocation = locationProvider.currentLocation;
+    
     setState(() => _submitting = true);
-    // Simulate API call
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _submitting = false;
-          _showReportModal = false;
-          _reportDesc = '';
-          _reportSeverity = 5;
-        });
+    
+    await communityProvider.submitReport(
+      phone: StorageService().getUserPhone(),
+      latitude: currentLocation?.latitude ?? 22.7196,
+      longitude: currentLocation?.longitude ?? 75.8577,
+      incidentType: _reportType,
+      description: _reportDesc,
+      severity: _reportSeverity,
+      anonymous: true,
+    );
+    
+    if (mounted) {
+      setState(() {
+        _submitting = false;
+        _showReportModal = false;
+        _reportDesc = '';
+        _reportSeverity = 5;
+      });
+      
+      if (communityProvider.errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${communityProvider.errorMessage}')),
+        );
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Your report has been shared anonymously with the community.')),
         );
       }
-    });
+    }
   }
 }

@@ -6,17 +6,21 @@ import '../../../../core/services/storage_service.dart';
 import '../../data/repositories/sos_repository_impl.dart';
 import '../../domain/models/sos_model.dart';
 import '../../../location/presentation/providers/location_provider.dart';
+import '../../../../core/services/sms_service.dart';
+import '../../../../core/services/video_recording_service.dart';
+import '../../../../features/contacts/data/repositories/contact_repository_impl.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
   final LocationService _locationService;
   final LocationProvider _locationProvider;
+  final ContactRepositoryImpl _contactRepository;
 
   SOSModel? _activeSOS;
   bool _isLoading = false;
   String? _errorMessage;
   String _sessionDuration = '00:00';
-  String _currentLocation = 'Current Location';
+  final String _currentLocation = 'Current Location';
 
   /// Native SOS state driven by the real-time EventChannel stream.
   SOSNativeState _nativeState = SOSNativeState.idle;
@@ -43,9 +47,11 @@ class SOSProvider extends ChangeNotifier {
     required SOSRepositoryImpl sosRepository,
     required LocationService locationService,
     required LocationProvider locationProvider,
+    required ContactRepositoryImpl contactRepository,
   })  : _sosRepository = sosRepository,
         _locationService = locationService,
-        _locationProvider = locationProvider {
+        _locationProvider = locationProvider,
+        _contactRepository = contactRepository {
     _subscribeToNativeEvents();
   }
 
@@ -172,23 +178,62 @@ class SOSProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    // Resolve contacts early — passed to native layer for SMS dispatch
-    final contacts = customContacts ?? StorageService().getTrustedContacts();
+    // Resolve contacts — try SharedPreferences first (fast, native-synced),
+    // fall back to contact DB, then emergency number.
+    List<String> contacts = customContacts ?? StorageService().getTrustedContacts();
+    if (contacts.isEmpty) {
+      final contactsResult = await _contactRepository.getContacts();
+      contactsResult.fold(
+        (failure) {
+          debugPrint('[SOS] Contact DB error, using emergency numbers: $failure');
+          contacts = ['112'];
+        },
+        (dbContacts) {
+          if (dbContacts.isNotEmpty) {
+            contacts = dbContacts.map((c) => c.phone).toList();
+            debugPrint('[SOS] Loaded ${contacts.length} guardian contacts: ${contacts.join(", ")}');
+          } else {
+            debugPrint('[SOS] No guardians saved, using emergency number');
+            contacts = ['112'];
+          }
+        },
+      );
+    }
 
-    // 1. Fire native SOS — this is immediate and does not await location.
+    // 1. Fire native SOS — immediate, does not await location.
     //    The EventChannel will push subsequent state changes automatically.
     final nativeResult = await SOSPlatformService.startSOS(contacts: contacts);
     _nativeState = nativeResult;
     debugPrint('[SOSProvider] Native channel response: ${nativeResult.displayName}');
 
     try {
-      // 2. Get current location (may take a moment)
-      final position = await _locationService.getCurrentPosition();
+      // 2. Get location — use cached if available, otherwise fetch fresh
+      double lat;
+      double lon;
+
+      final cachedLoc = _locationProvider.currentLocation;
+      if (cachedLoc != null) {
+        lat = cachedLoc.latitude;
+        lon = cachedLoc.longitude;
+        debugPrint('[SOS] Using cached location: $lat, $lon');
+      } else {
+        debugPrint('[SOS] No cached location, fetching fresh...');
+        try {
+          final pos = await _locationService.getCurrentPosition();
+          lat = pos.latitude;
+          lon = pos.longitude;
+        } catch (e) {
+          // Last resort: use 0,0 so SOS still fires
+          lat = 0.0;
+          lon = 0.0;
+          debugPrint('[SOS] Could not get location, using 0,0: $e');
+        }
+      }
 
       // 3. Persist SOS event via repository
       final result = await _sosRepository.triggerSOS(
-        latitude: position.latitude,
-        longitude: position.longitude,
+        latitude: lat,
+        longitude: lon,
         contacts: contacts,
         message: customMessage,
       );
@@ -202,15 +247,40 @@ class SOSProvider extends ChangeNotifier {
         (sos) {
           _activeSOS = sos;
           _isLoading = false;
-          // Start background location tracking during SOS
           _locationProvider.startTracking(background: true);
           _startDurationTimer();
           notifyListeners();
+
+          // Build precise Google Maps link
+          final locationUrl = lat != 0.0
+              ? 'https://www.google.com/maps?q=$lat,$lon'
+              : 'Location unavailable';
+          final message = customMessage ??
+              '🚨 EMERGENCY SOS 🚨\nI need help! My live location:\n$locationUrl\n(Sent via SHEild AI Safety App)';
+
+          debugPrint('[SOS] Sending SMS to: ${contacts.join(", ")}');
+          debugPrint('[SOS] Message: $message');
+
+          // Send SMS in background - do NOT await to avoid blocking UI
+          SMSService().sendBulkSMS(
+            phoneNumbers: contacts,
+            message: message,
+          ).then((_) {
+            debugPrint('[SOS] SMS dispatch completed.');
+          }).catchError((e) {
+            debugPrint('[SOS] SMS error: $e');
+          });
+
+          // Start background video recording
+          VideoRecordingService().startRecording().catchError((e) {
+            debugPrint('[SOS] Video recording failed: $e');
+          });
         },
       );
     } catch (e) {
       _errorMessage = e.toString();
       _isLoading = false;
+      debugPrint('[SOS] Error: $e');
       notifyListeners();
     }
   }
@@ -236,8 +306,11 @@ class SOSProvider extends ChangeNotifier {
       _activeSOS = null;
       _isLoading = false;
       _durationTimer?.cancel();
-      // Stop background location tracking
+      // Stop background location tracking and video
       await _locationProvider.stopTracking();
+      if (VideoRecordingService().isRecording) {
+        await VideoRecordingService().stopRecording();
+      }
       notifyListeners();
     } catch (e) {
       _errorMessage = e.toString();

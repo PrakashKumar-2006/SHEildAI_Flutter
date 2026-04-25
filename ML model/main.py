@@ -550,15 +550,15 @@ def parse_pop(val) -> float:
 
 def get_risk_label(score: float) -> str:
     """
-    4-zone risk classification (v4.0):
+    4-zone risk classification (v4.1):
       0–25  → SAFE
-      26–62 → MEDIUM
-      63–75 → HIGH
+      26–50 → MEDIUM
+      51–75 → HIGH
       76–100 → CRITICAL
     """
     if score <= 25:
         return "SAFE"
-    if score <= 62:
+    if score <= 50:
         return "MEDIUM"
     if score <= 75:
         return "HIGH"

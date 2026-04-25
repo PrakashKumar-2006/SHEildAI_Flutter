@@ -12,7 +12,7 @@ class AppConstants {
   // SOS Settings
   static const int sosCooldownSeconds = 30;
   static const int sosAutoCancelMinutes = 5;
-  static const int locationUpdateIntervalSeconds = 10;
+  static const int locationUpdateIntervalSeconds = 5;
 
   // Storage Keys
   static const String keyUserId = 'user_id';
@@ -21,6 +21,8 @@ class AppConstants {
   static const String keySosHistory = 'sos_history';
   static const String keyVoiceTriggerEnabled = 'voice_trigger_enabled';
   static const String keyLastSosTime = 'last_sos_time';
+  static const String keyUserName = 'user_name';
+  static const String keyUserPhone = 'user_phone';
 
   // Voice Triggers
   static const List<String> voiceTriggers = [

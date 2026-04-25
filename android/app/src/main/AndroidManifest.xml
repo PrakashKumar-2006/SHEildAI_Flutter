@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- ═══════════════════════════════════════════════════
          PERMISSIONS — SOS System Requirements
@@ -18,6 +19,15 @@
 
     <!-- SMS dispatch to emergency contacts -->
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- Phone state -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!-- Storage (API 28 and below only) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- Foreground service — base permission -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -152,6 +162,16 @@
             android:foregroundServiceType="microphone" />
 
         <!-- ═══════════════════════════════════════════════
+             FLUTTER BACKGROUND SERVICE
+             Used by flutter_background_service plugin
+             ═══════════════════════════════════════════════ -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location|camera|microphone"
+            android:exported="true"
+            tools:replace="android:exported" />
+
+        <!-- ═══════════════════════════════════════════════
              BOOT RECEIVER — restart services after reboot
              ═══════════════════════════════════════════════ -->
         <receiver
@@ -185,6 +205,9 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${mapsApiKey}"/>
     </application>
 
     <!-- Flutter text-processing queries — do NOT remove -->

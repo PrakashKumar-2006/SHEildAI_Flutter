@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import '../../../contacts/presentation/providers/contact_provider.dart';
+import '../../../location/presentation/providers/location_provider.dart';
+import '../../../../core/providers/ml_provider.dart';
+import '../../../../core/services/storage_service.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -11,27 +16,21 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isDarkMode = false;
-  int _contactCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadContactCount();
-  }
-
-  Future<void> _loadContactCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    final contacts = prefs.getStringList('trusted_contacts');
-    if (mounted) {
-      setState(() {
-        _contactCount = contacts?.length ?? 0;
-      });
-    }
+    // Load contacts when screen initializes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ContactProvider>().loadContacts();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     _isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final mlProvider = context.watch<MLProvider>();
+    final locationProvider = context.watch<LocationProvider>();
     
     return Scaffold(
       backgroundColor: _isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF5F6FA),
@@ -46,40 +45,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   children: [
                     // Profile Card
-                    _buildProfileCard(context),
+                    _buildProfileCard(context, mlProvider, locationProvider),
                     const SizedBox(height: 24),
                     // Account Settings
-                    _buildSection(context, 'Account Settings', [
-                      _buildOptionItem(
-                        context,
-                        icon: Ionicons.person,
-                        iconColor: const Color(0xFF7B1FA2),
-                        iconBg: const Color(0xFFF3E5F5),
-                        title: 'Personal Information',
-                        onTap: () {},
-                      ),
-                      _buildOptionItem(
-                        context,
-                        icon: Ionicons.star,
-                        iconColor: const Color(0xFF4CAF50),
-                        iconBg: const Color(0xFFE8F5E9),
-                        title: 'Subscription & Plans',
-                        subtitle: 'Free Plan',
-                        onTap: () {},
-                      ),
-                      _buildOptionItem(
-                        context,
-                        icon: Ionicons.heart,
-                        iconColor: const Color(0xFFFF0000),
-                        iconBg: const Color(0xFFFFE5E5),
-                        title: 'SOS Guardians',
-                        subtitle: '$_contactCount contacts active',
-                        onTap: () async {
-                          await Navigator.pushNamed(context, '/manage_contacts');
-                          _loadContactCount(); // Refresh count after returning
-                        },
-                      ),
-                    ]),
+                    Consumer<ContactProvider>(
+                      builder: (context, contactProvider, child) {
+                        final contactCount = contactProvider.contacts.length;
+                        return _buildSection(context, 'Account Settings', [
+                          _buildOptionItem(
+                            context,
+                            icon: Ionicons.person,
+                            iconColor: const Color(0xFF7B1FA2),
+                            iconBg: const Color(0xFFF3E5F5),
+                            title: 'Personal Information',
+                            subtitle: StorageService().getUserPhone(),
+                            onTap: () {},
+                          ),
+                          _buildOptionItem(
+                            context,
+                            icon: Ionicons.star,
+                            iconColor: const Color(0xFF4CAF50),
+                            iconBg: const Color(0xFFE8F5E9),
+                            title: 'Subscription & Plans',
+                            subtitle: 'Free Plan',
+                            onTap: () {},
+                          ),
+                          _buildOptionItem(
+                            context,
+                            icon: Ionicons.heart,
+                            iconColor: const Color(0xFFFF0000),
+                            iconBg: const Color(0xFFFFE5E5),
+                            title: 'SOS Guardians',
+                            subtitle: contactCount == 0 ? 'No contacts' : '$contactCount contact${contactCount > 1 ? 's' : ''}',
+                            onTap: () async {
+                              await Navigator.pushNamed(context, '/manage_contacts');
+                              if (context.mounted) {
+                                context.read<ContactProvider>().loadContacts();
+                              }
+                            },
+                          ),
+                        ]);
+                      }
+                    ),
                     const SizedBox(height: 24),
                     // App Preferences
                     _buildSection(context, 'App Preferences', [
@@ -110,8 +117,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildThemeToggle(context),
                     ]),
                     const SizedBox(height: 24),
-                    // Return Home Button
-                    _buildReturnHomeButton(context),
+                    // Log Out Button
+                    _buildLogOutButton(context),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -149,7 +156,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileCard(BuildContext context) {
+  Widget _buildProfileCard(BuildContext context, dynamic mlProvider, dynamic locationProvider) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(24),
@@ -186,18 +193,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
           // Name
-          Text(
-            'Safety Watcher',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
-            ),
+          Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              final name = auth.user?.displayName ?? StorageService().getUserName();
+              return Text(
+                name,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 4),
-          // Status
+          // Status - Dynamic from MLProvider
           Text(
-            'Status: SAFE Risk',
+            'Status: ${mlProvider.riskPrediction?['risk_level']?.toString().toUpperCase() ?? 'SAFE'} Risk',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -222,7 +234,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     children: [
                       Text(
-                        '85%',
+                        mlProvider.riskPrediction?['risk_score']?.toString() ?? '85',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -435,14 +447,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildReturnHomeButton(BuildContext context) {
+  Widget _buildLogOutButton(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.pop(context),
+      onTap: () async {
+        await context.read<AuthProvider>().signOut();
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: _isDarkMode ? const Color(0xFF1e3a8a) : const Color(0xFFE3F2FD),
+          color: _isDarkMode ? const Color(0xFF7f1d1d).withValues(alpha: 0.3) : const Color(0xFFFFEBEE),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -450,14 +467,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Icon(
               Ionicons.log_out_outline,
-              size: 20,
-              color: _isDarkMode ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
+              size: 22,
+              color: const Color(0xFFE53935),
             ),
             const SizedBox(width: 8),
-            Text(
-              'Return Home',
+            const Text(
+              'Log Out',
               style: TextStyle(
-                color: _isDarkMode ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
+                color: Color(0xFFE53935),
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
