@@ -4,20 +4,44 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/mongo_service.dart';
 
+// Fallback user class for when Firebase is not configured
+class MockUser {
+  final String uid;
+  final String? email;
+  final String? displayName;
+  final String? photoURL;
+
+  MockUser({required this.uid, this.email, this.displayName, this.photoURL});
+  
+  Future<void> updateDisplayName(String name) async {}
+  Future<void> reload() async {}
+}
+
 class AuthProvider extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseAuth? _auth;
   final StorageService _storageService;
+  bool _isFirebaseAvailable = false;
 
   bool _isLoading = false;
   String? _error;
-  User? _user;
+  dynamic _user; // Using dynamic to support both Firebase User and MockUser
 
   AuthProvider(this._storageService) {
-    _auth.authStateChanges().listen((User? user) {
-      _user = user;
-      notifyListeners();
-    });
+    try {
+      _auth = FirebaseAuth.instance;
+      _isFirebaseAvailable = true;
+      _auth!.authStateChanges().listen((User? user) {
+        _user = user;
+        notifyListeners();
+      });
+    } catch (e) {
+      debugPrint("AuthProvider: Firebase not available. Auth features will be disabled. Error: $e");
+      _isFirebaseAvailable = false;
+    }
   }
+
+  bool get isFirebaseAvailable => _isFirebaseAvailable;
+
 
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -37,8 +61,44 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> signUp(String email, String password, String name) async {
     setLoading(true);
     setError(null);
+    if (!_isFirebaseAvailable || _auth == null) {
+      // Fallback to MongoDB-only signup
+      try {
+        final mongoService = MongoService();
+        if (!mongoService.isConnected) await mongoService.connect();
+        
+        final existing = await mongoService.getUser(email);
+        if (existing != null) {
+          setError('User already exists in database.');
+          setLoading(false);
+          return false;
+        }
+
+        await mongoService.createUser({
+          'email': email,
+          'phone': email,
+          'password': password, // Note: In production use hashing, but this is a fallback for exploration
+          'createdAt': DateTime.now().toIso8601String(),
+          'name': name,
+          'profile': {},
+        });
+
+        _user = MockUser(uid: email, email: email, displayName: name);
+        await _storageService.setUserPhone(email);
+        await _storageService.setUserName(name);
+        
+        setLoading(false);
+        return true;
+      } catch (e) {
+        debugPrint('Local signup failed: $e. Falling back to Guest Explorer mode.');
+        _user = MockUser(uid: 'guest_explorer', email: email, displayName: 'Guest Explorer');
+        await _storageService.setUserName('Guest Explorer');
+        setLoading(false);
+        return true; // Allow exploration even if DB fails
+      }
+    }
     try {
-      UserCredential userCred = await _auth.createUserWithEmailAndPassword(
+      UserCredential userCred = await _auth!.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -47,7 +107,7 @@ class AuthProvider extends ChangeNotifier {
          // Update Firebase display name
          await _user!.updateDisplayName(name);
          await _user!.reload();
-         _user = _auth.currentUser; // Get updated user instance
+         _user = _auth?.currentUser; // Get updated user instance
          
          await _storageService.setUserPhone(_user!.email ?? '');
          await _storageService.setUserName(name);
@@ -81,8 +141,44 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> signIn(String email, String password) async {
     setLoading(true);
     setError(null);
+    if (!_isFirebaseAvailable || _auth == null) {
+      // Fallback to MongoDB-only signin
+      try {
+        final mongoService = MongoService();
+        if (!mongoService.isConnected) await mongoService.connect();
+        
+        final userData = await mongoService.getUser(email);
+        if (userData == null) {
+          setError('User not found.');
+          setLoading(false);
+          return false;
+        }
+
+        // Basic password check for the fallback
+        if (userData['password'] != null && userData['password'] != password) {
+          setError('Invalid password.');
+          setLoading(false);
+          return false;
+        }
+
+        final name = userData['name'] as String? ?? email.split('@')[0];
+        _user = MockUser(uid: email, email: email, displayName: name);
+        
+        await _storageService.setUserName(name);
+        await _storageService.setUserPhone(userData['phone'] ?? email);
+        
+        setLoading(false);
+        return true;
+      } catch (e) {
+        debugPrint('Local login failed: $e. Falling back to Guest Explorer mode.');
+        _user = MockUser(uid: 'guest_explorer', email: email, displayName: 'Guest Explorer');
+        await _storageService.setUserName('Guest Explorer');
+        setLoading(false);
+        return true; // Allow exploration even if DB fails
+      }
+    }
     try {
-      UserCredential userCred = await _auth.signInWithEmailAndPassword(
+      UserCredential userCred = await _auth!.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -105,7 +201,7 @@ class AuthProvider extends ChangeNotifier {
             if (_user!.displayName == null || _user!.displayName!.isEmpty) {
               await _user!.updateDisplayName(name);
               await _user!.reload();
-              _user = _auth.currentUser;
+              _user = _auth?.currentUser;
             }
           }
         } catch (dbError) {
@@ -148,8 +244,13 @@ class AuthProvider extends ChangeNotifier {
         idToken: googleAuth.idToken,
       );
 
+      if (!_isFirebaseAvailable || _auth == null) {
+        setError('Google Sign-In requires Firebase configuration. Please use Email/Password sign-in for exploration.');
+        setLoading(false);
+        return false;
+      }
       // Sign in to Firebase with the Google [UserCredential]
-      UserCredential userCred = await _auth.signInWithCredential(credential);
+      UserCredential userCred = await _auth!.signInWithCredential(credential);
       _user = userCred.user;
       
       if (_user != null) {
@@ -194,8 +295,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    await _auth.signOut();
-    await GoogleSignIn.instance.signOut();
+    if (_isFirebaseAvailable && _auth != null) {
+      await _auth!.signOut();
+      await GoogleSignIn.instance.signOut();
+    }
     _user = null;
     notifyListeners();
   }

@@ -28,15 +28,27 @@ class MongoService {
         throw Exception('MongoDB connection string not found in environment variables');
       }
 
-      // If connection string doesn't have the DB name, inject it before the query parameters
-      if (!_connectionString!.contains('.net/$dbName')) {
-        if (_connectionString!.contains('?')) {
-          _connectionString = _connectionString!.replaceFirst('?', '$dbName?');
-        } else if (!_connectionString!.endsWith('/')) {
-          _connectionString = '$_connectionString/$dbName';
-        } else {
-          _connectionString = '$_connectionString$dbName';
+      // Ensure DB name is present in the URI for mongo_dart
+      if (!_connectionString!.contains('.net/')) {
+         // Not an Atlas SRV string or already has a path
+      } else {
+        final uri = Uri.parse(_connectionString!);
+        if (uri.path.isEmpty || uri.path == '/') {
+          if (_connectionString!.contains('?')) {
+            _connectionString = _connectionString!.replaceFirst('?', '$dbName?');
+          } else {
+            _connectionString = _connectionString!.endsWith('/') 
+                ? '$_connectionString$dbName' 
+                : '$_connectionString/$dbName';
+          }
         }
+      }
+      
+      // Add authSource=admin if not present for Atlas compatibility
+      if (_connectionString!.contains('mongodb+srv') && !_connectionString!.contains('authSource')) {
+        _connectionString = _connectionString!.contains('?') 
+            ? '$_connectionString&authSource=admin' 
+            : '$_connectionString?authSource=admin';
       }
       
       _db = await Db.create(_connectionString!);

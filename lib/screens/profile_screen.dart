@@ -19,7 +19,9 @@ class ProfileScreen extends StatelessWidget {
     final lang = context.watch<LanguageProvider>();
     final safety = context.watch<SafetyProvider>();
     final isDark = theme.isDarkMode;
-    final isModal = ModalRoute.of(context)?.settings?.name != null;
+    
+    // Safety check for navigator context
+    final canPop = Navigator.of(context).canPop();
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -32,23 +34,26 @@ class ProfileScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).canPop() ? Navigator.of(context).pop() : null,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.centerLeft,
-                      child: Icon(Icons.arrow_back_rounded, color: theme.textPrimary, size: 24),
-                    ),
-                  ),
+                  if (canPop)
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.centerLeft,
+                        child: Icon(Icons.arrow_back_rounded, color: theme.textPrimary, size: 24),
+                      ),
+                    )
+                  else
+                    const SizedBox(width: 40),
                   Expanded(
                     child: Text(
                       lang.t('profile_title'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: theme.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
                         letterSpacing: 1,
                       ),
                     ),
@@ -185,7 +190,7 @@ class ProfileScreen extends StatelessWidget {
                         await auth.signOut();
                         
                         if (context.mounted) {
-                          Navigator.of(context).pushNamedAndRemoveUntil('/signin', (route) => false);
+                          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
                         }
                       },
                       child: Container(
@@ -249,10 +254,11 @@ class ProfileScreen extends StatelessWidget {
           Text(
             safety.userProfile.name.isNotEmpty 
                 ? safety.userProfile.name 
-                : (context.read<AuthProvider>().user?.displayName ?? 
-                   (context.read<StorageService>().getUserName() != 'Safety Watcher' 
+                : (context.read<AuthProvider>().user != null 
+                    ? (context.read<AuthProvider>().user as dynamic).displayName ?? 'User'
+                    : (context.read<StorageService>().getUserName() != 'Safety Watcher' 
                        ? context.read<StorageService>().getUserName() 
-                       : (context.read<AuthProvider>().user?.email?.split('@')[0] ?? 'User'))),
+                       : 'User')),
             style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),

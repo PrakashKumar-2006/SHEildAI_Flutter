@@ -121,8 +121,13 @@ class RoutesProvider extends ChangeNotifier {
           }
           
           if (rankedRoutes.isNotEmpty) {
-            // Sort by risk score ascending (safest first)
-            rankedRoutes.sort((a, b) => a.riskScore.compareTo(b.riskScore));
+            // Priority 1: Risk Score (Lowest first) - Always suggest the safest path first
+            // Priority 2: Distance (only if risk scores are identical)
+            rankedRoutes.sort((a, b) {
+              int riskCmp = a.riskScore.compareTo(b.riskScore);
+              if (riskCmp != 0) return riskCmp;
+              return a.distance.compareTo(b.distance);
+            });
             _routes = rankedRoutes;
           } else {
             _routes = routes;
@@ -135,7 +140,7 @@ class RoutesProvider extends ChangeNotifier {
         _routes = routes;
       }
       _selectedRouteIndex = 0;
-      _selectedRoute = routes.isNotEmpty ? routes.first : null;
+      _selectedRoute = _routes.isNotEmpty ? _routes.first : null;
       _isLoading = false;
       notifyListeners();
       return true;

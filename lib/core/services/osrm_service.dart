@@ -46,7 +46,7 @@ class OSRMService {
   }) async {
     try {
       final url = Uri.parse(
-        '$_osrmBaseUrl/$originLon,$originLat;$destLon,$destLat?overview=full&geometries=polyline&alternatives=$alternatives'
+        '$_osrmBaseUrl/$originLon,$originLat;$destLon,$destLat?overview=full&geometries=polyline&alternatives=true'
       );
 
       final response = await http.get(url);
@@ -68,8 +68,8 @@ class OSRMService {
           routes.add(OSRMRoute(
             index: i,
             points: points,
-            duration: route['duration'] ?? 0,
-            distance: route['distance'] ?? 0,
+            duration: (route['duration'] as num).toDouble(),
+            distance: (route['distance'] as num).toDouble(),
             geometry: route['geometry'],
           ));
         }
