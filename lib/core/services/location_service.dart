@@ -65,12 +65,23 @@ class LocationService {
     }
 
     // Otherwise fetch fresh position with high accuracy
-    return await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 15),
-      ),
-    );
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8), // Reduced from 15s
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Location] High accuracy timed out, falling back to balanced accuracy...');
+      // Fallback to medium accuracy for speed
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   LocationAccuracy _getAdaptiveAccuracy() {

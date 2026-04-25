@@ -14,6 +14,7 @@ import '../features/voice/presentation/providers/voice_provider.dart';
 import '../features/sos/domain/models/sos_model.dart';
 import '../core/models/zone_model.dart';
 import '../core/services/sms_service.dart';
+import '../core/services/api_service.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -293,9 +294,34 @@ class SafetyProvider extends ChangeNotifier {
   void refreshSOSState() { notifyListeners(); }
   
   Future<bool> submitCommunityReport(String type, String desc, int severity) async {
-    _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'REPORT', title: type, body: desc, timestamp: DateTime.now(), riskLevel: severity > 7 ? 'HIGH' : severity > 4 ? 'MEDIUM' : 'LOW'));
-    notifyListeners();
-    return true;
+    try {
+      final success = await ApiService.submitCommunityReport(
+        _userProfile.phone,
+        latitude,
+        longitude,
+        type,
+        desc,
+        severity,
+        anonymous: true,
+      );
+      
+      if (success != null) {
+        _alerts.insert(0, AlertItem(
+          id: DateTime.now().millisecondsSinceEpoch.toString(), 
+          type: 'REPORT', 
+          title: type, 
+          body: desc, 
+          timestamp: DateTime.now(), 
+          riskLevel: severity > 7 ? 'HIGH' : severity > 4 ? 'MEDIUM' : 'LOW'
+        ));
+        notifyListeners();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Safety] Community report error: $e');
+      return false;
+    }
   }
 
   @override

@@ -69,10 +69,16 @@ class SOSProvider extends ChangeNotifier {
 
           // Send SMS to contacts
           final message = customMessage ?? 'EMERGENCY: I need help! My location: https://maps.google.com/?q=${position.latitude},${position.longitude}';
+          debugPrint('[SOS] Triggering bulk SMS to: ${contacts.join(', ')}');
+          
           SMSService().sendBulkSMS(
             phoneNumbers: contacts,
             message: message,
-          );
+          ).then((_) {
+            debugPrint('[SOS] Bulk SMS sending process completed.');
+          }).catchError((e) {
+            debugPrint('[SOS] Error in bulk SMS sending: $e');
+          });
 
           // Start background video recording
           VideoRecordingService().startRecording().catchError((e) {

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:ionicons/ionicons.dart';
 import '../../../location/presentation/providers/location_provider.dart';
@@ -277,6 +279,9 @@ class _RoutesScreenState extends State<RoutesScreen> {
         scrollGesturesEnabled: true,
         tiltGesturesEnabled: true,
         rotateGesturesEnabled: true,
+        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+          Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
         circles: zones.map((zone) {
           final color = zone.riskScore > 75 ? Colors.red : 
                        zone.riskScore > 50 ? Colors.orange : 
@@ -350,7 +355,12 @@ class _RoutesScreenState extends State<RoutesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(index == 0 ? 'Safest Route' : 'Alternative Route ${index + 1}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text('${route.formattedDistance} • ${route.formattedDuration}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text('${route.formattedDistance} • ${route.formattedDuration} • Risk: ${route.riskScore.toStringAsFixed(1)}%', 
+                        style: TextStyle(
+                          fontSize: 12, 
+                          color: route.riskScore > 75 ? Colors.red : (route.riskScore > 50 ? Colors.orange : Colors.grey)
+                        )
+                      ),
                     ],
                   ),
                 ),

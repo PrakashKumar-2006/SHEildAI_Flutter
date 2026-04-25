@@ -149,6 +149,7 @@ class OSRMRoute {
   final double duration; // in seconds
   final double distance; // in meters
   final String geometry;
+  double riskScore; // Added for safety ranking
   
   double get durationMinutes => duration / 60;
   double get distanceKm => distance / 1000;
@@ -167,5 +168,6 @@ class OSRMRoute {
     required this.duration,
     required this.distance,
     required this.geometry,
+    this.riskScore = 0.0,
   });
 }

@@ -70,7 +70,7 @@ class RoutesProvider extends ChangeNotifier {
         originLon,
         destCoords.latitude,
         destCoords.longitude,
-        alternatives: 3,
+        alternatives: 4, // Increased to 4
       );
 
       if (routes.isEmpty) {
@@ -100,13 +100,26 @@ class RoutesProvider extends ChangeNotifier {
 
         if (mlResult.containsKey('ranked_routes')) {
           final List<dynamic> rankedIndices = mlResult['ranked_routes'];
+          final Map<String, dynamic>? riskScores = mlResult['risk_scores'];
+          
           List<OSRMRoute> rankedRoutes = [];
-          for (var index in rankedIndices) {
-            final idx = int.tryParse(index.toString()) ?? 0;
-            if (idx < routes.length) {
-              rankedRoutes.add(routes[idx]);
+          for (var item in rankedIndices) {
+            // ranked_routes might be list of indices or list of maps with index
+            int idx = -1;
+            if (item is int) idx = item;
+            else if (item is Map) idx = item['index'] ?? -1;
+            else idx = int.tryParse(item.toString()) ?? -1;
+
+            if (idx >= 0 && idx < routes.length) {
+              final route = routes[idx];
+              // Attach risk score to the route if available
+              if (riskScores != null && riskScores.containsKey(idx.toString())) {
+                route.riskScore = (riskScores[idx.toString()] as num).toDouble();
+              }
+              rankedRoutes.add(route);
             }
           }
+          
           if (rankedRoutes.isNotEmpty) {
             _routes = rankedRoutes;
           } else {

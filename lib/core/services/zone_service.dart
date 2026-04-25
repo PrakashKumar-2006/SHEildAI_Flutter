@@ -42,7 +42,7 @@ class ZoneService extends ChangeNotifier {
       final position = await _locationService.getCurrentPosition();
       final userLat = position.latitude;
       final userLng = position.longitude;
-      final mlZones = await ApiService.getHotspots(userLat, userLng, 10.0);
+      final mlZones = await ApiService.getHotspots(userLat, userLng, 20.0);
       if (mlZones != null && mlZones.isNotEmpty) {
         updateZonesFromML(mlZones);
       } else {

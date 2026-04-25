@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
@@ -595,6 +597,9 @@ class _HomeScreenState extends State<HomeScreen> {
         scrollGesturesEnabled: true,
         tiltGesturesEnabled: true,
         rotateGesturesEnabled: true,
+        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+          Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
         circles: _circles,
         markers: {
           Marker(
