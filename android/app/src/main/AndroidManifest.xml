@@ -1,8 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ═══════════════════════════════════════════════════
+         PERMISSIONS — SOS System Requirements
+         ═══════════════════════════════════════════════════ -->
+
+    <!-- Location -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Audio / Voice trigger -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Camera / Evidence recording -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- SMS dispatch to emergency contacts -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <!-- Foreground service — base permission -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Foreground service type-specific permissions (Android 14 / API 34+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Notifications (Android 13 / API 33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Wake lock — keep CPU running during SOS -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Vibration for SOS alert feedback -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Network state — for connectivity checks before SOS sync -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Boot receiver — restart services after device reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Battery optimization bypass — needed to survive Doze / OEM killers -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- ═══════════════════════════════════════════════════
+         HARDWARE FEATURES
+         ═══════════════════════════════════════════════════ -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
     <application
-        android:label="sheild_ai"
+        android:label="SHEild AI"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="false"
+        android:usesCleartextTraffic="false">
+
+        <!-- ═══════════════════════════════════════════════
+             MAIN ACTIVITY
+             ═══════════════════════════════════════════════ -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -12,34 +72,136 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
             <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+
+        <!-- ═══════════════════════════════════════════════
+             SOS SESSION KEEPALIVE SERVICE
+             Sole job: keep the process alive (LMK-protected) during an
+             active SOS session so SOSManager's SMS coroutine can finish.
+             foregroundServiceType="dataSync" only:
+               — location|camera are foreground-only on Android 14 (API 34)
+               — dataSync can be started from background while VoiceDetectionService
+                 is already running, which is always true at trigger time.
+             ═══════════════════════════════════════════════ -->
+        <service
+            android:name=".sos.SosService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- ═══════════════════════════════════════════════
+             WAKE WORD FOREGROUND SERVICE
+             Handles: continuous microphone listening
+             ═══════════════════════════════════════════════ -->
+        <service
+            android:name=".sos.WakeWordService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- ═══════════════════════════════════════════════
+             AUDIO RECORDING FOREGROUND SERVICE
+             Handles: SOS evidence capture (background audio, 5 min)
+             foregroundServiceType="dataSync" — avoids Android 14+ per-service
+             microphone eligibility check which blocks startForeground(microphone)
+             from background even when VoiceDetectionService (microphone FGS) is
+             already running. MediaRecorder still works because:
+               1. The process holds RECORD_AUDIO runtime permission.
+               2. VoiceDetectionService (microphone FGS) provides process-level
+                  mic exemption for the whole app process.
+             ═══════════════════════════════════════════════ -->
+        <service
+            android:name=".sos.AudioRecordingService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- ═══════════════════════════════════════════════
+             VIDEO RECORDING FOREGROUND SERVICE
+             Handles: SOS evidence capture (foreground video, 2 min)
+             foregroundServiceType="camera|microphone" — CameraX needs both
+             ═══════════════════════════════════════════════ -->
+        <service
+            android:name=".sos.VideoRecordingService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="camera|microphone" />
+
+        <!-- ═══════════════════════════════════════════════
+             VOICE DETECTION FOREGROUND SERVICE
+             Handles: always-on keyword detection ("help" / "sos")
+             Uses Vosk offline ASR — no internet after first model download
+             foregroundServiceType="microphone" required for API 34+
+             ═══════════════════════════════════════════════ -->
+        <service
+            android:name=".sos.VoiceDetectionService"
+            android:enabled="true"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- ═══════════════════════════════════════════════
+             BOOT RECEIVER — restart services after reboot
+             ═══════════════════════════════════════════════ -->
+        <receiver
+            android:name=".sos.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- Restart services after OTA app update -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ═══════════════════════════════════════════════
+             SOS STOP RECEIVER — handles "I'm Safe" action
+             from the persistent lock-screen notification.
+             android:exported="false" — only this app can
+             fire the ACTION_STOP_SOS broadcast.
+             ═══════════════════════════════════════════════ -->
+        <receiver
+            android:name=".sos.SOSStopReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.nexus.sheildai.sos.ACTION_STOP_SOS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Flutter embedding meta-data — do NOT remove -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
-    <!-- Required to query activities that can process text, see:
-         https://developer.android.com/training/package-visibility and
-         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <!-- Flutter text-processing queries — do NOT remove -->
     <queries>
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+        <!-- Allow launching phone dialer for emergency calls -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <!-- Allow launching SMS app -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="smsto" />
         </intent>
     </queries>
+
 </manifest>

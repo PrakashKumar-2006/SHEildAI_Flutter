@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:ionicons/ionicons.dart';
 import '../providers/home_provider.dart';
+import '../../../../features/sos/presentation/screens/sos_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -58,6 +59,17 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SOSScreen()),
+          );
+        },
+        backgroundColor: Colors.red,
+        icon: const Icon(Ionicons.alert_circle, color: Colors.white),
+        label: const Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }

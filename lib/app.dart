@@ -24,6 +24,8 @@ import 'features/contacts/presentation/providers/contact_provider.dart';
 import 'features/community/data/repositories/community_repository_impl.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'features/contacts/presentation/screens/contact_setup_screen.dart';
+import 'features/contacts/presentation/screens/manage_contacts_screen.dart';
 import 'features/routes/presentation/screens/routes_screen.dart';
 import 'features/alerts/presentation/screens/alerts_screen.dart';
 import 'features/profile/presentation/screens/profile_screen.dart';
@@ -93,6 +95,17 @@ class App extends StatelessWidget {
         ),
 
         // Providers
+        ChangeNotifierProxyProvider2<LocationRepositoryImpl, LocationService, LocationProvider>(
+          create: (context) => LocationProvider(
+            locationRepository: context.read<LocationRepositoryImpl>(),
+            locationService: context.read<LocationService>(),
+          ),
+          update: (_, locationRepo, locationService, locationProvider) =>
+              locationProvider ?? LocationProvider(
+                    locationRepository: locationRepo,
+                    locationService: locationService,
+                  ),
+        ),
         ChangeNotifierProxyProvider3<SOSRepositoryImpl, LocationService, LocationProvider, SOSProvider>(
           create: (context) => SOSProvider(
             sosRepository: context.read<SOSRepositoryImpl>(),
@@ -104,17 +117,6 @@ class App extends StatelessWidget {
                     sosRepository: sosRepo,
                     locationService: locationService,
                     locationProvider: locationProvider,
-                  ),
-        ),
-        ChangeNotifierProxyProvider2<LocationRepositoryImpl, LocationService, LocationProvider>(
-          create: (context) => LocationProvider(
-            locationRepository: context.read<LocationRepositoryImpl>(),
-            locationService: context.read<LocationService>(),
-          ),
-          update: (_, locationRepo, locationService, locationProvider) =>
-              locationProvider ?? LocationProvider(
-                    locationRepository: locationRepo,
-                    locationService: locationService,
                   ),
         ),
         ChangeNotifierProxyProvider<ContactRepositoryImpl, ContactProvider>(
@@ -147,6 +149,8 @@ class App extends StatelessWidget {
         routes: {
           '/splash': (context) => const SplashScreen(),
           '/onboarding': (context) => const OnboardingScreen(),
+          '/setup_contacts': (context) => const ContactSetupScreen(),
+          '/manage_contacts': (context) => const ManageContactsScreen(),
           '/home': (context) => const MainNavigation(),
           '/sos': (context) => const SOSScreen(),
           '/location': (context) => const LocationScreen(),

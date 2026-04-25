@@ -25,7 +25,7 @@ android {
         applicationId = "com.nexus.sheildai.sheild_ai"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 26 // Required for background services, foreground service APIs, and notification channels
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -46,4 +46,17 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+    // FusedLocationProviderClient — used by LocationProvider.kt
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // CameraX — used by VideoRecordingService.kt
+    val cameraxVersion = "1.3.4"
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+
+    // Vosk — offline speech recognition for voice keyword trigger
+    implementation("com.alphacephei:vosk-android:0.3.47")
 }
+

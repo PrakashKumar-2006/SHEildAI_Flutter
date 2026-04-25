@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ionicons/ionicons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -10,6 +11,23 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isDarkMode = false;
+  int _contactCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContactCount();
+  }
+
+  Future<void> _loadContactCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final contacts = prefs.getStringList('trusted_contacts');
+    if (mounted) {
+      setState(() {
+        _contactCount = contacts?.length ?? 0;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,8 +73,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         iconColor: const Color(0xFFFF0000),
                         iconBg: const Color(0xFFFFE5E5),
                         title: 'SOS Guardians',
-                        subtitle: '0 contacts active',
-                        onTap: () {},
+                        subtitle: '$_contactCount contacts active',
+                        onTap: () async {
+                          await Navigator.pushNamed(context, '/manage_contacts');
+                          _loadContactCount(); // Refresh count after returning
+                        },
                       ),
                     ]),
                     const SizedBox(height: 24),
