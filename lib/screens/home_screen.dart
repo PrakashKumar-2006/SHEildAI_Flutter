@@ -37,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Circle(
           circleId: CircleId(zone.id),
           center: LatLng(zone.center.latitude, zone.center.longitude),
-          radius: zone.radius * 1000,
+          radius: 1000, // Explicit 1km radius as requested
           fillColor: color.withOpacity(0.3),
           strokeColor: color,
           strokeWidth: 2,
@@ -60,12 +60,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _updateCircles(safety);
 
-    // Sync map camera
-    if (_mapController != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLng(LatLng(safety.latitude, safety.longitude)),
-      );
-    }
+    // Removed infinite camera jump loop to allow user panning/zooming.
+    // The map will still initialize at user location via initialCameraPosition.
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -438,33 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
         ],
 
-        // Upgrade Card (if no data)
-        if (forecast == null && travelTime == null)
-          GestureDetector(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1e3a8a) : const Color(0xFFF0F2FF),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.workspace_premium_rounded, size: 28, color: isDark ? const Color(0xFF60a5fa) : const Color(0xFF0D1B6E)),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Upgrade to Premium to unlock full safety insights.',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded),
-                ],
-              ),
-            ),
-          ),
+        // Feature access enabled for testing
       ],
     );
   }
@@ -621,6 +591,10 @@ class _HomeScreenState extends State<HomeScreen> {
         myLocationEnabled: true,
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
+        zoomGesturesEnabled: true,
+        scrollGesturesEnabled: true,
+        tiltGesturesEnabled: true,
+        rotateGesturesEnabled: true,
         circles: _circles,
         markers: {
           Marker(

@@ -3,8 +3,14 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  file_selector_windows
+  audioplayers_windows
+  battery_plus
+  connectivity_plus
+  flutter_secure_storage_windows
+  geolocator_windows
   permission_handler_windows
+  speech_to_text_windows
+  url_launcher_windows
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

@@ -36,11 +36,11 @@ class ZoneModel {
     int riskScore,
   ) {
     ZoneType zoneType;
-    if (riskScore >= 0 && riskScore <= 30) {
+    if (riskScore >= 0 && riskScore <= 25) {
       zoneType = ZoneType.safe;
-    } else if (riskScore >= 31 && riskScore <= 55) {
+    } else if (riskScore >= 26 && riskScore <= 50) {
       zoneType = ZoneType.moderate;
-    } else if (riskScore >= 56 && riskScore <= 75) {
+    } else if (riskScore >= 51 && riskScore <= 75) {
       zoneType = ZoneType.high;
     } else if (riskScore >= 76 && riskScore <= 100) {
       zoneType = ZoneType.critical;

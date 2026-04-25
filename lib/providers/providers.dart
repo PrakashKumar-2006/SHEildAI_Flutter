@@ -111,10 +111,22 @@ class SafetyProvider extends ChangeNotifier {
   
   int get recordingTimeLeft => 120 - (activeSessionDuration % 120);
   
-  // ML Fields
-  String get riskLabel => (_mlProvider?.riskPrediction?['risk_label'] ?? 'SAFE').toString().toUpperCase();
+  // ML Fields (Mapped to backend thresholds)
+  String get riskLabel {
+    final score = riskScore;
+    if (score <= 25) return 'SAFE';
+    if (score <= 50) return 'MEDIUM';
+    if (score <= 75) return 'HIGH';
+    return 'CRITICAL';
+  }
   int get riskScore => (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
-  String get riskColor => (_mlProvider?.riskPrediction?['risk_color'] ?? '#43A047').toString();
+  String get riskColor {
+    final score = riskScore;
+    if (score <= 25) return '#43A047'; // Green
+    if (score <= 50) return '#FBC02D'; // Yellow/Orange
+    if (score <= 75) return '#F57C00'; // Orange
+    return '#D32F2F'; // Red
+  }
   List<String> get riskAlerts => List<String>.from(_mlProvider?.riskPrediction?['alerts'] ?? []);
   Map<String, dynamic>? get bestTravelTime => _mlProvider?.bestTravelTime;
   Map<String, dynamic>? get forecast => _mlProvider?.forecast;
@@ -175,9 +187,9 @@ class SafetyProvider extends ChangeNotifier {
         }
       });
 
-      // Update ML if moved significantly or every 5 mins
+      // Update ML if moved significantly or every 1 min (Optimized for testing)
       final now = DateTime.now();
-      if (_lastMLUpdate == null || now.difference(_lastMLUpdate!).inMinutes >= 5) {
+      if (_lastMLUpdate == null || now.difference(_lastMLUpdate!).inMinutes >= 1) {
         _lastMLUpdate = now;
         _mlProvider?.predictRisk(
           lat: lat, 

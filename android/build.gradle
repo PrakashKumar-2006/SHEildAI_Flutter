@@ -13,6 +13,20 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+subprojects {
+    project.plugins.withId("com.android.library") {
+        project.android {
+            if (namespace == null) {
+                def fallbackNamespace = project.group
+                if (fallbackNamespace == null || fallbackNamespace.toString().isEmpty()) {
+                    fallbackNamespace = "com.sheildai." + project.name.replaceAll("[^a-zA-Z0-9_]", "_")
+                }
+                namespace fallbackNamespace
+            }
+        }
+    }
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

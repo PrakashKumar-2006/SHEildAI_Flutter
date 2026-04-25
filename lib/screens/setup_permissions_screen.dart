@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
 
@@ -62,12 +63,57 @@ class _SetupPermissionsScreenState extends State<SetupPermissionsScreen> {
   ];
 
   Future<void> _handleNext({bool skip = false}) async {
-    // In actual implementation, we would request permissions here if !skip
+    if (skip) {
+      if (_currentStep < _steps.length - 1) {
+        setState(() => _currentStep++);
+      } else {
+        _finalizeSetup();
+      }
+      return;
+    }
+
+    final stepItem = _steps[_currentStep];
     
-    if (_currentStep < _steps.length - 1) {
+    // Step 0 is intro, no permission needed
+    if (_currentStep == 0) {
       setState(() => _currentStep++);
-    } else {
-      _finalizeSetup();
+      return;
+    }
+
+    // Handle real permission requests
+    try {
+      bool granted = false;
+      if (stepItem.id == 'location') {
+        // Request Location permission
+        final status = await Permission.locationAlways.request();
+        granted = status.isGranted;
+      } else if (stepItem.id == 'av') {
+        // Request Camera and Mic
+        final cam = await Permission.camera.request();
+        final mic = await Permission.microphone.request();
+        granted = cam.isGranted && mic.isGranted;
+      } else if (stepItem.id == 'notifications') {
+        // Request Notification permission
+        final status = await Permission.notification.request();
+        granted = status.isGranted;
+      } else if (stepItem.id == 'sms') {
+        // Request SMS permission
+        final status = await Permission.sms.request();
+        granted = status.isGranted;
+      }
+
+      if (_currentStep < _steps.length - 1) {
+        setState(() => _currentStep++);
+      } else {
+        _finalizeSetup();
+      }
+    } catch (e) {
+      debugPrint('Permission request error: $e');
+      if (_currentStep < _steps.length - 1) {
+        setState(() => _currentStep++);
+      } else {
+        _finalizeSetup();
+      }
     }
   }
 

@@ -46,3 +46,22 @@ app.*.map.json
 
 # Environment variables - contains sensitive credentials
 .env
+.env*
+!.env.example
+
+# Android build and caches
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/key.properties
+/android/app/google-services.json
+
+# iOS build and secrets
+/ios/Flutter/Generated.xcconfig
+/ios/Flutter/flutter_export_environment.sh
+/ios/Runner/GeneratedPluginRegistrant.h
+/ios/Runner/GeneratedPluginRegistrant.m
+/ios/.external_build_artifacts
+/ios/Podfile.lock
+/ios/Pods/

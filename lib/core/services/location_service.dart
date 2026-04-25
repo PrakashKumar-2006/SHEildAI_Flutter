@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../constants/app_constants.dart';
@@ -49,10 +50,25 @@ class LocationService {
       throw Exception('Location permission denied');
     }
 
+    // Attempt to get last known position first for maximum speed
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        // If last known is fresh (e.g. < 1 min), return it immediately
+        final diff = DateTime.now().difference(lastKnown.timestamp);
+        if (diff.inMinutes < 1) {
+          return lastKnown;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching last known location: $e');
+    }
+
+    // Otherwise fetch fresh position with high accuracy
     return await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 10),
+        timeLimit: Duration(seconds: 15),
       ),
     );
   }

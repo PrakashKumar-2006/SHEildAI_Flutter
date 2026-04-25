@@ -12,6 +12,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -24,6 +25,21 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Parse .env file and inject mapsApiKey
+        def envFile = rootProject.file("../.env")
+        def env = [:]
+        if (envFile.exists()) {
+            envFile.eachLine { line ->
+                def matcher = (line =~ /^\s*([^#\s][^=]+)\s*=\s*(.*)$/)
+                if (matcher.matches()) {
+                    env[matcher[0][1].trim()] = matcher[0][2].trim().replaceAll('^"|"$|^\\\'|\\\'$', '')
+                }
+            }
+        }
+        manifestPlaceholders += [
+            mapsApiKey: env['GOOGLE_MAPS_API_KEY'] ?: "MISSING_KEY"
+        ]
     }
 
     buildTypes {
@@ -37,4 +53,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
 }

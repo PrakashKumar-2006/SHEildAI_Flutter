@@ -273,13 +273,19 @@ class _RoutesScreenState extends State<RoutesScreen> {
         myLocationEnabled: true,
         myLocationButtonEnabled: false,
         zoomControlsEnabled: false,
+        zoomGesturesEnabled: true,
+        scrollGesturesEnabled: true,
+        tiltGesturesEnabled: true,
+        rotateGesturesEnabled: true,
         circles: zones.map((zone) {
-          final color = zone.riskScore > 70 ? Colors.red : zone.riskScore > 40 ? Colors.orange : Colors.green;
+          final color = zone.riskScore > 75 ? Colors.red : 
+                       zone.riskScore > 50 ? Colors.orange : 
+                       zone.riskScore > 25 ? Colors.yellow : Colors.green;
           return Circle(
             circleId: CircleId(zone.id),
             center: LatLng(zone.center.latitude, zone.center.longitude),
-            radius: zone.radius * 1000,
-            fillColor: color.withOpacity(0.3),
+            radius: 1000, // Enforce 1km radius
+            fillColor: color.withOpacity(0.2),
             strokeColor: color,
             strokeWidth: 2,
           );
@@ -302,7 +308,14 @@ class _RoutesScreenState extends State<RoutesScreen> {
               markerId: const MarkerId('destination'),
               position: LatLng(destination.latitude, destination.longitude),
               icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+              infoWindow: const InfoWindow(title: 'Destination'),
             ),
+          Marker(
+            markerId: const MarkerId('origin'),
+            position: LatLng(currentLat, currentLng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: const InfoWindow(title: 'Your Location'),
+          ),
         },
       ),
     );

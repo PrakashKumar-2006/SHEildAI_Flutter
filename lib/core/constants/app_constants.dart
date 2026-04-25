@@ -12,7 +12,7 @@ class AppConstants {
   // SOS Settings
   static const int sosCooldownSeconds = 30;
   static const int sosAutoCancelMinutes = 5;
-  static const int locationUpdateIntervalSeconds = 10;
+  static const int locationUpdateIntervalSeconds = 5;
 
   // Storage Keys
   static const String keyUserId = 'user_id';
