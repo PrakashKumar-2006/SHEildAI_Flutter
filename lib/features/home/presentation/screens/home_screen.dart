@@ -11,6 +11,7 @@ import '../../../voice/presentation/providers/voice_provider.dart';
 import '../../../sos/presentation/providers/sos_provider.dart';
 import '../../../../core/providers/ml_provider.dart';
 import '../../../../core/services/zone_service.dart';
+import '../../../../providers/providers.dart' show SafetyProvider;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -830,7 +831,9 @@ class _HomeScreenState extends State<HomeScreen> {
           onMapCreated: (controller) {
             _mapController = controller;
             // Immediate animation if location already exists
-            controller.animateCamera(CameraUpdate.newLatLng(LatLng(currentLat!, currentLng!)));
+            if (currentLat != 22.7196 || currentLng != 75.8577) {
+              controller.animateCamera(CameraUpdate.newLatLng(LatLng(currentLat, currentLng)));
+            }
           },
           myLocationEnabled: true,
           myLocationButtonEnabled: false,
@@ -840,9 +843,9 @@ class _HomeScreenState extends State<HomeScreen> {
           },
           circles: zones.map((zone) {
             return Circle(
-              circleId: CircleId(zone.id ?? zone.name),
+              circleId: CircleId(zone.id),
               center: LatLng(zone.center.latitude, zone.center.longitude),
-              radius: zone.radius * 1000, // Convert km to meters
+              radius: zone.radius * 1000,
               fillColor: _parseColor(zone.zoneColor).withValues(alpha: 0.3),
               strokeColor: _parseColor(zone.zoneColor),
               strokeWidth: 2,

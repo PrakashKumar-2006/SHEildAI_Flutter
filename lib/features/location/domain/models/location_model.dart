@@ -8,14 +8,14 @@ class LocationModel extends Equatable {
   final double? altitude;
   final double? speed;
 
-  const LocationModel({
+  LocationModel({
     required this.latitude,
     required this.longitude,
-    required this.timestamp,
+    DateTime? timestamp,
     this.accuracy,
     this.altitude,
     this.speed,
-  });
+  }) : timestamp = timestamp ?? DateTime.now();
 
   LocationModel copyWith({
     double? latitude,

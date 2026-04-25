@@ -18,6 +18,9 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   int _currentIndex = 0;
   late AnimationController _sosAnimController;
+  // Expose currentIndex so child widgets can navigate
+  int get currentIndex => _currentIndex;
+  set currentIndex(int v) => setState(() => _currentIndex = v);
 
   final List<Widget> _screens = [
     const HomeScreen(),

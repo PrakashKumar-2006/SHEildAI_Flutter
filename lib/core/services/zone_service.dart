@@ -42,23 +42,33 @@ class ZoneService extends ChangeNotifier {
   Future<void> _loadZones() async {
     try {
       // 1. Load static zones from risk_data.json (Bhopal Dataset)
-      final String riskDataString = await rootBundle.loadString('assets/risk_data.json');
+      final String riskDataString =
+          await rootBundle.loadString('assets/risk_data.json');
       final Map<String, dynamic> riskData = jsonDecode(riskDataString);
       final List<dynamic> staticZones = riskData['zones'];
       final Map<String, dynamic> multipliers = riskData['hour_multipliers'];
-      
+
       final currentHour = DateTime.now().hour;
-      final multiplier = (multipliers[currentHour.toString()] ?? 0.0).toDouble();
+      // Multiplier is additive: a safe zone (16) + night multiplier (16) = 32 (moderate)
+      // This is correct and expected ML behaviour. 
+      final double multiplier =
+          (multipliers[currentHour.toString()] ?? 0.0).toDouble();
+
+      debugPrint('[ZoneService] Hour: $currentHour, Multiplier: $multiplier');
 
       final List<ZoneModel> loadedZones = staticZones.map((z) {
         final double baseScore = (z['base_score'] ?? 0.0).toDouble();
-        final int finalScore = (baseScore + multiplier).clamp(0, 100).toInt();
-        
+        // Clamp to 0-100
+        final int finalScore = (baseScore + multiplier).clamp(0.0, 100.0).toInt();
+
         return ZoneModel.fromRiskScore(
           'static_${z['name']}',
           z['name'],
-          LatLng(z['lat'], z['lon']),
-          1.0, // Default radius 1km
+          LatLng(
+            (z['lat'] as num).toDouble(),
+            (z['lon'] as num).toDouble(),
+          ),
+          0.5, // 500m radius for better visibility
           finalScore,
         );
       }).toList();
@@ -70,23 +80,33 @@ class ZoneService extends ChangeNotifier {
           return ZoneModel.fromRiskScore(
             'ml_${z['id'] ?? z['name']}',
             z['name'] ?? 'Hotspot',
-            LatLng(z['lat'], z['lon']),
-            (z['radius'] ?? 1.0).toDouble(),
+            LatLng(
+              (z['lat'] as num).toDouble(),
+              (z['lon'] as num).toDouble(),
+            ),
+            (z['radius'] ?? 0.8).toDouble(),
             (z['risk_score'] ?? 56).toInt(),
           );
         }).toList();
-        
-        // Merge and prefer ML hotspots if overlap is close? 
-        // For now, just combine them as in RN
+
         _zones = [...loadedZones, ...hotspots];
       } else {
         _zones = loadedZones;
       }
-      
+
       _isDataAvailable = _zones.isNotEmpty;
+      debugPrint('[ZoneService] Loaded ${_zones.length} zones.');
+
+      // Log zone type distribution
+      final safe = _zones.where((z) => z.zoneType == ZoneType.safe).length;
+      final moderate = _zones.where((z) => z.zoneType == ZoneType.moderate).length;
+      final high = _zones.where((z) => z.zoneType == ZoneType.high).length;
+      final critical = _zones.where((z) => z.zoneType == ZoneType.critical).length;
+      debugPrint('[ZoneService] Zone breakdown: Safe=$safe Moderate=$moderate High=$high Critical=$critical');
+
       notifyListeners();
     } catch (e) {
-      debugPrint('Error loading zones: $e');
+      debugPrint('[ZoneService] Error loading zones: $e');
       _zones = [];
       _isDataAvailable = false;
       notifyListeners();
@@ -120,11 +140,7 @@ class ZoneService extends ChangeNotifier {
       final distance = _calculateDistance(userLocation, zone.center);
       if (distance < nearestDistance) { nearestDistance = distance; nearestZone = zone; }
     }
-    if (nearestDistance > 10.0) {
-      _isDataAvailable = false; _currentZone = null; _nearestZone = null;
-      notifyListeners(); return;
-    }
-    _isDataAvailable = true;
+    _isDataAvailable = _zones.isNotEmpty;
     _nearestZone = nearestZone;
 
     ZoneModel? insideZone;
@@ -142,7 +158,14 @@ class ZoneService extends ChangeNotifier {
     if (insideZone != null) { 
       _currentZone = insideZone; 
     } else { 
-      _currentZone = ZoneModel(id: 'outside', name: 'Outside Zone', center: userLocation, radius: 0, riskScore: 0, zoneType: ZoneType.none); 
+      _currentZone = ZoneModel(
+        id: 'outside', 
+        name: 'Safe Area', 
+        center: userLocation, 
+        radius: 0, 
+        riskScore: 10, // Default low risk score for outside areas
+        zoneType: ZoneType.safe
+      ); 
     }
 
     _checkZoneEntryAlert(userLocation, nearestZone);

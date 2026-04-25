@@ -280,11 +280,29 @@ class SafetyProvider extends ChangeNotifier {
   }
 
   Future<void> triggerSOSFlow() async {
-    if (_sosProvider != null && latitude != null && longitude != null) {
-      final msg = 'EMERGENCY: I need help! My live location: https://www.google.com/maps/search/?api=1&query=$latitude,$longitude (Sent via SHEild AI)';
-      await _sosProvider!.triggerSOS(customContacts: _trustedContacts, customMessage: msg);
-      _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SOS', title: 'SOS Activated', body: 'Emergency SOS sent to guardians.', timestamp: DateTime.now(), riskLevel: riskLabel));
+    if (_sosProvider == null) return;
+    
+    // Build message with location if available, or generic message
+    final String msg;
+    if (latitude != null && longitude != null) {
+      msg = '🚨 EMERGENCY SOS 🚨\nI need help! My live location:\nhttps://www.google.com/maps?q=$latitude,$longitude\n(Sent via SHEild AI Safety App)';
+    } else {
+      msg = '🚨 EMERGENCY SOS 🚨\nI need help! Please call me immediately!\n(Sent via SHEild AI Safety App)';
     }
+    
+    // SOS fires unconditionally - SOSProvider handles location internally
+    await _sosProvider!.triggerSOS(
+      customContacts: _trustedContacts.isNotEmpty ? _trustedContacts : null,
+      customMessage: msg,
+    );
+    _alerts.insert(0, AlertItem(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: 'SOS',
+      title: 'SOS Activated',
+      body: 'Emergency SOS sent to guardians.',
+      timestamp: DateTime.now(),
+      riskLevel: riskLabel,
+    ));
     notifyListeners();
   }
 
