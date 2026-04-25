@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:provider/provider.dart';
@@ -29,16 +31,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final voiceProvider = context.watch<VoiceProvider>();
     final mlProvider = context.watch<MLProvider>();
     final currentLocation = locationProvider.currentLocation;
-    final currentLat = currentLocation?.latitude ?? 22.7196;
-    final currentLng = currentLocation?.longitude ?? 75.8577;
+    final currentLat = currentLocation?.latitude;
+    final currentLng = currentLocation?.longitude;
+    final hasLocation = currentLat != null && currentLng != null;
+    
+    // Animate map when location is first fetched
+    if (hasLocation && _mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLng(LatLng(currentLat, currentLng)),
+      );
+    }
     final now = DateTime.now();
     
     // Auto-predict risk on first load
-    if (mlProvider.riskPrediction == null && !mlProvider.isLoadingRisk) {
+    if (hasLocation && mlProvider.riskPrediction == null && !mlProvider.isLoadingRisk) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         mlProvider.predictRisk(
-          lat: currentLat,
-          lon: currentLng,
+          lat: currentLat!,
+          lon: currentLng!,
           hour: now.hour,
           month: now.month,
           isWeekend: now.weekday >= 5 ? 1 : 0,
@@ -47,14 +57,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     
     // Auto-get best travel time on first load
-    if (mlProvider.bestTravelTime == null && !mlProvider.isLoadingTravelTime) {
+    if (hasLocation && mlProvider.bestTravelTime == null && !mlProvider.isLoadingTravelTime) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         mlProvider.getBestTravelTime(
-          lat: currentLat,
-          lon: currentLng,
+          lat: currentLat!,
+          lon: currentLng!,
           month: now.month,
           isWeekend: now.weekday >= 5 ? 1 : 0,
           topN: 3,
+        );
+      });
+    }
+
+    // Auto-get forecast on first load
+    if (hasLocation && mlProvider.forecast == null && !mlProvider.isLoadingForecast) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        mlProvider.getForecast(
+          lat: currentLat!,
+          lon: currentLng!,
+          currentHour: now.hour,
+          month: now.month,
+          isWeekend: now.weekday >= 5 ? 1 : 0,
         );
       });
     }
@@ -316,6 +339,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildIntelligenceSection(BuildContext context, HomeProvider homeProvider) {
+    final mlProvider = context.watch<MLProvider>();
+    final forecastData = mlProvider.forecast;
+    final bestTime = mlProvider.bestTravelTime;
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -353,51 +380,56 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 // Forecast
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: List.generate(3, (index) {
-                    final hour = DateTime.now().hour + index;
-                    final risk = homeProvider.safetyScore - (index * 10);
-                    return Column(
-                      children: [
-                        Text(
-                          '$hour:00',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
+                if (mlProvider.isLoadingForecast)
+                  const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                else if (forecastData != null && forecastData['forecast'] != null)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: (forecastData['forecast'] as List).take(3).map((item) {
+                      final hour = item['hour'] as int;
+                      final risk = (item['risk_score'] as num).toInt();
+                      return Column(
+                        children: [
+                          Text(
+                            '$hour:00',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _isDarkMode ? const Color(0xFF94A3B8) : const Color(0xFF757575),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: risk > 70 
-                                ? const Color(0xFF8B0000) 
-                                : risk > 40 
-                                    ? const Color(0xFFFFD700) 
-                                    : const Color(0xFF43A047),
+                          const SizedBox(height: 6),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: risk > 70 
+                                  ? const Color(0xFF8B0000) 
+                                  : risk > 40 
+                                      ? const Color(0xFFFFD700) 
+                                      : const Color(0xFF43A047),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '$risk%',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: risk > 70 
-                                ? const Color(0xFF8B0000) 
-                                : risk > 40 
-                                    ? const Color(0xFFFFD700) 
-                                    : const Color(0xFF43A047),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$risk%',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: risk > 70 
+                                  ? const Color(0xFF8B0000) 
+                                  : risk > 40 
+                                      ? const Color(0xFFFFD700) 
+                                      : const Color(0xFF43A047),
+                            ),
                           ),
-                        ),
-                      ],
-                    );
-                  }),
-                ),
+                        ],
+                      );
+                    }).toList(),
+                  )
+                else
+                  const Text('Forecast unavailable'),
                 const SizedBox(height: 12),
                 Container(
                   height: 1,
@@ -417,7 +449,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Safest travel window: 10:00 AM',
+                          mlProvider.isLoadingTravelTime 
+                              ? 'Loading advice...'
+                              : (bestTime != null && bestTime['safest_hours'] != null && (bestTime['safest_hours'] as List).isNotEmpty)
+                                  ? 'Safest travel window: ${(bestTime['safest_hours'] as List)[0]['hour']}:00'
+                                  : 'Stay vigilant while traveling.',
                           style: TextStyle(
                             fontSize: 13,
                             color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
@@ -768,6 +804,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentLat = currentLocation?.latitude ?? 22.7196;
     final currentLng = currentLocation?.longitude ?? 75.8577;
     final zones = zoneService.zones;
+    final hasLocation = currentLocation != null;
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -785,15 +822,22 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: GoogleMap(
+        child: hasLocation ? GoogleMap(
           initialCameraPosition: CameraPosition(
-            target: LatLng(currentLat, currentLng),
+            target: LatLng(currentLat!, currentLng!),
             zoom: 15.0,
           ),
-          onMapCreated: (controller) => _mapController = controller,
+          onMapCreated: (controller) {
+            _mapController = controller;
+            // Immediate animation if location already exists
+            controller.animateCamera(CameraUpdate.newLatLng(LatLng(currentLat!, currentLng!)));
+          },
           myLocationEnabled: true,
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
+          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+            Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+          },
           circles: zones.map((zone) {
             return Circle(
               circleId: CircleId(zone.id ?? zone.name),
@@ -804,6 +848,15 @@ class _HomeScreenState extends State<HomeScreen> {
               strokeWidth: 2,
             );
           }).toSet(),
+        ) : const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 10),
+              Text('Fetching your location...'),
+            ],
+          ),
         ),
       ),
     );
@@ -812,12 +865,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSOSButton(BuildContext context, SOSProvider sosProvider) {
     final isSOSActive = sosProvider.isSOSActive;
     
+    final safetyProvider = context.read<SafetyProvider>();
+    
     return GestureDetector(
       onTap: () {
         if (isSOSActive) {
-          sosProvider.cancelSOS();
+          safetyProvider.confirmSafe();
         } else {
-          sosProvider.triggerSOS();
+          safetyProvider.triggerSOSFlow();
         }
       },
       child: Container(

@@ -5,11 +5,14 @@ import '../../domain/models/sos_model.dart';
 import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/services/sms_service.dart';
 import '../../../../core/services/video_recording_service.dart';
+import '../../../../features/contacts/data/repositories/contact_repository_impl.dart';
+import '../../../../features/contacts/domain/models/contact_model.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
   final LocationService _locationService;
   final LocationProvider _locationProvider;
+  final ContactRepositoryImpl _contactRepository;
 
   SOSModel? _activeSOS;
   bool _isLoading = false;
@@ -17,13 +20,15 @@ class SOSProvider extends ChangeNotifier {
   final String _sessionDuration = '00:00';
   final String _currentLocation = 'Current Location';
 
-  SOSProvider({
+   SOSProvider({
     required SOSRepositoryImpl sosRepository,
     required LocationService locationService,
     required LocationProvider locationProvider,
+    required ContactRepositoryImpl contactRepository,
   })  : _sosRepository = sosRepository,
         _locationService = locationService,
-        _locationProvider = locationProvider;
+        _locationProvider = locationProvider,
+        _contactRepository = contactRepository;
 
   SOSModel? get activeSOS => _activeSOS;
   bool get isLoading => _isLoading;
@@ -44,8 +49,21 @@ class SOSProvider extends ChangeNotifier {
       // Get current location
       final position = await _locationService.getCurrentPosition();
 
-      // Get emergency contacts (default if none provided)
-      final contacts = customContacts ?? ['100', '1091'];
+      // Get emergency contacts from database
+      List<String> contacts = customContacts ?? [];
+      if (contacts.isEmpty) {
+        final contactsResult = await _contactRepository.getContacts();
+        contactsResult.fold(
+          (failure) => contacts = ['100', '1091'], // Fallback to emergency if DB fails
+          (dbContacts) {
+            if (dbContacts.isNotEmpty) {
+              contacts = dbContacts.map((c) => c.phone).toList();
+            } else {
+              contacts = ['100', '1091']; // Fallback if no contacts saved
+            }
+          },
+        );
+      }
 
       // Trigger SOS
       final result = await _sosRepository.triggerSOS(
@@ -68,7 +86,8 @@ class SOSProvider extends ChangeNotifier {
           notifyListeners();
 
           // Send SMS to contacts
-          final message = customMessage ?? 'EMERGENCY: I need help! My location: https://maps.google.com/?q=${position.latitude},${position.longitude}';
+          final locationUrl = 'https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}';
+          final message = customMessage ?? '🚨 EMERGENCY SOS 🚨\nI need help! My live location: $locationUrl\n(Sent via SHEild AI)';
           debugPrint('[SOS] Triggering bulk SMS to: ${contacts.join(', ')}');
           
           SMSService().sendBulkSMS(

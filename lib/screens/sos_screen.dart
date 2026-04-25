@@ -289,7 +289,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                 _buildMetaItem(
                   Icons.location_on_outlined,
                   lang.t('location'),
-                  '${safety.latitude.toStringAsFixed(3)}, ${safety.longitude.toStringAsFixed(3)}',
+                  '${safety.latitude?.toStringAsFixed(3) ?? "0.000"}, ${safety.longitude?.toStringAsFixed(3) ?? "0.000"}',
                 ),
               ],
             ),

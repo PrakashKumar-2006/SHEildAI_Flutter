@@ -4,6 +4,34 @@ import 'package:http/http.dart' as http;
 class MLService {
   static const String baseUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/api';
   
+  Future<Map<String, dynamic>> _postWithRetry(String endpoint, Map<String, dynamic> body) async {
+    int retries = 0;
+    while (retries < 3) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/$endpoint'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(body),
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
+          return jsonDecode(response.body);
+        } else if (response.statusCode == 503 || response.statusCode == 404) {
+          // HF Space might be sleeping
+          retries++;
+          await Future.delayed(Duration(seconds: 2 * retries));
+        } else {
+          throw Exception('Failed to call ML API: ${response.statusCode}');
+        }
+      } catch (e) {
+        retries++;
+        if (retries >= 3) rethrow;
+        await Future.delayed(Duration(seconds: 2 * retries));
+      }
+    }
+    throw Exception('ML API call failed after retries');
+  }
+
   // Risk Prediction
   Future<Map<String, dynamic>> predictRisk({
     required double lat,
@@ -19,34 +47,20 @@ class MLService {
     int? isWeekend,
     String? weather,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/risk'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'hour': hour,
-          'month': month,
-          'transport_mode': transportMode,
-          'cctv': cctv,
-          'lighting': lighting,
-          'internet': internet,
-          'battery': battery,
-          'crime_type': crimeType,
-          'is_weekend': isWeekend,
-          'weather': weather,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to predict risk: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Risk prediction error: $e');
-    }
+    return _postWithRetry('risk', {
+      'lat': lat,
+      'lon': lon,
+      'hour': hour,
+      'month': month,
+      'transport_mode': transportMode,
+      'cctv': cctv,
+      'lighting': lighting,
+      'internet': internet,
+      'battery': battery,
+      'crime_type': crimeType,
+      'is_weekend': isWeekend,
+      'weather': weather,
+    });
   }
 
   // Safe Route V2 - Route ranking with danger circle overlays
@@ -60,30 +74,16 @@ class MLService {
     int isWeekend = 0,
     required List<List<Map<String, double>>> routes,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/safe-route-v2'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'origin_lat': originLat,
-          'origin_lon': originLon,
-          'dest_lat': destLat,
-          'dest_lon': destLon,
-          'hour': hour,
-          'month': month,
-          'is_weekend': isWeekend,
-          'routes': routes,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to get safe route: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Safe route error: $e');
-    }
+    return _postWithRetry('safe-route-v2', {
+      'origin_lat': originLat,
+      'origin_lon': originLon,
+      'dest_lat': destLat,
+      'dest_lon': destLon,
+      'hour': hour,
+      'month': month,
+      'is_weekend': isWeekend,
+      'routes': routes,
+    });
   }
 
   // Best Travel Time - Safest travel window in next 24 hours
@@ -94,27 +94,13 @@ class MLService {
     int isWeekend = 0,
     int topN = 3,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/best-travel-time'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'month': month,
-          'is_weekend': isWeekend,
-          'top_n': topN,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to get best travel time: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Best travel time error: $e');
-    }
+    return _postWithRetry('best-travel-time', {
+      'lat': lat,
+      'lon': lon,
+      'month': month,
+      'is_weekend': isWeekend,
+      'top_n': topN,
+    });
   }
 
   // Forecast - 3-hour risk forecast
@@ -125,27 +111,13 @@ class MLService {
     required int month,
     int isWeekend = 0,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/forecast'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'current_hour': currentHour,
-          'month': month,
-          'is_weekend': isWeekend,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to get forecast: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Forecast error: $e');
-    }
+    return _postWithRetry('forecast', {
+      'lat': lat,
+      'lon': lon,
+      'current_hour': currentHour,
+      'month': month,
+      'is_weekend': isWeekend,
+    });
   }
 
   // Community Alert
@@ -159,30 +131,16 @@ class MLService {
     bool anonymous = true,
     int severity = 5,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/community-alert'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'hour': hour,
-          'month': month,
-          'incident_type': incidentType,
-          'description': description,
-          'anonymous': anonymous,
-          'severity': severity,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to submit alert: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Community alert error: $e');
-    }
+    return _postWithRetry('community-alert', {
+      'lat': lat,
+      'lon': lon,
+      'hour': hour,
+      'month': month,
+      'incident_type': incidentType,
+      'description': description,
+      'anonymous': anonymous,
+      'severity': severity,
+    });
   }
 
   // SOS
@@ -199,32 +157,18 @@ class MLService {
     bool videoRecording = false,
     String? sessionId,
   }) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/sos'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'hour': hour,
-          'month': month,
-          'trigger_type': triggerType,
-          'emergency_contacts': emergencyContacts,
-          'internet': internet,
-          'battery': battery,
-          'audio_recording': audioRecording,
-          'video_recording': videoRecording,
-          'session_id': sessionId,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Failed to trigger SOS: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('SOS error: $e');
-    }
+    return _postWithRetry('sos', {
+      'lat': lat,
+      'lon': lon,
+      'hour': hour,
+      'month': month,
+      'trigger_type': triggerType,
+      'emergency_contacts': emergencyContacts,
+      'internet': internet,
+      'battery': battery,
+      'audio_recording': audioRecording,
+      'video_recording': videoRecording,
+      'session_id': sessionId,
+    });
   }
 }

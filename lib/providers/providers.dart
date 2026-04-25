@@ -15,7 +15,8 @@ import '../features/voice/presentation/providers/voice_provider.dart';
 import '../features/sos/domain/models/sos_model.dart';
 import '../core/models/zone_model.dart';
 import '../core/services/sms_service.dart';
-import '../core/services/api_service.dart';
+import '../core/services/api_service.dart' as api;
+import '../features/community/presentation/providers/community_provider.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -96,6 +97,7 @@ class SafetyProvider extends ChangeNotifier {
   MLProvider? _mlProvider;
   ZoneService? _zoneService;
   VoiceProvider? _voiceProvider;
+  CommunityProvider? _communityProvider;
 
   bool get isAppReady => _isAppReady;
   UserProfile get userProfile => _userProfile;
@@ -138,8 +140,8 @@ class SafetyProvider extends ChangeNotifier {
   bool get isSafetyModeActive => _voiceProvider?.isEnabled ?? false;
   bool get isSirenPlaying => _zoneService?.isSirenPlaying ?? false;
   List<AlertItem> get alerts => _alerts;
-  double get latitude => _locationProvider?.currentLocation?.latitude ?? 22.7196;
-  double get longitude => _locationProvider?.currentLocation?.longitude ?? 75.8577;
+  double? get latitude => _locationProvider?.currentLocation?.latitude;
+  double? get longitude => _locationProvider?.currentLocation?.longitude;
   List<ZoneModel> get zones => _zoneService?.zones ?? [];
 
   SafetyProvider() { 
@@ -166,12 +168,13 @@ class SafetyProvider extends ChangeNotifier {
     });
   }
 
-  void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice) {
+  void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community) {
     _sosProvider = sos;
     _locationProvider = loc;
     _mlProvider = ml;
     _zoneService = zone;
     _voiceProvider = voice;
+    _communityProvider = community;
     
     _syncWithLocation();
   }
@@ -193,6 +196,7 @@ class SafetyProvider extends ChangeNotifier {
       final now = DateTime.now();
       if (_lastMLUpdate == null || now.difference(_lastMLUpdate!).inMinutes >= 1) {
         _lastMLUpdate = now;
+        debugPrint('[Safety] Refreshing Safety Intelligence for: $lat, $lon');
         _mlProvider?.predictRisk(
           lat: lat, 
           lon: lon, 
@@ -214,6 +218,11 @@ class SafetyProvider extends ChangeNotifier {
           lon: lon, 
           month: now.month,
           isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
+        );
+        _communityProvider?.loadNearbyReports(
+          latitude: lat,
+          longitude: lon,
+          radiusKm: 10,
         );
       }
     }
@@ -271,8 +280,8 @@ class SafetyProvider extends ChangeNotifier {
   }
 
   Future<void> triggerSOSFlow() async {
-    if (_sosProvider != null) {
-      final msg = 'EMERGENCY: I need help! My location: $_readableAddress (https://maps.google.com/?q=$latitude,$longitude)';
+    if (_sosProvider != null && latitude != null && longitude != null) {
+      final msg = 'EMERGENCY: I need help! My live location: https://www.google.com/maps/search/?api=1&query=$latitude,$longitude (Sent via SHEild AI)';
       await _sosProvider!.triggerSOS(customContacts: _trustedContacts, customMessage: msg);
       _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SOS', title: 'SOS Activated', body: 'Emergency SOS sent to guardians.', timestamp: DateTime.now(), riskLevel: riskLabel));
     }
@@ -283,7 +292,7 @@ class SafetyProvider extends ChangeNotifier {
     if (_sosProvider != null) {
       await _sosProvider!.cancelSOS();
       final msg = 'SAFE: I am safe now. Thank you for your support. My location: $_readableAddress';
-      SMSService().sendBulkSMS(phoneNumbers: _trustedContacts, message: msg, direct: true);
+      SMSService().sendBulkSMS(phoneNumbers: _trustedContacts, message: msg);
       _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SAFE', title: 'Safe Confirmed', body: 'Safety confirmed. Guardians notified.', timestamp: DateTime.now()));
     }
     notifyListeners();
@@ -305,17 +314,18 @@ class SafetyProvider extends ChangeNotifier {
   
   Future<bool> submitCommunityReport(String type, String desc, int severity) async {
     try {
-      final success = await ApiService.submitCommunityReport(
+      if (latitude == null || longitude == null) return false;
+      final response = await api.ApiService.submitCommunityReport(
         _userProfile.phone,
-        latitude,
-        longitude,
+        latitude!,
+        longitude!,
         type,
         desc,
         severity,
         anonymous: true,
       );
       
-      if (success != null) {
+      if (response != null) {
         _alerts.insert(0, AlertItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(), 
           type: 'REPORT', 

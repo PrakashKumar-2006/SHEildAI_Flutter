@@ -121,6 +121,8 @@ class RoutesProvider extends ChangeNotifier {
           }
           
           if (rankedRoutes.isNotEmpty) {
+            // Sort by risk score ascending (safest first)
+            rankedRoutes.sort((a, b) => a.riskScore.compareTo(b.riskScore));
             _routes = rankedRoutes;
           } else {
             _routes = routes;

@@ -50,13 +50,14 @@ class LocationService {
       throw Exception('Location permission denied');
     }
 
-    // Attempt to get last known position first for maximum speed
+    // 1. Attempt to get last known position first (Instant)
     try {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null) {
-        // If last known is fresh (e.g. < 1 min), return it immediately
+        // If last known is very fresh (e.g. < 30s), return it immediately for "robust" feel
         final diff = DateTime.now().difference(lastKnown.timestamp);
-        if (diff.inMinutes < 1) {
+        if (diff.inSeconds < 30) {
+          debugPrint('[Location] Returning fresh last known position: ${lastKnown.latitude}, ${lastKnown.longitude}');
           return lastKnown;
         }
       }
@@ -64,23 +65,30 @@ class LocationService {
       debugPrint('Error fetching last known location: $e');
     }
 
-    // Otherwise fetch fresh position with high accuracy
+    // 2. Fetch fresh position with aggressive timeout
     try {
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 8), // Reduced from 15s
+          timeLimit: Duration(seconds: 5), // Reduced from 8s
         ),
       );
     } catch (e) {
-      debugPrint('[Location] High accuracy timed out, falling back to balanced accuracy...');
-      // Fallback to medium accuracy for speed
-      return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 5),
-        ),
-      );
+      debugPrint('[Location] High accuracy timed out, falling back to medium accuracy for speed...');
+      // 3. Final fallback for maximum speed
+      try {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null) return lastKnown;
+        
+        return await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 3),
+          ),
+        );
+      } catch (e2) {
+        throw Exception('Could not fetch location: $e2');
+      }
     }
   }
 
@@ -94,11 +102,31 @@ class LocationService {
 
     _isBackgroundTracking = background;
 
-    final LocationSettings locationSettings = LocationSettings(
-      accuracy: _getAdaptiveAccuracy(),
-      distanceFilter: background ? 50 : 10,
-      timeLimit: Duration(seconds: background ? 30 : AppConstants.locationUpdateIntervalSeconds),
-    );
+    late LocationSettings locationSettings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+        intervalDuration: const Duration(milliseconds: 500),
+        foregroundNotificationConfig: background ? const ForegroundNotificationConfig(
+          notificationText: "SHEild AI is guarding you",
+          notificationTitle: "Background Tracking Active",
+          enableWakeLock: true,
+        ) : null,
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS) {
+      locationSettings = AppleSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: background,
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+      );
+    }
 
     _positionStreamSubscription = Geolocator.getPositionStream(
       locationSettings: locationSettings,
