@@ -97,7 +97,11 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
     if (item.isSOS) {
       return GestureDetector(
         onTap: () {
-          setState(() => _currentIndex = item.index);
+          if (safety.isSOSActive) {
+            setState(() => _currentIndex = item.index);
+          } else {
+            safety.triggerSOSFlow();
+          }
         },
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -107,38 +111,38 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
             child: AnimatedBuilder(
               animation: _sosAnimController,
               builder: (ctx, child) {
-                return Transform.scale(
-                  scale: safety.isSOSActive
-                      ? 1.0 + (_sosAnimController.value * 0.15)
-                      : 1.0,
+                return Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: safety.isSOSActive
+                          ? [const Color(0xFF1B5E20), const Color(0xFF43A047)]
+                          : [const Color(0xFF8B0000), const Color(0xFFD32F2F), const Color(0xFFFF3B30)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (safety.isSOSActive ? const Color(0xFF43A047) : const Color(0xFFFF3B30)).withOpacity(0.4),
+                        blurRadius: safety.isSOSActive ? 12 : 15 + (_sosAnimController.value * 10),
+                        spreadRadius: safety.isSOSActive ? 2 : 1 + (_sosAnimController.value * 5),
+                      ),
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(-2, -2),
+                      ),
+                    ],
+                  ),
                   child: child,
                 );
               },
-              child: Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: safety.isSOSActive
-                        ? [const Color(0xFF1B5E20), const Color(0xFF43A047)]
-                        : [const Color(0xFFCC0000), const Color(0xFFFF4D4D)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (safety.isSOSActive ? const Color(0xFF43A047) : const Color(0xFFFF0000)).withOpacity(0.5),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  safety.isSOSActive ? Icons.shield_rounded : Icons.shield_outlined,
-                  color: Colors.white,
-                  size: 32,
-                ),
+              child: Icon(
+                safety.isSOSActive ? Icons.shield_rounded : Icons.navigation_rounded,
+                color: Colors.white,
+                size: 30,
               ),
             ),
           ),

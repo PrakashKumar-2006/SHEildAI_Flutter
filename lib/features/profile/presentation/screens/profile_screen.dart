@@ -5,6 +5,7 @@ import '../../../contacts/presentation/providers/contact_provider.dart';
 import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/providers/ml_provider.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -111,8 +112,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildThemeToggle(context),
                     ]),
                     const SizedBox(height: 24),
-                    // Return Home Button
-                    _buildReturnHomeButton(context),
+                    // Log Out Button
+                    _buildLogOutButton(context),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -187,13 +188,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 16),
           // Name
-          Text(
-            StorageService().getUserName(),
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
-            ),
+          Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              final name = auth.user?.displayName ?? StorageService().getUserName();
+              return Text(
+                name,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: _isDarkMode ? Colors.white : const Color(0xFF1A1A2E),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 4),
           // Status - Dynamic from MLProvider
@@ -436,14 +442,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildReturnHomeButton(BuildContext context) {
+  Widget _buildLogOutButton(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.pop(context),
+      onTap: () async {
+        await context.read<AuthProvider>().signOut();
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16),
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: _isDarkMode ? const Color(0xFF1e3a8a) : const Color(0xFFE3F2FD),
+          color: _isDarkMode ? const Color(0xFF7f1d1d).withValues(alpha: 0.3) : const Color(0xFFFFEBEE),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -451,14 +462,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Icon(
               Ionicons.log_out_outline,
-              size: 20,
-              color: _isDarkMode ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
+              size: 22,
+              color: const Color(0xFFE53935),
             ),
             const SizedBox(width: 8),
-            Text(
-              'Return Home',
+            const Text(
+              'Log Out',
               style: TextStyle(
-                color: _isDarkMode ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
+                color: Color(0xFFE53935),
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),

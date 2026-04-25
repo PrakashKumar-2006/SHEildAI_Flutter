@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import '../providers/providers.dart';
+import '../features/community/presentation/providers/community_provider.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
 import 'profile_screen.dart';
@@ -53,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = context.watch<ThemeProvider>();
     final lang = context.watch<LanguageProvider>();
     final safety = context.watch<SafetyProvider>();
+    final community = context.watch<CommunityProvider>();
     final isDark = theme.isDarkMode;
 
     final riskLabel = safety.riskLabel;
@@ -61,9 +63,28 @@ class _HomeScreenState extends State<HomeScreen> {
     final alerts = safety.riskAlerts;
 
     _updateCircles(safety);
-
-    // Removed infinite camera jump loop to allow user panning/zooming.
-    // The map will still initialize at user location via initialCameraPosition.
+    
+    // Add markers from community reports
+    final Set<Marker> markers = {
+      Marker(
+        markerId: const MarkerId('current_pos'),
+        position: LatLng(safety.latitude, safety.longitude),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+    };
+    
+    for (var report in community.reports) {
+      markers.add(
+        Marker(
+          markerId: MarkerId(report.id),
+          position: LatLng(report.latitude, report.longitude),
+          infoWindow: InfoWindow(title: report.incidentType, snippet: report.description),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            report.severity > 7 ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -97,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildVoiceCard(theme, lang, safety, isDark),
                         const SizedBox(height: 14),
                         // Map
-                        _buildMapCard(theme, safety),
+                        _buildMapCard(theme, safety, markers),
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -407,29 +428,43 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
 
         // Best Travel Time
-        if (travelTime != null) ...[
+        if (travelTime != null && (travelTime['safest_hours'] as List?)?.isNotEmpty == true) ...[
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F5E9),
+              color: isDark ? const Color(0xFF064e3b) : const Color(0xFFE8F5E9),
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF43A047).withOpacity(0.3)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.timer_outlined, color: Color(0xFF43A047), size: 24),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Best Travel Time', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1B5E20))),
-                      Text(
-                        'Next safest hour: ${(travelTime['safest_hours'] as List?)?.first['hour'] ?? 'N/A'}:00',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF2E7D32)),
-                      ),
-                    ],
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.timer_outlined, color: Color(0xFF43A047), size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Best Travel Windows', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1B5E20))),
+                  ],
                 ),
+                const SizedBox(height: 12),
+                ...(travelTime['safest_hours'] as List).take(3).map((hourData) {
+                  final h = hourData['hour'] as int;
+                  final s = ((hourData['risk_score'] as num) * 100).toInt();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('$h:00', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1B5E20))),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(color: const Color(0xFF43A047), borderRadius: BorderRadius.circular(8)),
+                          child: Text('${100 - s}% Safe', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
               ],
             ),
           ),
@@ -573,7 +608,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMapCard(ThemeProvider theme, SafetyProvider safety) {
+  Widget _buildMapCard(ThemeProvider theme, SafetyProvider safety, Set<Marker> markers) {
     return Container(
       height: 300,
       decoration: BoxDecoration(
@@ -601,13 +636,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
         },
         circles: _circles,
-        markers: {
-          Marker(
-            markerId: const MarkerId('current_pos'),
-            position: LatLng(safety.latitude, safety.longitude),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          ),
-        },
+        markers: markers,
       ),
     );
   }

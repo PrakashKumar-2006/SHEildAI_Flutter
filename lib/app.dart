@@ -11,8 +11,6 @@ import 'core/services/api_service.dart';
 import 'core/services/background_monitor_service.dart';
 import 'core/services/mongo_service.dart';
 import 'core/services/zone_service.dart';
-import 'core/providers/ml_provider.dart';
-import 'core/providers/location_permission_provider.dart';
 import 'features/home/presentation/providers/home_provider.dart';
 import 'features/location/data/repositories/location_repository_impl.dart';
 import 'features/location/presentation/providers/location_provider.dart';
@@ -23,14 +21,24 @@ import 'features/contacts/data/repositories/contact_repository_impl.dart';
 import 'features/contacts/presentation/providers/contact_provider.dart';
 import 'features/community/data/repositories/community_repository_impl.dart';
 import 'features/community/presentation/providers/community_provider.dart';
+import 'core/providers/ml_provider.dart';
+import 'core/providers/location_permission_provider.dart';
 import 'features/routes/presentation/providers/routes_provider.dart';
-
-// New UI Imports
-import 'providers/providers.dart';
-import 'core/app_theme.dart' as new_theme;
+import 'features/routes/presentation/screens/routes_screen.dart';
+import 'features/auth/presentation/providers/auth_provider.dart';
+import 'features/auth/presentation/screens/login_screen.dart';
+import 'features/splash/presentation/screens/splash_screen.dart';
+import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'features/location/presentation/screens/location_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/sos_screen.dart';
+import 'screens/alerts_screen.dart';
+import 'screens/profile_screen.dart';
 import 'screens/signin_screen.dart';
 import 'screens/setup_permissions_screen.dart';
+import 'providers/providers.dart';
+import 'core/app_theme.dart' as new_theme;
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -131,6 +139,9 @@ class App extends StatelessWidget {
             return provider;
           },
         ),
+        ChangeNotifierProvider<AuthProvider>(
+          create: (context) => AuthProvider(context.read<StorageService>()),
+        ),
         ChangeNotifierProvider<HomeProvider>(create: (_) => HomeProvider()),
         ChangeNotifierProvider<RoutesProvider>(create: (_) => RoutesProvider()),
         ChangeNotifierProvider<CommunityProvider>(
@@ -160,6 +171,17 @@ class App extends StatelessWidget {
             darkTheme: new_theme.buildDarkTheme(),
             themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
             home: const AppBootstrap(),
+            routes: {
+              '/splash': (context) => SplashScreen(),
+              '/onboarding': (context) => OnboardingScreen(),
+              '/login': (context) => const LoginScreen(),
+              '/home': (context) => const MainScreen(),
+              '/sos': (context) => SOSScreen(),
+              '/location': (context) => LocationScreen(),
+              '/routes': (context) => RoutesScreen(),
+              '/alerts': (context) => AlertsScreen(),
+              '/profile': (context) => ProfileScreen(),
+            },
           );
         },
       ),
@@ -172,6 +194,7 @@ class AppBootstrap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
     final safety = context.watch<SafetyProvider>();
 
     if (!safety.isAppReady) {
@@ -189,8 +212,8 @@ class AppBootstrap extends StatelessWidget {
       );
     }
 
-    if (!safety.userProfile.isComplete) {
-      return const SigninScreen();
+    if (!auth.isAuthenticated) {
+      return const LoginScreen();
     }
 
     if (!safety.userProfile.isSetupComplete) {

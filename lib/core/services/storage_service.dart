@@ -112,19 +112,19 @@ class StorageService {
 
   // App Specific Methods
   Future<bool> setUserName(String name) async {
-    return await setString('user_name', name);
+    return await setString(AppConstants.keyUserName, name);
   }
 
   String getUserName() {
-    return getString('user_name') ?? 'Safety Watcher';
+    return getString(AppConstants.keyUserName) ?? 'Safety Watcher';
   }
 
   Future<bool> setUserPhone(String phone) async {
-    return await setString('user_phone', phone);
+    return await setString(AppConstants.keyUserPhone, phone);
   }
 
   String getUserPhone() {
-    return getString('user_phone') ?? '+919876543210';
+    return getString(AppConstants.keyUserPhone) ?? '+919876543210';
   }
 
   Future<bool> setEmergencyContacts(List<Map<String, dynamic>> contacts) async {

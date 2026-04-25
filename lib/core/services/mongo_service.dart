@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 
@@ -18,16 +19,34 @@ class MongoService {
   Future<void> connect() async {
     try {
       _connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING'];
+      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'test';
+      
+      debugPrint('Attempting to connect to MongoDB (DB: $dbName)...');
       
       if (_connectionString == null || _connectionString!.isEmpty) {
+        debugPrint('ERROR: MongoDB connection string is null or empty!');
         throw Exception('MongoDB connection string not found in environment variables');
+      }
+
+      // If connection string doesn't have the DB name, inject it before the query parameters
+      if (!_connectionString!.contains('.net/$dbName')) {
+        if (_connectionString!.contains('?')) {
+          _connectionString = _connectionString!.replaceFirst('?', '$dbName?');
+        } else if (!_connectionString!.endsWith('/')) {
+          _connectionString = '$_connectionString/$dbName';
+        } else {
+          _connectionString = '$_connectionString$dbName';
+        }
       }
       
       _db = await Db.create(_connectionString!);
       await _db!.open();
+      
       _isConnected = true;
+      debugPrint('SUCCESS: Connected to MongoDB Database: $dbName');
     } catch (e) {
       _isConnected = false;
+      debugPrint('FAILED to connect to MongoDB: $e');
       rethrow;
     }
   }
@@ -60,9 +79,12 @@ class MongoService {
   Future<bool> createUser(Map<String, dynamic> userData) async {
     try {
       final collection = getCollection('users');
+      debugPrint('Inserting user into MongoDB: ${userData['email']}');
       await collection.insertOne(userData);
+      debugPrint('SUCCESS: User inserted into MongoDB');
       return true;
     } catch (e) {
+      debugPrint('FAILED to create user in MongoDB: $e');
       return false;
     }
   }

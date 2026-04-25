@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
+import '../features/auth/presentation/providers/auth_provider.dart';
 import 'personal_info_screen.dart';
 import 'sos_contacts_screen.dart';
 import 'language_screen.dart';
 import 'notifications_settings_screen.dart';
 import 'paywall_screen.dart';
+import '../core/services/storage_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -62,7 +64,7 @@ class ProfileScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     // Profile card
-                    _buildProfileCard(theme, lang, safety, isDark),
+                    _buildProfileCard(context, theme, lang, safety, isDark),
                     const SizedBox(height: 24),
                     // Account settings
                     _buildSection(
@@ -175,23 +177,34 @@ class ProfileScreen extends StatelessWidget {
                     const SizedBox(height: 24),
                     // Return home / logout btn
                     GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
+                      onTap: () async {
+                        final auth = context.read<AuthProvider>();
+                        final safety = context.read<SafetyProvider>();
+                        
+                        await safety.clearProfile();
+                        await auth.signOut();
+                        
+                        if (context.mounted) {
+                          Navigator.of(context).pushNamedAndRemoveUntil('/signin', (route) => false);
+                        }
+                      },
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1e3a8a) : const Color(0xFFE3F2FD),
+                          color: isDark ? const Color(0xFF451a1a) : const Color(0xFFFFEBEE),
                           borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFD32F2F).withOpacity(0.2)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.logout_rounded, color: isDark ? const Color(0xFF60a5fa) : const Color(0xFF1976D2), size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              lang.t('return_home'),
+                            const Icon(Icons.logout_rounded, color: Color(0xFFD32F2F), size: 20),
+                            const SizedBox(width: 12),
+                            const Text(
+                              'Logout Account',
                               style: TextStyle(
-                                color: isDark ? const Color(0xFF60a5fa) : const Color(0xFF1976D2),
+                                color: Color(0xFFD32F2F),
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -211,7 +224,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileCard(ThemeProvider theme, LanguageProvider lang, SafetyProvider safety, bool isDark) {
+  Widget _buildProfileCard(BuildContext context, ThemeProvider theme, LanguageProvider lang, SafetyProvider safety, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -234,7 +247,12 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            safety.userProfile.name.isNotEmpty ? safety.userProfile.name : 'Safety Watcher',
+            safety.userProfile.name.isNotEmpty 
+                ? safety.userProfile.name 
+                : (context.read<AuthProvider>().user?.displayName ?? 
+                   (context.read<StorageService>().getUserName() != 'Safety Watcher' 
+                       ? context.read<StorageService>().getUserName() 
+                       : (context.read<AuthProvider>().user?.email?.split('@')[0] ?? 'User'))),
             style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),

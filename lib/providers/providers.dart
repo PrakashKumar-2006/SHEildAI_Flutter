@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../core/constants/app_constants.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -227,8 +228,8 @@ class SafetyProvider extends ChangeNotifier {
   Future<void> _loadUserProfile() async {
     final prefs = await SharedPreferences.getInstance();
     _userProfile = UserProfile(
-      name: prefs.getString('@user_name') ?? '',
-      phone: prefs.getString('@user_phone') ?? '',
+      name: prefs.getString(AppConstants.keyUserName) ?? '',
+      phone: prefs.getString(AppConstants.keyUserPhone) ?? '',
       trustedContacts: prefs.getStringList('@trusted_contacts') ?? [],
       isComplete: prefs.getBool('@profile_complete') ?? false,
       isSetupComplete: prefs.getBool('@setup_complete') ?? false,
@@ -237,11 +238,20 @@ class SafetyProvider extends ChangeNotifier {
     _inputContacts = _trustedContacts.isNotEmpty ? List.from(_trustedContacts) : [''];
   }
 
+  Future<void> clearProfile() async {
+    _userProfile = UserProfile();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Clear all saved settings
+    _trustedContacts = [];
+    _inputContacts = [''];
+    notifyListeners();
+  }
+
   Future<void> updateUserProfile(UserProfile profile) async {
     _userProfile = profile;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('@user_name', profile.name);
-    await prefs.setString('@user_phone', profile.phone);
+    await prefs.setString(AppConstants.keyUserName, profile.name);
+    await prefs.setString(AppConstants.keyUserPhone, profile.phone);
     await prefs.setStringList('@trusted_contacts', profile.trustedContacts);
     await prefs.setBool('@profile_complete', profile.isComplete);
     await prefs.setBool('@setup_complete', profile.isSetupComplete);
