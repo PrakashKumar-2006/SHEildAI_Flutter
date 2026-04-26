@@ -20,46 +20,56 @@ class MongoService {
   Future<void> connect() async {
     try {
       _connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING'];
-      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'test';
+      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'sheildai';
       
-      debugPrint('Attempting to connect to MongoDB (DB: $dbName)...');
+      debugPrint('[MongoService] Connecting to Atlas (DB: $dbName)...');
       
       if (_connectionString == null || _connectionString!.isEmpty) {
-        debugPrint('ERROR: MongoDB connection string is null or empty!');
-        throw Exception('MongoDB connection string not found in environment variables');
+        throw Exception('MongoDB connection string missing in .env');
       }
 
-      // Ensure DB name is present in the URI for mongo_dart
-      if (!_connectionString!.contains('.net/')) {
-         // Not an Atlas SRV string or already has a path
-      } else {
-        final uri = Uri.parse(_connectionString!);
-        if (uri.path.isEmpty || uri.path == '/') {
-          if (_connectionString!.contains('?')) {
-            _connectionString = _connectionString!.replaceFirst('?', '$dbName?');
-          } else {
-            _connectionString = _connectionString!.endsWith('/') 
-                ? '$_connectionString$dbName' 
-                : '$_connectionString/$dbName';
+      String finalUri = _connectionString!;
+      
+      // Handle Atlas SRV strings more robustly
+      if (finalUri.contains('mongodb+srv')) {
+        // If URI doesn't have a database name, inject it
+        // Format is usually mongodb+srv://user:pass@cluster.net/?options
+        final parts = finalUri.split('.net/');
+        if (parts.length == 2) {
+          final afterHost = parts[1];
+          if (afterHost.isEmpty || afterHost.startsWith('?')) {
+            finalUri = '${parts[0]}.net/$dbName${afterHost.startsWith('?') ? afterHost : '/$afterHost'}';
           }
+        }
+        
+        // Ensure authSource=admin for Atlas if not specified
+        if (!finalUri.contains('authSource')) {
+          finalUri = finalUri.contains('?') 
+              ? '$finalUri&authSource=admin' 
+              : '$finalUri?authSource=admin';
         }
       }
       
-      // Add authSource=admin if not present for Atlas compatibility
-      if (_connectionString!.contains('mongodb+srv') && !_connectionString!.contains('authSource')) {
-        _connectionString = _connectionString!.contains('?') 
-            ? '$_connectionString&authSource=admin' 
-            : '$_connectionString?authSource=admin';
-      }
+      debugPrint('[MongoService] Finalized URI: ${finalUri.replaceFirst(RegExp(r':.*@'), ':****@')}');
       
-      _db = await Db.create(_connectionString!);
+      _db = await Db.create(finalUri);
       await _db!.open();
       
       _isConnected = true;
-      debugPrint('SUCCESS: Connected to MongoDB Database: $dbName');
+      debugPrint('[MongoService] SUCCESS: Connected to Atlas DB: $dbName');
+      
+      // Ensure geo-spatial index exists for community reports
+      try {
+        final collection = _db!.collection('community_reports');
+        // We use createIndex to ensure the 'location' field is searchable via geo-queries
+        await collection.createIndex(keys: {'location': '2dsphere'});
+        debugPrint('[MongoService] Geo-index verified for community_reports');
+      } catch (e) {
+        debugPrint('[MongoService] Note: Geo-index check skipped or index exists: $e');
+      }
     } catch (e) {
       _isConnected = false;
-      debugPrint('FAILED to connect to MongoDB: $e');
+      debugPrint('[MongoService] FAILED to connect: $e');
       rethrow;
     }
   }
@@ -181,28 +191,52 @@ class MongoService {
     }
   }
 
+  Future<void> _ensureConnected() async {
+    if (_db == null || !_isConnected || !_db!.isConnected) {
+      debugPrint('[MongoService] DB not connected, attempting reconnect...');
+      await connect();
+    }
+  }
+
   // Community reports operations
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
     try {
+      await _ensureConnected();
       final collection = getCollection('community_reports');
-      // Add geo-spatial location field for MongoDB queries
+      
+      final timestamp = DateTime.now();
+      reportData['timestamp'] = timestamp.toIso8601String();
+      reportData['created_at'] = timestamp.millisecondsSinceEpoch;
+      
+      final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
+      final lon = (reportData['lon'] ?? reportData['longitude'] as num).toDouble();
+      
+      // GEO-JSON format: [longitude, latitude]
       reportData['location'] = {
         'type': 'Point',
-        'coordinates': [reportData['lon'] ?? reportData['longitude'], reportData['lat'] ?? reportData['latitude']]
+        'coordinates': [lon, lat]
       };
+      
+      reportData['lat'] = lat;
+      reportData['lon'] = lon;
+      
       await collection.insertOne(reportData);
+      debugPrint('[MongoService] SUCCESS: Report stored in Atlas');
       return true;
     } catch (e) {
-      debugPrint('[MongoService] submitCommunityReport error: $e');
+      debugPrint('[MongoService] ERROR: Failed to store report: $e');
       return false;
     }
   }
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {
     try {
+      await _ensureConnected();
       final collection = getCollection('community_reports');
       
-      // Try using geo-spatial query if index exists, fallback to all + filter if it fails
+      debugPrint('[MongoService] Fetching reports near $lat, $lon (radius: ${radiusKm}km)');
+      
+      // Try using geo-spatial query first
       try {
         final result = await collection.find({
           'location': {
@@ -215,17 +249,25 @@ class MongoService {
             }
           }
         }).toList();
+        
+        debugPrint('[MongoService] Found ${result.length} reports via geo-query');
         return result;
       } catch (e) {
-        // Fallback: Fetch all recent reports and filter locally
-        debugPrint('[MongoService] Geo-query failed, falling back to local filter: $e');
-        final all = await collection.find(where.sortBy('timestamp', descending: true).limit(50)).toList();
-        return all.where((rpt) {
+        // Fallback: Fetch last 100 reports and filter locally
+        debugPrint('[MongoService] Geo-query failed or index missing, falling back: $e');
+        final all = await collection.find(
+          where.sortBy('created_at', descending: true).limit(100)
+        ).toList();
+        
+        final filtered = all.where((rpt) {
           final rlat = (rpt['lat'] ?? rpt['latitude'] as num).toDouble();
           final rlon = (rpt['lon'] ?? rpt['longitude'] as num).toDouble();
           final dist = _calculateDistance(lat, lon, rlat, rlon);
           return dist <= radiusKm;
         }).toList();
+        
+        debugPrint('[MongoService] Found ${filtered.length} reports via fallback filter');
+        return filtered;
       }
     } catch (e) {
       debugPrint('[MongoService] getNearbyReports error: $e');

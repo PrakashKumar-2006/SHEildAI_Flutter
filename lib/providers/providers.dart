@@ -20,6 +20,7 @@ import '../core/services/api_service.dart' as api;
 import '../features/community/presentation/providers/community_provider.dart';
 import '../core/services/socket_service.dart';
 import '../core/services/osrm_service.dart';
+import '../core/services/notification_service.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -299,7 +300,7 @@ class SafetyProvider extends ChangeNotifier {
             // Calculate distance using OSRMService's Haversine formula
             final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
             if (distanceMeters <= 5000.0) { // 5km radius
-              _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId);
+              _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
             }
           }
         }
@@ -309,7 +310,7 @@ class SafetyProvider extends ChangeNotifier {
     });
   }
 
-  void _addCommunitySOSAlert(String name, double lat, double lng, String id) {
+  void _addCommunitySOSAlert(String name, double lat, double lng, String id, double distance) {
     // Check if we already have this alert to avoid duplicates
     if (_alerts.any((a) => a.id == 'comm_sos_$id')) return;
 
@@ -317,12 +318,19 @@ class SafetyProvider extends ChangeNotifier {
       id: 'comm_sos_$id',
       type: 'COMMUNITY_SOS',
       title: '🚨 SOS: $name needs help! 🚨',
-      body: 'Emergency triggered within 5km of your location.',
+      body: 'Emergency triggered within ${(distance / 1000).toStringAsFixed(1)}km of your location.',
       timestamp: DateTime.now(),
       riskLevel: 'CRITICAL',
       latitude: lat,
       longitude: lng,
     ));
+    
+    // Show system notification
+    NotificationService().showCommunitySOSNotification(
+      name: name,
+      distanceMeters: distance,
+    );
+    
     notifyListeners();
   }
 

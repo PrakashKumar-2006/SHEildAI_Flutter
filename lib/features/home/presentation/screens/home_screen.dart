@@ -117,6 +117,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         // Map Card
                         _buildMapCard(context, locationProvider),
                         const SizedBox(height: 14),
+                        // Community Feed
+                        _buildCommunityFeed(context),
+                        const SizedBox(height: 14),
                         // SOS Button
                         _buildSOSButton(context, sosProvider),
                         const SizedBox(height: 20),
@@ -129,6 +132,196 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
+...
+  Widget _buildCommunityFeed(BuildContext context) {
+    return Consumer<CommunityProvider>(
+      builder: (context, communityProvider, child) {
+        final reports = communityProvider.reports;
+        
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Community Safety Feed',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  if (communityProvider.isLoading)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () {
+                        final loc = context.read<LocationProvider>().currentLocation;
+                        if (loc != null) {
+                          communityProvider.loadNearbyReports(
+                            latitude: loc.latitude,
+                            longitude: loc.longitude,
+                          );
+                        }
+                      },
+                      child: Icon(
+                        Ionicons.refresh_circle,
+                        color: Colors.blue.shade700,
+                        size: 24,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (reports.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Column(
+                      children: [
+                        Icon(Ionicons.shield_checkmark, color: Colors.green.withValues(alpha: 0.5), size: 40),
+                        const SizedBox(height: 10),
+                        Text(
+                          'No active incidents nearby.\nStay safe!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: reports.length > 3 ? 3 : reports.length,
+                  separatorBuilder: (context, index) => const Divider(height: 20),
+                  itemBuilder: (context, index) {
+                    final report = reports[index];
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: _getSeverityColor(report.severity).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            _getIncidentIcon(report.incidentType),
+                            color: _getSeverityColor(report.severity),
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    report.incidentType,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatTimeAgo(report.timestamp),
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                report.description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: _isDarkMode ? Colors.grey.shade400 : Colors.grey.shade700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              if (reports.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.pushNamed(context, '/community'),
+                    child: Text(
+                      'View All Nearby Reports',
+                      style: TextStyle(
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Color _getSeverityColor(int severity) {
+    if (severity >= 8) return Colors.red;
+    if (severity >= 5) return Colors.orange;
+    return Colors.blue;
+  }
+
+  IconData _getIncidentIcon(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('harassment')) return Ionicons.warning;
+    if (t.contains('theft') || t.contains('robbery')) return Ionicons.lock_closed;
+    if (t.contains('accident')) return Ionicons.car;
+    if (t.contains('medical')) return Ionicons.medical;
+    return Ionicons.alert_circle;
+  }
+
+  String _formatTimeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push(

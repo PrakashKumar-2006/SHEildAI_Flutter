@@ -1,6 +1,7 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/socket_service.dart';
 import '../../domain/models/community_report_model.dart';
 import '../../domain/repositories/community_repository.dart';
 
@@ -44,6 +45,17 @@ class CommunityRepositoryImpl implements CommunityRepository {
           anonymous: anonymous,
           timestamp: DateTime.now(),
         );
+        
+        // Broadcast to other users via Socket for real-time visibility
+        SocketService().emitCommunityReport({
+          'latitude': latitude,
+          'longitude': longitude,
+          'incidentType': incidentType,
+          'description': description,
+          'severity': severity,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+
         return Right(report);
       } else {
         return const Left(ServerFailure('Failed to save report to MongoDB'));

@@ -90,6 +90,12 @@ class SocketService {
     }
   }
 
+  void emitCommunityReport(Map<String, dynamic> reportData) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('community_report', reportData);
+    }
+  }
+
   void disconnect() {
     _socket?.disconnect();
     _socket = null;

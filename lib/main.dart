@@ -37,13 +37,14 @@ void main() async {
   // Initialize SyncService for offline queue
   await SyncService().initialize();
 
-  // Pre-connect to MongoDB to verify connectivity (non-blocking)
+  // Initialize MongoDB connection (blocking to ensure readiness)
   final mongoService = MongoService();
-  mongoService.connect().then((_) {
+  try {
+    await mongoService.connect();
     debugPrint("MongoDB initialized successfully on startup");
-  }).catchError((e) {
+  } catch (e) {
     debugPrint("MongoDB initialization failed: $e");
-  });
+  }
   
   runApp(const App());
 }

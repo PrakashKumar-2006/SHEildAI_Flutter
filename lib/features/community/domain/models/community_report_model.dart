@@ -23,14 +23,18 @@ class CommunityReportModel {
 
   factory CommunityReportModel.fromJson(Map<String, dynamic> json) {
     return CommunityReportModel(
-      id: (json['report_id'] ?? json['id'] ?? '').toString(),
+      id: (json['_id'] ?? json['report_id'] ?? json['id'] ?? '').toString(),
       latitude: (json['lat'] ?? json['latitude'] as num).toDouble(),
       longitude: (json['lon'] ?? json['longitude'] as num).toDouble(),
       incidentType: (json['incident_type'] ?? json['incidentType'] ?? 'Other').toString(),
       description: (json['description'] ?? '').toString(),
       severity: (json['severity'] ?? 5) as int,
       anonymous: json['anonymous'] as bool? ?? true,
-      timestamp: DateTime.parse(json['timestamp'] ?? DateTime.now().toIso8601String()),
+      timestamp: json['timestamp'] != null 
+          ? DateTime.parse(json['timestamp'].toString()) 
+          : (json['created_at'] != null 
+              ? DateTime.fromMillisecondsSinceEpoch(json['created_at'] as int) 
+              : DateTime.now()),
       reporterName: json['reporterName'] as String?,
     );
   }
