@@ -10,6 +10,7 @@ import '../features/sos/presentation/providers/sos_provider.dart';
 import '../features/location/presentation/providers/location_provider.dart';
 import '../core/providers/ml_provider.dart';
 import '../core/services/location_service.dart';
+import '../core/services/sos_platform_service.dart';
 import '../core/services/zone_service.dart';
 import '../features/voice/presentation/providers/voice_provider.dart';
 import '../features/sos/domain/models/sos_model.dart';
@@ -104,7 +105,20 @@ class SafetyProvider extends ChangeNotifier {
   List<String> get trustedContacts => _trustedContacts;
   List<String> get inputContacts => _inputContacts;
   bool get isSOSActive => _sosProvider?.isSOSActive ?? false;
-  String get sosState => isSOSActive ? 'SOS_ACTIVE' : 'IDLE';
+
+  /// Returns a granular state string for the SOS screen's session sub-panels.
+  /// Maps the native state machine state so the UI can show the correct panel
+  /// (recording countdown, initialising SOS, evidence done, etc.).
+  String get sosState {
+    final native = _sosProvider?.nativeState;
+    if (native == SOSNativeState.recordingAudio ||
+        native == SOSNativeState.recordingVideo) {
+      return 'RECORDING';
+    }
+    if (isSOSActive) return 'SOS_ACTIVE';
+    if (native == SOSNativeState.cooldown) return 'RECOVERING';
+    return 'IDLE';
+  }
   String? get sosSessionId => _sosProvider?.activeSOS?.id;
   DateTime? get sosSessionStart => _sosProvider?.activeSOS?.timestamp;
   
@@ -168,14 +182,29 @@ class SafetyProvider extends ChangeNotifier {
     });
   }
 
+  // ─── SOSProvider listener ─────────────────────────────────────────────────
+
+  /// Called every time SOSProvider notifies its listeners (native state change,
+  /// Flutter SOS start/stop, etc.).  Propagates changes to all SafetyProvider
+  /// listeners so the navbar SOS button and SOS screen rebuild immediately.
+  void _onSOSStateChanged() => notifyListeners();
+
   void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community) {
-    _sosProvider = sos;
+    // Re-subscribe only when the SOSProvider instance actually changes.
+    // ProxyProvider may rebuild SafetyProvider with the same instance, so
+    // we guard against redundant remove+add to keep the listener list clean.
+    if (_sosProvider != sos) {
+      _sosProvider?.removeListener(_onSOSStateChanged);
+      _sosProvider = sos;
+      _sosProvider?.addListener(_onSOSStateChanged);
+    }
+
     _locationProvider = loc;
     _mlProvider = ml;
     _zoneService = zone;
     _voiceProvider = voice;
     _communityProvider = community;
-    
+
     _syncWithLocation();
   }
 
@@ -239,7 +268,7 @@ class SafetyProvider extends ChangeNotifier {
     _userProfile = UserProfile(
       name: prefs.getString(AppConstants.keyUserName) ?? '',
       phone: prefs.getString(AppConstants.keyUserPhone) ?? '',
-      trustedContacts: prefs.getStringList('@trusted_contacts') ?? [],
+      trustedContacts: prefs.getStringList('trusted_contacts') ?? [],
       isComplete: prefs.getBool('@profile_complete') ?? false,
       isSetupComplete: prefs.getBool('@setup_complete') ?? false,
     );
@@ -261,7 +290,7 @@ class SafetyProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.keyUserName, profile.name);
     await prefs.setString(AppConstants.keyUserPhone, profile.phone);
-    await prefs.setStringList('@trusted_contacts', profile.trustedContacts);
+    await prefs.setStringList('trusted_contacts', profile.trustedContacts);
     await prefs.setBool('@profile_complete', profile.isComplete);
     await prefs.setBool('@setup_complete', profile.isSetupComplete);
     _trustedContacts = profile.trustedContacts;
@@ -274,7 +303,7 @@ class SafetyProvider extends ChangeNotifier {
     final validContacts = _inputContacts.where((c) => c.trim().length >= 10).toList();
     _trustedContacts = validContacts;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('@trusted_contacts', validContacts);
+    await prefs.setStringList('trusted_contacts', validContacts);
     _userProfile = _userProfile.copyWith(trustedContacts: validContacts);
     notifyListeners();
   }
@@ -364,6 +393,7 @@ class SafetyProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sosProvider?.removeListener(_onSOSStateChanged);
     _durationTimer?.cancel();
     super.dispose();
   }

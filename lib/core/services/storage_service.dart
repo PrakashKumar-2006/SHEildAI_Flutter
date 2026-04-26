@@ -145,8 +145,8 @@ class StorageService {
   // Retrieve the simple List<String> of trusted contacts
   List<String> getTrustedContacts() {
     final List<String>? contacts = getStringList('trusted_contacts');
-    // Return saved contacts or fallback to default Indian emergency numbers
-    return contacts ?? ['100', '1091'];
+    // Return saved contacts or fallback to empty list
+    return contacts ?? [];
   }
 
   Future<bool> setLastSosTime(DateTime time) async {

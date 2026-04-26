@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../shared/widgets/custom_button.dart';
+import '../../../../app.dart';
 
 class ContactSetupScreen extends StatefulWidget {
   const ContactSetupScreen({super.key});
@@ -86,7 +87,11 @@ class _ContactSetupScreenState extends State<ContactSetupScreen> {
     await prefs.setBool('contacts_saved', true);
 
     if (mounted) {
-      Navigator.pushReplacementNamed(context, '/home');
+      // Return to the Bootstrap gate to let it decide the next step (SetupPermissionsScreen)
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const AppBootstrap()),
+        (Route<dynamic> route) => false,
+      );
     }
   }
 

@@ -60,7 +60,10 @@ class SOSProvider extends ChangeNotifier {
   SOSModel? get activeSOS => _activeSOS;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get isSOSActive => _activeSOS != null;
+  /// True when an SOS session is active — covers both:
+  ///  • Flutter-initiated sessions (_activeSOS model present), and
+  ///  • Voice/background-initiated sessions (native state machine active).
+  bool get isSOSActive => _activeSOS != null || _nativeState.isActive;
   String get sessionDuration => _sessionDuration;
   String get currentLocation => _currentLocation;
 

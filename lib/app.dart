@@ -135,13 +135,8 @@ class App extends StatelessWidget {
           update: (_, contactRepo, contactProvider) =>
               contactProvider ?? ContactProvider(contactRepository: contactRepo),
         ),
-        ChangeNotifierProxyProvider2<VoiceService, SOSProvider, VoiceProvider>(
-          create: (context) => VoiceProvider(voiceService: context.read<VoiceService>())..initialize(),
-          update: (_, voiceService, sosProvider, voiceProvider) {
-            final provider = voiceProvider ?? VoiceProvider(voiceService: voiceService)..initialize();
-            provider.updateSOSProvider(sosProvider);
-            return provider;
-          },
+        ChangeNotifierProvider<VoiceProvider>(
+          create: (_) => VoiceProvider(),
         ),
         ChangeNotifierProvider<AuthProvider>(
           create: (context) => AuthProvider(context.read<StorageService>()),
@@ -220,6 +215,13 @@ class AppBootstrap extends StatelessWidget {
 
     if (!auth.isAuthenticated) {
       return const LoginScreen();
+    }
+
+    final storage = context.read<StorageService>();
+    final hasContacts = storage.getTrustedContacts().isNotEmpty;
+
+    if (!hasContacts) {
+      return const ContactSetupScreen();
     }
 
     if (!safety.userProfile.isSetupComplete) {

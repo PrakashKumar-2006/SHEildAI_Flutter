@@ -92,86 +92,22 @@ class MainActivity : FlutterActivity() {
         SOSManager.init(applicationContext)
         Log.d(TAG, "MainActivity started — SOS state: ${SOSManager.currentState().displayName}")
 
-        // Request runtime permissions.
-        // Vosk (voice trigger) needs RECORD_AUDIO — only start it after permission is confirmed.
-        requestMicPermission()     // starts Vosk if already granted; shows dialog if not
-        requestSmsPermissionIfNeeded()
-    }
-
-    /**
-     * Starts [VoiceDetectionService] once RECORD_AUDIO permission is confirmed.
-     *
-     * VoiceDetectionService is the single voice engine:
-     *  - Downloads the Vosk model on first launch (~40 MB, once)
-     *  - Runs the AudioRecord + keyword recognition loop
-     *  - Calls SOSManager.triggerSOS() on "help" detection
-     *  - Works in background and survives app close (START_STICKY)
-     */
-    private fun initVoiceDetection() {
-        Log.i(TAG, "[Voice] Mic granted — starting VoiceDetectionService")
-        VoiceDetectionService.startDetection(applicationContext)
-        SOSStateStore.saveVoiceEnabled(applicationContext, true)
-        Log.i(TAG, "[Voice] VoiceDetectionService started")
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // RECORD_AUDIO RUNTIME PERMISSION
-    // Required for Vosk foreground voice trigger.
-    // If already granted on launch → start Vosk immediately.
-    // If not granted → show dialog; Vosk starts in onRequestPermissionsResult.
-    // ═══════════════════════════════════════════════════════════════════════
-
-    private fun requestMicPermission() {
-        val granted = ContextCompat.checkSelfPermission(
+        // Start voice detection quietly if the user has ALREADY granted the microphone permission
+        // in the past. If not, do nothing — the Flutter UI's onboarding flow will request it later.
+        val micGranted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (granted) {
-            Log.i(TAG, "[Voice] RECORD_AUDIO already granted — starting voice detection")
-            initVoiceDetection()
-            return
+        if (micGranted) {
+            val isVoiceEnabled = SOSStateStore.isVoiceEnabled(applicationContext)
+            if (isVoiceEnabled) {
+                Log.i(TAG, "[Voice] RECORD_AUDIO already granted — starting voice detection")
+                VoiceDetectionService.startDetection(applicationContext)
+            }
         }
-
-        Log.w(TAG, "[Voice] RECORD_AUDIO not granted — requesting from user")
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.RECORD_AUDIO),
-            MIC_PERMISSION_REQUEST_CODE
-        )
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SEND_SMS RUNTIME PERMISSION
-    // Android 1+ declares SEND_SMS as a dangerous permission — the user must
-    // explicitly grant it at runtime.  We request it once here and handle the
-    // result in onRequestPermissionsResult.  SmsHelper.sendSMS / sendEmergencySms
-    // independently re-check the permission before every send, so nothing is
-    // ever attempted without a live grant.
-    // ═══════════════════════════════════════════════════════════════════════
 
-    /**
-     * Checks whether SEND_SMS has been granted.
-     * - Already granted → logs and returns immediately (safe no-op).
-     * - Not granted     → logs "Permission not granted" and shows system dialog.
-     */
-    private fun requestSmsPermissionIfNeeded() {
-        val granted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.SEND_SMS
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (granted) {
-            Log.i(TAG, "[SMS] SEND_SMS permission already granted — no dialog needed")
-            return
-        }
-
-        // Permission not yet granted — inform + ask
-        Log.w(TAG, "[SMS] Permission not granted — requesting SEND_SMS from user")
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.SEND_SMS),
-            SMS_PERMISSION_REQUEST_CODE
-        )
-    }
 
     /**
      * Called by Android after the user responds to the permission dialog.
@@ -190,7 +126,7 @@ class MainActivity : FlutterActivity() {
             MIC_PERMISSION_REQUEST_CODE -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     Log.i(TAG, "[Voice] RECORD_AUDIO granted — starting voice detection pipeline")
-                    initVoiceDetection()
+                    VoiceDetectionService.startDetection(applicationContext)
                 } else {
                     Log.w(TAG, "[Voice] RECORD_AUDIO denied — voice trigger disabled")
                 }
