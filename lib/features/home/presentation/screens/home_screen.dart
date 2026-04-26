@@ -13,6 +13,7 @@ import '../../../sos/presentation/providers/sos_provider.dart';
 import '../../../../core/providers/ml_provider.dart';
 import '../../../../core/services/zone_service.dart';
 import '../../../../providers/providers.dart' show SafetyProvider;
+import '../../../../widgets/notification_bell_popup.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -175,56 +176,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Ionicons.notifications_outline, size: 20),
-              onPressed: () {},
-              color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
-            ),
-          ),
+          const NotificationBellPopup(),
         ],
       ),
     );
   }
 
   Widget _buildSafetyCard(BuildContext context, HomeProvider homeProvider, LocationProvider locationProvider) {
-    final mlProvider = context.watch<MLProvider>();
-    final zoneService = context.watch<ZoneService>();
-    final riskPrediction = mlProvider.riskPrediction;
-    final currentZone = zoneService.currentZone;
-    
-    // Use zone-based risk if available, otherwise use ML prediction
-    int riskScore;
-    String riskLevel;
-    String riskColor;
-    
-    if (!zoneService.isDataAvailable) {
-      // Data not available within 10km
-      riskScore = 0;
-      riskLevel = 'N/A';
-      riskColor = '#9E9E9E';
-    } else if (currentZone != null) {
-      // Use zone-based risk
-      riskScore = currentZone.riskScore;
-      riskLevel = currentZone.zoneLabel;
-      riskColor = currentZone.zoneColor;
-    } else if (riskPrediction != null) {
-      // Use ML prediction
-      riskScore = riskPrediction['risk_score']?.toInt() ?? homeProvider.currentRiskLevel;
-      riskLevel = riskPrediction['risk_level']?.toString() ?? homeProvider.currentRiskLevel.toString();
-      riskColor = riskPrediction['color'] ?? '#43A047';
-    } else {
-      // Fallback
-      riskScore = int.tryParse(homeProvider.currentRiskLevel.toString()) ?? 0;
-      riskLevel = homeProvider.currentRiskLevel.toString();
-      riskColor = '#43A047';
-    }
+    final safetyProvider = context.watch<SafetyProvider>();
+    final riskScore = safetyProvider.riskScore;
+    final riskLevel = safetyProvider.riskLevel;
+    final riskColor = safetyProvider.riskColor;
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -314,21 +276,21 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF43A047),
+              color: _parseColor(riskColor),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Ionicons.shield_checkmark,
+                Icon(
+                  riskScore > 50 ? Ionicons.warning : Ionicons.shield_checkmark,
                   size: 16,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  'I AM SAFE',
-                  style: TextStyle(
+                  riskScore > 75 ? 'CRITICAL RISK' : riskScore > 50 ? 'HIGH VIGILANCE' : 'I AM SAFE',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,

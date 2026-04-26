@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -259,7 +260,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   Widget _buildAlertCard(AlertItem alert, ThemeProvider theme, bool isDark) {
-    final isSOS = alert.type == 'SOS';
+    final isSOS = alert.type == 'SOS' || alert.type == 'COMMUNITY_SOS';
     final isSafe = alert.type == 'SAFE';
     final isReport = alert.type == 'REPORT';
 
@@ -287,33 +288,70 @@ class _AlertsScreenState extends State<AlertsScreen> {
         border: Border(left: BorderSide(color: accentColor, width: 4)),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isDark ? accentColor.withOpacity(0.2) : iconBg,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(iconName, color: accentColor, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(alert.title, style: TextStyle(color: theme.textPrimary, fontSize: 14, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(alert.body, style: TextStyle(color: theme.textSecondary, fontSize: 12)),
-                const SizedBox(height: 4),
-                Text(
-                  '${alert.timestamp.hour.toString().padLeft(2, '0')}:${alert.timestamp.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(color: theme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: isDark ? accentColor.withOpacity(0.2) : iconBg,
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ),
+                child: Icon(iconName, color: accentColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(alert.title, style: TextStyle(color: theme.textPrimary, fontSize: 14, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(alert.body, style: TextStyle(color: theme.textSecondary, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${alert.timestamp.hour.toString().padLeft(2, '0')}:${alert.timestamp.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(color: theme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 10),
+                  GestureDetector(
+                    onTap: () => context.read<SafetyProvider>().removeAlert(alert.id),
+                    child: Icon(Icons.delete_outline_rounded, size: 18, color: theme.danger.withOpacity(0.5)),
+                  ),
+                ],
+              ),
+            ],
           ),
+          if (alert.type == 'COMMUNITY_SOS' && alert.latitude != null && alert.longitude != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12, left: 52),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final url = Uri.parse('google.navigation:q=${alert.latitude},${alert.longitude}');
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url);
+                    } else {
+                      final webUrl = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${alert.latitude},${alert.longitude}');
+                      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  icon: const Icon(Icons.navigation_rounded, size: 18, color: Colors.white),
+                  label: const Text('Navigate to Victim', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFC62828),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
