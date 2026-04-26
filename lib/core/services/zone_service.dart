@@ -176,7 +176,7 @@ class ZoneService extends ChangeNotifier {
     if (nearestZone == null || !nearestZone.requiresAlert) return;
     final distanceToZone = _calculateDistance(userLocation, nearestZone.center);
     final alertDistance = nearestZone.radius + 0.05; 
-    if (distanceToZone <= alertDistance && distanceToZone > nearestZone.radius) {
+    if (distanceToZone <= alertDistance) {
       if (_alertCooldownTimer == null || !_alertCooldownTimer!.isActive) {
         _triggerZoneAlert(nearestZone);
         _alertCooldownTimer = Timer(const Duration(minutes: 2), () { _alertTriggered = false; });

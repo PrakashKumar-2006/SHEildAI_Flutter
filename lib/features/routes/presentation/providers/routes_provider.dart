@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../../core/services/osrm_service.dart';
 import '../../../../core/services/ml_service.dart';
+import '../../../../core/models/zone_model.dart';
 
 class RoutesProvider extends ChangeNotifier {
   final MLService _mlService = MLService();
@@ -42,6 +43,7 @@ class RoutesProvider extends ChangeNotifier {
     int hour = 0,
     int month = 1,
     int isWeekend = 0,
+    List<ZoneModel>? zones,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -139,6 +141,35 @@ class RoutesProvider extends ChangeNotifier {
         debugPrint('[Routes] ML evaluation error: $e');
         _routes = routes;
       }
+
+      // Fallback: If ML failed or all routes have 0 risk, use local zones to calculate risk
+      if (zones != null && zones.isNotEmpty && _routes.every((r) => r.riskScore == 0)) {
+        debugPrint('[Routes] Using local zones for fallback risk calculation');
+        for (final route in _routes) {
+          double totalRisk = 0;
+          int pointsChecked = 0;
+          for (int i = 0; i < route.points.length; i += 10) {
+            pointsChecked++;
+            final point = route.points[i];
+            for (final zone in zones) {
+              final dist = OSRMService.calculateDistance(point.latitude, point.longitude, zone.center.latitude, zone.center.longitude);
+              if (dist < (zone.radius * 1000)) {
+                totalRisk += zone.riskScore;
+                break; 
+              }
+            }
+          }
+          route.riskScore = pointsChecked > 0 ? totalRisk / pointsChecked : 0;
+        }
+        
+        // Re-sort after fallback calculation
+        _routes.sort((a, b) {
+          int riskCmp = a.riskScore.compareTo(b.riskScore);
+          if (riskCmp != 0) return riskCmp;
+          return a.distance.compareTo(b.distance);
+        });
+      }
+
       _selectedRouteIndex = 0;
       _selectedRoute = _routes.isNotEmpty ? _routes.first : null;
       _isLoading = false;

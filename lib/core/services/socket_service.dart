@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class SocketService {
@@ -50,11 +52,12 @@ class SocketService {
   void _handleMessage(dynamic message) {
     try {
       if (message is String) {
-        final data = message;
-        _messageController.add({'type': 'message', 'data': data});
+        // Handle Socket.IO message format or plain JSON
+        final data = jsonDecode(message);
+        _messageController.add(data as Map<String, dynamic>);
       }
     } catch (e) {
-      // Ignore parse errors
+      debugPrint('[SocketService] Error parsing message: $e');
     }
   }
 

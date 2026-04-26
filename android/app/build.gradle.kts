@@ -36,8 +36,10 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // WARNING: Signing a release build with a debug key is a major trigger for 
+            // Google Play Protect "App Blocked" errors. 
+            // TODO: Generate a real upload key and use it here for production.
+            // For now, we use the debug key so 'flutter build apk --release' still works.
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

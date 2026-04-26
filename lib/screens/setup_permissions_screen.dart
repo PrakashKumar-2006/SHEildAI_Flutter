@@ -31,14 +31,13 @@ class _SetupPermissionsScreenState extends State<SetupPermissionsScreen>
   // null  = not yet requested
   // true  = granted
   // false = denied / permanently denied
-  final Map<String, bool?> _status = {
+    final Map<String, bool?> _status = {
     'location': null,
     'backgroundLocation': null,
     'camera': null,
     'microphone': null,
     'notifications': null,
     'sms': null,
-    'phoneState': null,
     'battery': null,
   };
 
@@ -87,13 +86,6 @@ class _SetupPermissionsScreenState extends State<SetupPermissionsScreen>
       reason: 'Dispatches emergency text messages to your trusted contacts.',
     ),
     _PermMeta(
-      key: 'phoneState',
-      icon: Icons.phone_android_rounded,
-      color: Color(0xFF00897B),
-      title: 'Phone State',
-      reason: 'Detects calls so SOS recordings are not interrupted.',
-    ),
-    _PermMeta(
       key: 'battery',
       icon: Icons.battery_charging_full_rounded,
       color: Color(0xFFE53935),
@@ -132,7 +124,6 @@ class _SetupPermissionsScreenState extends State<SetupPermissionsScreen>
       Permission.microphone.status,
       Permission.notification.status,
       Permission.sms.status,
-      Permission.phone.status,
       Permission.ignoreBatteryOptimizations.status,
     ]);
 
@@ -144,8 +135,7 @@ class _SetupPermissionsScreenState extends State<SetupPermissionsScreen>
       _status['microphone']         = results[3].isGranted;
       _status['notifications']      = results[4].isGranted;
       _status['sms']                = results[5].isGranted;
-      _status['phoneState']         = results[6].isGranted;
-      _status['battery']            = results[7].isGranted;
+      _status['battery']            = results[6].isGranted;
     });
 
     // If every runtime permission is already granted (e.g. returning user
@@ -197,11 +187,8 @@ class _SetupPermissionsScreenState extends State<SetupPermissionsScreen>
       final smsStatus = await Permission.sms.request();
       if (mounted) setState(() => _status['sms'] = smsStatus.isGranted);
 
-      // 7. Phone state (READ_PHONE_STATE)
-      final phoneStatus = await Permission.phone.request();
-      if (mounted) setState(() => _status['phoneState'] = phoneStatus.isGranted);
 
-      // 8. Ignore battery optimizations — critical for SOS background service
+      // 7. Ignore battery optimizations — critical for SOS background service
       //    survival on aggressive OEMs (MIUI, One UI, ColorOS, etc.).
       final batteryStatus = await Permission.ignoreBatteryOptimizations.request();
       if (mounted) setState(() => _status['battery'] = batteryStatus.isGranted);

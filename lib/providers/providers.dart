@@ -18,6 +18,8 @@ import '../core/models/zone_model.dart';
 import '../core/services/sms_service.dart';
 import '../core/services/api_service.dart' as api;
 import '../features/community/presentation/providers/community_provider.dart';
+import '../core/services/socket_service.dart';
+import '../core/services/osrm_service.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -74,7 +76,8 @@ class UserProfile {
 
 class AlertItem {
   final String id; final String type; final String title; final String body; final DateTime timestamp; final String? riskLevel;
-  AlertItem({required this.id, required this.type, required this.title, required this.body, required this.timestamp, this.riskLevel});
+  final double? latitude; final double? longitude;
+  AlertItem({required this.id, required this.type, required this.title, required this.body, required this.timestamp, this.riskLevel, this.latitude, this.longitude});
 }
 
 // ─── Safety Provider (Bridge) ───────────────────────────────────────────────────
@@ -137,7 +140,11 @@ class SafetyProvider extends ChangeNotifier {
     if (score <= 75) return 'HIGH';
     return 'CRITICAL';
   }
-  int get riskScore => (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
+  int get riskScore {
+    final mlScore = (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
+    final zoneScore = (_zoneService?.currentZone?.riskScore ?? 0).toInt();
+    return mlScore > zoneScore ? mlScore : zoneScore;
+  }
   String get riskColor {
     final score = riskScore;
     if (score <= 25) return '#43A047'; // Green
@@ -259,7 +266,55 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     await _loadUserProfile();
+    if (_userProfile.phone.isNotEmpty) {
+      // Connect to socket for real-time community alerts
+      await SocketService().connect(_userProfile.phone);
+      _listenToSocket();
+    }
     _isAppReady = true;
+    notifyListeners();
+  }
+
+  void _listenToSocket() {
+    SocketService().messageStream.listen((msg) {
+      try {
+        final event = msg['event'];
+        final data = msg['data'];
+        
+        if (event == 'sos_broadcast' && data != null) {
+          final double victimLat = (data['latitude'] as num).toDouble();
+          final double victimLng = (data['longitude'] as num).toDouble();
+          final String victimName = data['name'] ?? 'Someone';
+          final String sosId = data['sosId'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+          
+          if (latitude != null && longitude != null) {
+            // Calculate distance using OSRMService's Haversine formula
+            final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
+            if (distanceMeters <= 5000.0) { // 5km radius
+              _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[SafetyProvider] Socket message error: $e');
+      }
+    });
+  }
+
+  void _addCommunitySOSAlert(String name, double lat, double lng, String id) {
+    // Check if we already have this alert to avoid duplicates
+    if (_alerts.any((a) => a.id == 'comm_sos_$id')) return;
+
+    _alerts.insert(0, AlertItem(
+      id: 'comm_sos_$id',
+      type: 'COMMUNITY_SOS',
+      title: '🚨 SOS: $name needs help! 🚨',
+      body: 'Emergency triggered within 5km of your location.',
+      timestamp: DateTime.now(),
+      riskLevel: 'CRITICAL',
+      latitude: lat,
+      longitude: lng,
+    ));
     notifyListeners();
   }
 
@@ -354,6 +409,16 @@ class SafetyProvider extends ChangeNotifier {
 
   void stopSiren() {
     _zoneService?.stopSiren();
+    notifyListeners();
+  }
+
+  void clearAlerts() {
+    _alerts.clear();
+    notifyListeners();
+  }
+
+  void removeAlert(String id) {
+    _alerts.removeWhere((a) => a.id == id);
     notifyListeners();
   }
 

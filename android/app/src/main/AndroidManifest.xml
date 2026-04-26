@@ -19,11 +19,7 @@
 
     <!-- SMS dispatch to emergency contacts -->
     <uses-permission android:name="android.permission.SEND_SMS" />
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
 
-    <!-- Phone state -->
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <!-- Storage (API 28 and below only) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
