@@ -1,7 +1,7 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=C:\flutter"
-export "FLUTTER_APPLICATION_PATH=C:\Users\Asus\Desktop\PR-REPO\SHEildAI_Flutter"
+export "FLUTTER_ROOT=C:\Users\hp\develop\flutter"
+export "FLUTTER_APPLICATION_PATH=F:\sheild_ai\SHEildAI_Flutter"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
 export "FLUTTER_TARGET=lib\main.dart"
 export "FLUTTER_BUILD_DIR=build"

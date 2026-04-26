@@ -41,6 +41,10 @@ android {
             // TODO: Generate a real upload key and use it here for production.
             // For now, we use the debug key so 'flutter build apk --release' still works.
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
