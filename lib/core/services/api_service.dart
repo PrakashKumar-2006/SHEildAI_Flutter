@@ -149,10 +149,10 @@ class ApiService {
           'lat': latitude,
           'lon': longitude,
           'hour': now.hour,
-          'month': now.month + 1,
+          'month': now.month,
           'transport_mode': 'walking',
           'internet': true,
-          'battery': 80,
+          'battery': 100,
         }),
       );
 
@@ -204,57 +204,6 @@ class ApiService {
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> submitCommunityReport(
-    String phone,
-    double latitude,
-    double longitude,
-    String incidentType,
-    String description,
-    int severity,
-    {bool anonymous = true}
-  ) async {
-    try {
-      final token = await getAuthToken(phone);
-      final response = await _fetchWithTimeout(
-        '$_backendUrl/api/community-reports',
-        {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        jsonEncode({
-          'latitude': latitude,
-          'longitude': longitude,
-          'incidentType': incidentType,
-          'description': description,
-          'severity': severity,
-          'anonymous': anonymous,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<List<dynamic>?> fetchNearbyCommunityReports(double latitude, double longitude) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_backendUrl/api/community-reports?latitude=$latitude&longitude=$longitude&radiusKm=10'),
-      ).timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as List<dynamic>;
       }
       return null;
     } catch (e) {

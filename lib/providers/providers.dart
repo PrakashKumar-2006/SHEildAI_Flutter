@@ -134,20 +134,28 @@ class SafetyProvider extends ChangeNotifier {
   
   // ML Fields (Mapped to backend thresholds)
   String get riskLabel {
+    if (!(_zoneService?.isDataAvailable ?? false)) return 'N/A (Coming Soon)';
+    
     final score = riskScore;
-    if (score <= 25) return 'SAFE';
+    if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return 'SAFE ZONE';
     if (score <= 50) return 'MEDIUM';
     if (score <= 75) return 'HIGH';
     return 'CRITICAL';
   }
+
   int get riskScore {
+    if (!(_zoneService?.isDataAvailable ?? false)) return 0;
+    
     final mlScore = (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
     final zoneScore = (_zoneService?.currentZone?.riskScore ?? 0).toInt();
     return mlScore > zoneScore ? mlScore : zoneScore;
   }
+
   String get riskColor {
+    if (!(_zoneService?.isDataAvailable ?? false)) return '#94A3B8'; // Slate/Grey for N/A
+    
     final score = riskScore;
-    if (score <= 25) return '#43A047'; // Green
+    if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return '#43A047'; // Green
     if (score <= 50) return '#FBC02D'; // Yellow/Orange
     if (score <= 75) return '#F57C00'; // Orange
     return '#D32F2F'; // Red
@@ -279,9 +287,9 @@ class SafetyProvider extends ChangeNotifier {
     SocketService().messageStream.listen((msg) {
       try {
         final event = msg['event'];
-        final data = msg['data'];
+        final data = msg; // In the new SocketService, msg contains all payload data + event name
         
-        if (event == 'sos_broadcast' && data != null) {
+        if (event == 'sos_broadcast') {
           final double victimLat = (data['latitude'] as num).toDouble();
           final double victimLng = (data['longitude'] as num).toDouble();
           final String victimName = data['name'] ?? 'Someone';
@@ -427,17 +435,17 @@ class SafetyProvider extends ChangeNotifier {
   Future<bool> submitCommunityReport(String type, String desc, int severity) async {
     try {
       if (latitude == null || longitude == null) return false;
-      final response = await api.ApiService.submitCommunityReport(
-        _userProfile.phone,
-        latitude!,
-        longitude!,
-        type,
-        desc,
-        severity,
-        anonymous: true,
+      
+      final success = await _communityProvider?.submitReport(
+        phone: _userProfile.phone,
+        latitude: latitude!,
+        longitude: longitude!,
+        incidentType: type,
+        description: desc,
+        severity: severity,
       );
       
-      if (response != null) {
+      if (success == true) {
         _alerts.insert(0, AlertItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(), 
           type: 'REPORT', 

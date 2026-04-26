@@ -235,8 +235,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           riskLevel.toUpperCase(),
+                          textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: riskLevel.contains('N/A') ? 10 : 12,
                             fontWeight: FontWeight.w700,
                             color: _parseColor(riskColor),
                           ),
@@ -247,21 +248,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '$riskScore',
+                              riskScore == 0 && riskLevel.contains('N/A') ? 'N/A' : '$riskScore',
                               style: TextStyle(
-                                fontSize: 48,
+                                fontSize: riskScore == 0 && riskLevel.contains('N/A') ? 40 : 48,
                                 fontWeight: FontWeight.w800,
                                 color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
                               ),
                             ),
-                            Text(
-                              '%',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+                            if (!(riskScore == 0 && riskLevel.contains('N/A')))
+                              Text(
+                                '%',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ],

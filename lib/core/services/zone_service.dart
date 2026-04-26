@@ -140,7 +140,9 @@ class ZoneService extends ChangeNotifier {
       final distance = _calculateDistance(userLocation, zone.center);
       if (distance < nearestDistance) { nearestDistance = distance; nearestZone = zone; }
     }
-    _isDataAvailable = _zones.isNotEmpty;
+    
+    // Set availability based on nearest zone distance (10km threshold)
+    _isDataAvailable = _zones.isNotEmpty && nearestDistance <= 10.0;
     _nearestZone = nearestZone;
 
     ZoneModel? insideZone;
@@ -163,7 +165,7 @@ class ZoneService extends ChangeNotifier {
         name: 'Safe Area', 
         center: userLocation, 
         radius: 0, 
-        riskScore: 10, // Default low risk score for outside areas
+        riskScore: 0, // Baseline zero risk score for safe areas
         zoneType: ZoneType.safe
       ); 
     }

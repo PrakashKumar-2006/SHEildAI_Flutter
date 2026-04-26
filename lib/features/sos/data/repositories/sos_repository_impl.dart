@@ -5,6 +5,8 @@ import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/hive_service.dart';
 import '../../../../core/services/sync_service.dart';
 import '../../../../core/services/api_service.dart';
+import '../../../../core/services/socket_service.dart';
+import '../../../../core/services/mongo_service.dart';
 import '../../domain/models/sos_model.dart';
 import '../../domain/repositories/sos_repository.dart';
 
@@ -62,9 +64,34 @@ class SOSRepositoryImpl implements SOSRepository {
         location: 'Lat: ${latitude.toStringAsFixed(4)}, Lng: ${longitude.toStringAsFixed(4)}',
       );
 
-      // Trigger cloud SOS
-      final userId = _storageService.getString('user_id') ?? 'unknown';
-      ApiService.triggerCloudSOS(userId, latitude, longitude).catchError((_) => null);
+      // Trigger real-time cloud SOS via Socket (Render)
+      final phone = _storageService.getString('user_phone') ?? 'unknown';
+      final userName = _storageService.getString('user_name') ?? 'Someone';
+      
+      SocketService().emitSOSAlert({
+        'sosId': sosId,
+        'userId': phone,
+        'name': userName,
+        'latitude': latitude,
+        'longitude': longitude,
+        'timestamp': DateTime.now().toIso8601String(),
+        'message': sosModel.message,
+      });
+
+      // Persist to MongoDB Atlas directly for robustness
+      MongoService().createSOS({
+        'sos_id': sosId,
+        'user_phone': phone,
+        'name': userName,
+        'latitude': latitude,
+        'longitude': longitude,
+        'status': 'active',
+        'timestamp': DateTime.now().toIso8601String(),
+        'contacts': contacts,
+      });
+
+      // Standard API trigger (Render)
+      ApiService.triggerCloudSOS(phone, latitude, longitude).catchError((_) => null);
 
       return Right(sosModel);
     } catch (e) {

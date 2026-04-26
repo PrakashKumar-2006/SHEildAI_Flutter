@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -184,9 +185,15 @@ class MongoService {
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
     try {
       final collection = getCollection('community_reports');
+      // Add geo-spatial location field for MongoDB queries
+      reportData['location'] = {
+        'type': 'Point',
+        'coordinates': [reportData['lon'] ?? reportData['longitude'], reportData['lat'] ?? reportData['latitude']]
+      };
       await collection.insertOne(reportData);
       return true;
     } catch (e) {
+      debugPrint('[MongoService] submitCommunityReport error: $e');
       return false;
     }
   }
@@ -194,11 +201,71 @@ class MongoService {
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {
     try {
       final collection = getCollection('community_reports');
-      final result = await collection.find().toList();
-      return result;
+      
+      // Try using geo-spatial query if index exists, fallback to all + filter if it fails
+      try {
+        final result = await collection.find({
+          'location': {
+            '\$near': {
+              '\$geometry': {
+                'type': 'Point',
+                'coordinates': [lon, lat]
+              },
+              '\$maxDistance': radiusKm * 1000 // meters
+            }
+          }
+        }).toList();
+        return result;
+      } catch (e) {
+        // Fallback: Fetch all recent reports and filter locally
+        debugPrint('[MongoService] Geo-query failed, falling back to local filter: $e');
+        final all = await collection.find(where.sortBy('timestamp', descending: true).limit(50)).toList();
+        return all.where((rpt) {
+          final rlat = (rpt['lat'] ?? rpt['latitude'] as num).toDouble();
+          final rlon = (rpt['lon'] ?? rpt['longitude'] as num).toDouble();
+          final dist = _calculateDistance(lat, lon, rlat, rlon);
+          return dist <= radiusKm;
+        }).toList();
+      }
+    } catch (e) {
+      debugPrint('[MongoService] getNearbyReports error: $e');
+      return [];
+    }
+  }
+
+  // Determine nearby users for SOS broadcast logic
+  Future<List<Map<String, dynamic>>> getNearbyUsers(double lat, double lon, double radiusKm) async {
+    try {
+      final collection = getCollection('users');
+      // Similar geo-query logic for users
+      final result = await collection.find().toList(); // For now, get all and filter locally for safety
+      return result.where((u) {
+        if (u['last_lat'] == null || u['last_lon'] == null) return false;
+        final dist = _calculateDistance(lat, lon, u['last_lat'], u['last_lon']);
+        return dist <= radiusKm;
+      }).toList();
     } catch (e) {
       return [];
     }
+  }
+
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    // Standard Haversine formula
+    const double R = 6371.0; // Earth radius in km
+    final double dLat = _toRadians(lat2 - lat1);
+    final double dLon = _toRadians(lon2 - lon1);
+    
+    final double a = 
+      sin(dLat / 2) * sin(dLat / 2) +
+      cos(_toRadians(lat1)) * cos(_toRadians(lat2)) * 
+      sin(dLon / 2) * sin(dLon / 2);
+      
+    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+  }
+
+  double _toRadians(double degree) {
+    return degree * (3.141592653589793 / 180.0);
   }
 
   // Location logs operations

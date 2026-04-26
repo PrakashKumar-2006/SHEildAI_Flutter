@@ -1,7 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -9,9 +8,9 @@ class SocketService {
 
   SocketService._internal();
 
-  static const String _backendUrl = 'wss://sheildai1-o.onrender.com';
+  static const String _backendUrl = 'https://sheildai1-o.onrender.com';
   
-  WebSocketChannel? _channel;
+  IO.Socket? _socket;
   final StreamController<Map<String, dynamic>> _messageController = StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
   
@@ -23,79 +22,77 @@ class SocketService {
   bool get isConnected => _isConnected;
 
   Future<void> connect(String phone) async {
-    try {
-      _currentUserId = phone;
-      _channel = WebSocketChannel.connect(Uri.parse('$_backendUrl/socket.io/?phone=$phone'));
-      
-      _channel!.stream.listen(
-        (message) {
-          _handleMessage(message);
-        },
-        onError: (error) {
-          _isConnected = false;
-          _connectionController.add(false);
-        },
-        onDone: () {
-          _isConnected = false;
-          _connectionController.add(false);
-        },
-      );
-      
+    if (_socket != null && _socket!.connected) return;
+    
+    _currentUserId = phone;
+    
+    _socket = IO.io(_backendUrl, IO.OptionBuilder()
+      .setTransports(['websocket']) // for Flutter or Web
+      .enableAutoConnect()
+      .setQuery({'phone': phone})
+      .build());
+
+    _socket!.onConnect((_) {
+      debugPrint('[SocketService] Connected');
       _isConnected = true;
       _connectionController.add(true);
-    } catch (e) {
+    });
+
+    _socket!.onDisconnect((_) {
+      debugPrint('[SocketService] Disconnected');
       _isConnected = false;
       _connectionController.add(false);
-    }
-  }
+    });
 
-  void _handleMessage(dynamic message) {
-    try {
-      if (message is String) {
-        // Handle Socket.IO message format or plain JSON
-        final data = jsonDecode(message);
-        _messageController.add(data as Map<String, dynamic>);
+    _socket!.onConnectError((data) => debugPrint('[SocketService] Connect Error: $data'));
+    _socket!.onError((data) => debugPrint('[SocketService] Error: $data'));
+
+    // Listen for all events and pipe to messageStream
+    _socket!.onAny((event, data) {
+      if (data is Map<String, dynamic>) {
+        // Wrap with event name for easier handling in providers
+        final wrappedData = Map<String, dynamic>.from(data);
+        wrappedData['event'] = event;
+        _messageController.add(wrappedData);
+      } else if (data is String) {
+        try {
+          final decoded = Map<String, dynamic>.from({'data': data, 'event': event});
+          _messageController.add(decoded);
+        } catch (_) {}
       }
-    } catch (e) {
-      debugPrint('[SocketService] Error parsing message: $e');
-    }
+    });
   }
 
   void joinSOSRoom(String sosId) {
-    if (_channel != null && _isConnected) {
-      _channel!.sink.add({
-        'event': 'join_sos',
+    if (_socket != null && _isConnected) {
+      _socket!.emit('join_sos', {
         'sosId': sosId,
         'userId': _currentUserId,
-      }.toString());
+      });
     }
   }
 
   void emitLiveLocationUpdate(String sosId, double lat, double lng) {
-    if (_channel != null && _isConnected) {
-      _channel!.sink.add({
-        'event': 'location_update',
+    if (_socket != null && _isConnected) {
+      _socket!.emit('location_update', {
         'sosId': sosId,
         'userId': _currentUserId,
         'latitude': lat,
         'longitude': lng,
         'timestamp': DateTime.now().toIso8601String(),
-      }.toString());
+      });
     }
   }
 
   void emitSOSAlert(Map<String, dynamic> sosData) {
-    if (_channel != null && _isConnected) {
-      _channel!.sink.add({
-        'event': 'sos_alert',
-        'data': sosData,
-      }.toString());
+    if (_socket != null && _isConnected) {
+      _socket!.emit('sos_alert', sosData);
     }
   }
 
   void disconnect() {
-    _channel?.sink.close();
-    _channel = null;
+    _socket?.disconnect();
+    _socket = null;
     _isConnected = false;
     _connectionController.add(false);
   }

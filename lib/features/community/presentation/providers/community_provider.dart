@@ -16,7 +16,7 @@ class CommunityProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  Future<void> submitReport({
+  Future<bool> submitReport({
     required String phone,
     required double latitude,
     required double longitude,
@@ -40,22 +40,25 @@ class CommunityProvider extends ChangeNotifier {
         anonymous: anonymous,
       );
 
-      result.fold(
+      return result.fold(
         (failure) {
           _errorMessage = failure.toString();
           _isLoading = false;
           notifyListeners();
+          return false;
         },
         (report) {
           _reports.insert(0, report);
           _isLoading = false;
           notifyListeners();
+          return true;
         },
       );
     } catch (e) {
       _errorMessage = e.toString();
       _isLoading = false;
       notifyListeners();
+      return false;
     }
   }
 
