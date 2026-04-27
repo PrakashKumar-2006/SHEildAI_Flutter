@@ -15,6 +15,7 @@ import '../../../../core/services/zone_service.dart';
 import '../../../../providers/providers.dart' show SafetyProvider;
 import '../../../../shared/widgets/crowd_risk_indicator.dart';
 import '../../../../widgets/notification_bell_popup.dart';
+import '../../../community/presentation/providers/community_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -134,7 +135,20 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
-...
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const SOSScreen()),
+          );
+        },
+        backgroundColor: Colors.red,
+        icon: const Icon(Ionicons.alert_circle, color: Colors.white),
+        label: const Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
   Widget _buildCommunityFeed(BuildContext context) {
     return Consumer<CommunityProvider>(
       builder: (context, communityProvider, child) {
@@ -324,19 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     return '${diff.inDays}d ago';
   }
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const SOSScreen()),
-          );
-        },
-        backgroundColor: Colors.red,
-        icon: const Icon(Ionicons.alert_circle, color: Colors.white),
-        label: const Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      ),
-    );
-  }
+
 
   Widget _buildHeader(BuildContext context, HomeProvider homeProvider) {
     return Container(
@@ -380,7 +382,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSafetyCard(BuildContext context, HomeProvider homeProvider, LocationProvider locationProvider) {
     final safetyProvider = context.watch<SafetyProvider>();
     final riskScore = safetyProvider.riskScore;
-    final riskLevel = safetyProvider.riskLevel;
+    final riskLevel = safetyProvider.riskLabel;
     final riskColor = safetyProvider.riskColor;
     
     return Container(
