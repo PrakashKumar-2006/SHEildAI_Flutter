@@ -12,6 +12,7 @@ import '../../../sos/presentation/providers/sos_provider.dart';
 import '../../../../core/providers/ml_provider.dart';
 import '../../../../core/services/zone_service.dart';
 import '../../../../providers/providers.dart' show SafetyProvider;
+import '../../../../shared/widgets/crowd_risk_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -99,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         // Safety Indicator Circle
                         _buildSafetyCard(context, homeProvider, locationProvider),
+                        const CrowdRiskIndicator(),
                         const SizedBox(height: 20),
                         // Safety Intelligence Section
                         _buildIntelligenceSection(context, homeProvider),
