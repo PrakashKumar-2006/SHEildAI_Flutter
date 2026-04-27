@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
@@ -19,34 +20,56 @@ class MongoService {
   Future<void> connect() async {
     try {
       _connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING'];
-      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'test';
+      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'sheildai';
       
-      debugPrint('Attempting to connect to MongoDB (DB: $dbName)...');
+      debugPrint('[MongoService] Connecting to Atlas (DB: $dbName)...');
       
       if (_connectionString == null || _connectionString!.isEmpty) {
-        debugPrint('ERROR: MongoDB connection string is null or empty!');
-        throw Exception('MongoDB connection string not found in environment variables');
+        throw Exception('MongoDB connection string missing in .env');
       }
 
-      // If connection string doesn't have the DB name, inject it before the query parameters
-      if (!_connectionString!.contains('.net/$dbName')) {
-        if (_connectionString!.contains('?')) {
-          _connectionString = _connectionString!.replaceFirst('?', '$dbName?');
-        } else if (!_connectionString!.endsWith('/')) {
-          _connectionString = '$_connectionString/$dbName';
-        } else {
-          _connectionString = '$_connectionString$dbName';
+      String finalUri = _connectionString!;
+      
+      // Handle Atlas SRV strings more robustly
+      if (finalUri.contains('mongodb+srv')) {
+        // If URI doesn't have a database name, inject it
+        // Format is usually mongodb+srv://user:pass@cluster.net/?options
+        final parts = finalUri.split('.net/');
+        if (parts.length == 2) {
+          final afterHost = parts[1];
+          if (afterHost.isEmpty || afterHost.startsWith('?')) {
+            finalUri = '${parts[0]}.net/$dbName${afterHost.startsWith('?') ? afterHost : '/$afterHost'}';
+          }
+        }
+        
+        // Ensure authSource=admin for Atlas if not specified
+        if (!finalUri.contains('authSource')) {
+          finalUri = finalUri.contains('?') 
+              ? '$finalUri&authSource=admin' 
+              : '$finalUri?authSource=admin';
         }
       }
       
-      _db = await Db.create(_connectionString!);
+      debugPrint('[MongoService] Finalized URI: ${finalUri.replaceFirst(RegExp(r':.*@'), ':****@')}');
+      
+      _db = await Db.create(finalUri);
       await _db!.open();
       
       _isConnected = true;
-      debugPrint('SUCCESS: Connected to MongoDB Database: $dbName');
+      debugPrint('[MongoService] SUCCESS: Connected to Atlas DB: $dbName');
+      
+      // Ensure geo-spatial index exists for community reports
+      try {
+        final collection = _db!.collection('community_reports');
+        // We use createIndex to ensure the 'location' field is searchable via geo-queries
+        await collection.createIndex(keys: {'location': '2dsphere'});
+        debugPrint('[MongoService] Geo-index verified for community_reports');
+      } catch (e) {
+        debugPrint('[MongoService] Note: Geo-index check skipped or index exists: $e');
+      }
     } catch (e) {
       _isConnected = false;
-      debugPrint('FAILED to connect to MongoDB: $e');
+      debugPrint('[MongoService] FAILED to connect: $e');
       rethrow;
     }
   }
@@ -168,25 +191,123 @@ class MongoService {
     }
   }
 
+  Future<void> _ensureConnected() async {
+    if (_db == null || !_isConnected || !_db!.isConnected) {
+      debugPrint('[MongoService] DB not connected, attempting reconnect...');
+      await connect();
+    }
+  }
+
   // Community reports operations
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
     try {
+      await _ensureConnected();
       final collection = getCollection('community_reports');
+      
+      final timestamp = DateTime.now();
+      reportData['timestamp'] = timestamp.toIso8601String();
+      reportData['created_at'] = timestamp.millisecondsSinceEpoch;
+      
+      final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
+      final lon = (reportData['lon'] ?? reportData['longitude'] as num).toDouble();
+      
+      // GEO-JSON format: [longitude, latitude]
+      reportData['location'] = {
+        'type': 'Point',
+        'coordinates': [lon, lat]
+      };
+      
+      reportData['lat'] = lat;
+      reportData['lon'] = lon;
+      
       await collection.insertOne(reportData);
+      debugPrint('[MongoService] SUCCESS: Report stored in Atlas');
       return true;
     } catch (e) {
+      debugPrint('[MongoService] ERROR: Failed to store report: $e');
       return false;
     }
   }
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {
     try {
+      await _ensureConnected();
       final collection = getCollection('community_reports');
-      final result = await collection.find().toList();
-      return result;
+      
+      debugPrint('[MongoService] Fetching reports near $lat, $lon (radius: ${radiusKm}km)');
+      
+      // Try using geo-spatial query first
+      try {
+        final result = await collection.find({
+          'location': {
+            '\$near': {
+              '\$geometry': {
+                'type': 'Point',
+                'coordinates': [lon, lat]
+              },
+              '\$maxDistance': radiusKm * 1000 // meters
+            }
+          }
+        }).toList();
+        
+        debugPrint('[MongoService] Found ${result.length} reports via geo-query');
+        return result;
+      } catch (e) {
+        // Fallback: Fetch last 100 reports and filter locally
+        debugPrint('[MongoService] Geo-query failed or index missing, falling back: $e');
+        final all = await collection.find(
+          where.sortBy('created_at', descending: true).limit(100)
+        ).toList();
+        
+        final filtered = all.where((rpt) {
+          final rlat = (rpt['lat'] ?? rpt['latitude'] as num).toDouble();
+          final rlon = (rpt['lon'] ?? rpt['longitude'] as num).toDouble();
+          final dist = _calculateDistance(lat, lon, rlat, rlon);
+          return dist <= radiusKm;
+        }).toList();
+        
+        debugPrint('[MongoService] Found ${filtered.length} reports via fallback filter');
+        return filtered;
+      }
+    } catch (e) {
+      debugPrint('[MongoService] getNearbyReports error: $e');
+      return [];
+    }
+  }
+
+  // Determine nearby users for SOS broadcast logic
+  Future<List<Map<String, dynamic>>> getNearbyUsers(double lat, double lon, double radiusKm) async {
+    try {
+      final collection = getCollection('users');
+      // Similar geo-query logic for users
+      final result = await collection.find().toList(); // For now, get all and filter locally for safety
+      return result.where((u) {
+        if (u['last_lat'] == null || u['last_lon'] == null) return false;
+        final dist = _calculateDistance(lat, lon, u['last_lat'], u['last_lon']);
+        return dist <= radiusKm;
+      }).toList();
     } catch (e) {
       return [];
     }
+  }
+
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    // Standard Haversine formula
+    const double R = 6371.0; // Earth radius in km
+    final double dLat = _toRadians(lat2 - lat1);
+    final double dLon = _toRadians(lon2 - lon1);
+    
+    final double a = 
+      sin(dLat / 2) * sin(dLat / 2) +
+      cos(_toRadians(lat1)) * cos(_toRadians(lat2)) * 
+      sin(dLon / 2) * sin(dLon / 2);
+      
+    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+  }
+
+  double _toRadians(double degree) {
+    return degree * (3.141592653589793 / 180.0);
   }
 
   // Location logs operations

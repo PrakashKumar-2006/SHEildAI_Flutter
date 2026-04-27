@@ -97,6 +97,31 @@ class NotificationService {
     await _notificationsPlugin.cancelAll();
   }
 
+  Future<void> showCommunitySOSNotification({
+    required String name,
+    required double distanceMeters,
+  }) async {
+    final distanceKm = (distanceMeters / 1000).toStringAsFixed(1);
+    await showNotification(
+      id: 100,
+      title: '🚨 EMERGENCY NEARBY: $name',
+      body: 'Someone needs help within $distanceKm km of your location!',
+      payload: 'community_sos',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'emergency_channel',
+          'Emergency Alerts',
+          channelDescription: 'High-priority alerts for nearby emergencies',
+          importance: Importance.max,
+          priority: Priority.high,
+          fullScreenIntent: true,
+          enableVibration: true,
+          playSound: true,
+        ),
+      ),
+    );
+  }
+
   Future<void> cancelSOSNotifications() async {
     await cancelNotification(1);
   }

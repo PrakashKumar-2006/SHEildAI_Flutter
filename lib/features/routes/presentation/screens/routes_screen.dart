@@ -107,6 +107,15 @@ class _RoutesScreenState extends State<RoutesScreen> {
                     // Map Card with Routes
                     _buildMapCard(context, locationProvider, routesProvider, zoneService),
                     const SizedBox(height: 14),
+                    // Error Message
+                    if (routesProvider.errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Text(
+                          routesProvider.errorMessage!,
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
                     // Routes Section
                     _buildRoutesSection(context, routesProvider),
                     const SizedBox(height: 20),
@@ -322,29 +331,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
           Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
         },
-        circles: (destination != null && routesProvider.selectedRoute != null) 
-          ? zones.where((zone) {
-              // Only show zones near the selected route (within 1km of any point)
-              return routesProvider.selectedRoute!.points.any((point) {
-                final dist = OSRMService.calculateDistance(
-                  point.latitude, point.longitude, 
-                  zone.center.latitude, zone.center.longitude
-                );
-                return dist < 1000; // 1km buffer
-              });
-            }).map((zone) {
-              final color = zone.riskScore > 75 ? Colors.red : 
-                           zone.riskScore > 50 ? Colors.orange : 
-                           zone.riskScore > 25 ? Colors.yellow : Colors.green;
-              return Circle(
-                circleId: CircleId(zone.id),
-                center: LatLng(zone.center.latitude, zone.center.longitude),
-                radius: zone.radius * 1000,
-                fillColor: color.withOpacity(0.2),
-                strokeColor: color,
-                strokeWidth: 2,
-              );
-            }).toSet() : {},
+        circles: const {}, // Removed circular zones for a cleaner, more professional look as requested
         polylines: routes.asMap().entries.map((entry) {
           final index = entry.key;
           final route = entry.value;
@@ -440,33 +427,43 @@ class _RoutesScreenState extends State<RoutesScreen> {
     
     final markers = <Marker>[];
     final points = route.points;
+    final Set<String> zonesAffected = {};
     
-    // Sample points along the route (every ~10th point)
-    for (int i = 0; i < points.length; i += 10) {
+    // Check which zones the route passes through
+    for (int i = 0; i < points.length; i += 5) { // Sampling for efficiency
       final point = points[i];
       for (final zone in zones) {
-        if (zone.riskScore > 50) { // Only high/critical zones
+        if (zone.riskScore > 25) { // Show markers for all non-safe zones
           final distance = OSRMService.calculateDistance(
             point.latitude, point.longitude, 
             zone.center.latitude, zone.center.longitude
           );
           
-          if (distance < (zone.radius * 1000)) { // Within zone radius (converted to meters)
-            markers.add(
-              Marker(
-                markerId: MarkerId('risk_${zone.id}_$i'),
-                position: LatLng(point.latitude, point.longitude),
-                icon: _dangerIcon ?? BitmapDescriptor.defaultMarkerWithHue(
-                  zone.riskScore > 75 ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange
-                ),
-                anchor: const Offset(0.5, 0.5),
-                infoWindow: InfoWindow(title: 'Risk Area: ${zone.name}', snippet: 'Score: ${zone.riskScore}%'),
-              ),
-            );
-            break; // Don't add multiple markers for the same point
+          if (distance < (zone.radius * 1000)) {
+            zonesAffected.add(zone.id);
           }
         }
       }
+    }
+
+    // Add one triangular marker at the center of each affected zone
+    for (final zoneId in zonesAffected) {
+      final zone = zones.firstWhere((z) => z.id == zoneId);
+      markers.add(
+        Marker(
+          markerId: MarkerId('zone_risk_$zoneId'),
+          position: LatLng(zone.center.latitude, zone.center.longitude),
+          icon: _dangerIcon ?? BitmapDescriptor.defaultMarkerWithHue(
+            zone.riskScore > 75 ? BitmapDescriptor.hueRed : 
+            zone.riskScore > 50 ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueYellow
+          ),
+          anchor: const Offset(0.5, 0.5),
+          infoWindow: InfoWindow(
+            title: 'Danger Zone: ${zone.name}', 
+            snippet: 'Risk Score: ${zone.riskScore}%'
+          ),
+        ),
+      );
     }
     return markers;
   }
@@ -483,6 +480,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
       loc.latitude, loc.longitude, dest,
       hour: DateTime.now().hour,
       month: DateTime.now().month,
+      zones: context.read<ZoneService>().zones,
     );
     
     if (routesProvider.destination != null && _mapController != null) {

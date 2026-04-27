@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
+import '../features/sos/presentation/providers/sos_provider.dart';
+import '../features/voice/presentation/providers/voice_provider.dart';
 import 'home_screen.dart';
 import '../features/routes/presentation/screens/routes_screen.dart';
 import 'sos_screen.dart';
@@ -15,7 +17,7 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
+class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
   late AnimationController _sosAnimController;
   // Expose currentIndex so child widgets can navigate
@@ -33,14 +35,35 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _sosAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..repeat(reverse: true);
+    // Sync native SOS state on first load — catches any session that started
+    // before this widget was mounted (e.g. cold-start after a voice trigger).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<SOSProvider>().syncWithNative();
+        context.read<VoiceProvider>().initialize();
+      }
+    });
+  }
+
+  /// Called by the Android/iOS OS whenever the app lifecycle state changes.
+  /// On [AppLifecycleState.resumed], we poll the native SOS state machine
+  /// as a safety net for voice-triggered sessions that ran while the Flutter
+  /// UI was backgrounded or the screen was off.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<SOSProvider>().syncWithNative();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sosAnimController.dispose();
     super.dispose();
   }

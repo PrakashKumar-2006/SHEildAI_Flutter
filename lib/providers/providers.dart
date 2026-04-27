@@ -10,6 +10,7 @@ import '../features/sos/presentation/providers/sos_provider.dart';
 import '../features/location/presentation/providers/location_provider.dart';
 import '../core/providers/ml_provider.dart';
 import '../core/services/location_service.dart';
+import '../core/services/sos_platform_service.dart';
 import '../core/services/zone_service.dart';
 import '../features/voice/presentation/providers/voice_provider.dart';
 import '../features/sos/domain/models/sos_model.dart';
@@ -17,6 +18,9 @@ import '../core/models/zone_model.dart';
 import '../core/services/sms_service.dart';
 import '../core/services/api_service.dart' as api;
 import '../features/community/presentation/providers/community_provider.dart';
+import '../core/services/socket_service.dart';
+import '../core/services/osrm_service.dart';
+import '../core/services/notification_service.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -73,7 +77,8 @@ class UserProfile {
 
 class AlertItem {
   final String id; final String type; final String title; final String body; final DateTime timestamp; final String? riskLevel;
-  AlertItem({required this.id, required this.type, required this.title, required this.body, required this.timestamp, this.riskLevel});
+  final double? latitude; final double? longitude;
+  AlertItem({required this.id, required this.type, required this.title, required this.body, required this.timestamp, this.riskLevel, this.latitude, this.longitude});
 }
 
 // ─── Safety Provider (Bridge) ───────────────────────────────────────────────────
@@ -104,7 +109,20 @@ class SafetyProvider extends ChangeNotifier {
   List<String> get trustedContacts => _trustedContacts;
   List<String> get inputContacts => _inputContacts;
   bool get isSOSActive => _sosProvider?.isSOSActive ?? false;
-  String get sosState => isSOSActive ? 'SOS_ACTIVE' : 'IDLE';
+
+  /// Returns a granular state string for the SOS screen's session sub-panels.
+  /// Maps the native state machine state so the UI can show the correct panel
+  /// (recording countdown, initialising SOS, evidence done, etc.).
+  String get sosState {
+    final native = _sosProvider?.nativeState;
+    if (native == SOSNativeState.recordingAudio ||
+        native == SOSNativeState.recordingVideo) {
+      return 'RECORDING';
+    }
+    if (isSOSActive) return 'SOS_ACTIVE';
+    if (native == SOSNativeState.cooldown) return 'RECOVERING';
+    return 'IDLE';
+  }
   String? get sosSessionId => _sosProvider?.activeSOS?.id;
   DateTime? get sosSessionStart => _sosProvider?.activeSOS?.timestamp;
   
@@ -117,16 +135,28 @@ class SafetyProvider extends ChangeNotifier {
   
   // ML Fields (Mapped to backend thresholds)
   String get riskLabel {
+    if (!(_zoneService?.isDataAvailable ?? false)) return 'N/A (Coming Soon)';
+    
     final score = riskScore;
-    if (score <= 25) return 'SAFE';
+    if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return 'SAFE ZONE';
     if (score <= 50) return 'MEDIUM';
     if (score <= 75) return 'HIGH';
     return 'CRITICAL';
   }
-  int get riskScore => (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
+
+  int get riskScore {
+    if (!(_zoneService?.isDataAvailable ?? false)) return 0;
+    
+    final mlScore = (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
+    final zoneScore = (_zoneService?.currentZone?.riskScore ?? 0).toInt();
+    return mlScore > zoneScore ? mlScore : zoneScore;
+  }
+
   String get riskColor {
+    if (!(_zoneService?.isDataAvailable ?? false)) return '#94A3B8'; // Slate/Grey for N/A
+    
     final score = riskScore;
-    if (score <= 25) return '#43A047'; // Green
+    if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return '#43A047'; // Green
     if (score <= 50) return '#FBC02D'; // Yellow/Orange
     if (score <= 75) return '#F57C00'; // Orange
     return '#D32F2F'; // Red
@@ -168,14 +198,29 @@ class SafetyProvider extends ChangeNotifier {
     });
   }
 
+  // ─── SOSProvider listener ─────────────────────────────────────────────────
+
+  /// Called every time SOSProvider notifies its listeners (native state change,
+  /// Flutter SOS start/stop, etc.).  Propagates changes to all SafetyProvider
+  /// listeners so the navbar SOS button and SOS screen rebuild immediately.
+  void _onSOSStateChanged() => notifyListeners();
+
   void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community) {
-    _sosProvider = sos;
+    // Re-subscribe only when the SOSProvider instance actually changes.
+    // ProxyProvider may rebuild SafetyProvider with the same instance, so
+    // we guard against redundant remove+add to keep the listener list clean.
+    if (_sosProvider != sos) {
+      _sosProvider?.removeListener(_onSOSStateChanged);
+      _sosProvider = sos;
+      _sosProvider?.addListener(_onSOSStateChanged);
+    }
+
     _locationProvider = loc;
     _mlProvider = ml;
     _zoneService = zone;
     _voiceProvider = voice;
     _communityProvider = community;
-    
+
     _syncWithLocation();
   }
 
@@ -230,7 +275,62 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     await _loadUserProfile();
+    if (_userProfile.phone.isNotEmpty) {
+      // Connect to socket for real-time community alerts
+      await SocketService().connect(_userProfile.phone);
+      _listenToSocket();
+    }
     _isAppReady = true;
+    notifyListeners();
+  }
+
+  void _listenToSocket() {
+    SocketService().messageStream.listen((msg) {
+      try {
+        final event = msg['event'];
+        final data = msg; // In the new SocketService, msg contains all payload data + event name
+        
+        if (event == 'sos_broadcast') {
+          final double victimLat = (data['latitude'] as num).toDouble();
+          final double victimLng = (data['longitude'] as num).toDouble();
+          final String victimName = data['name'] ?? 'Someone';
+          final String sosId = data['sosId'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+          
+          if (latitude != null && longitude != null) {
+            // Calculate distance using OSRMService's Haversine formula
+            final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
+            if (distanceMeters <= 5000.0) { // 5km radius
+              _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[SafetyProvider] Socket message error: $e');
+      }
+    });
+  }
+
+  void _addCommunitySOSAlert(String name, double lat, double lng, String id, double distance) {
+    // Check if we already have this alert to avoid duplicates
+    if (_alerts.any((a) => a.id == 'comm_sos_$id')) return;
+
+    _alerts.insert(0, AlertItem(
+      id: 'comm_sos_$id',
+      type: 'COMMUNITY_SOS',
+      title: '🚨 SOS: $name needs help! 🚨',
+      body: 'Emergency triggered within ${(distance / 1000).toStringAsFixed(1)}km of your location.',
+      timestamp: DateTime.now(),
+      riskLevel: 'CRITICAL',
+      latitude: lat,
+      longitude: lng,
+    ));
+    
+    // Show system notification
+    NotificationService().showCommunitySOSNotification(
+      name: name,
+      distanceMeters: distance,
+    );
+    
     notifyListeners();
   }
 
@@ -239,7 +339,7 @@ class SafetyProvider extends ChangeNotifier {
     _userProfile = UserProfile(
       name: prefs.getString(AppConstants.keyUserName) ?? '',
       phone: prefs.getString(AppConstants.keyUserPhone) ?? '',
-      trustedContacts: prefs.getStringList('@trusted_contacts') ?? [],
+      trustedContacts: prefs.getStringList('trusted_contacts') ?? [],
       isComplete: prefs.getBool('@profile_complete') ?? false,
       isSetupComplete: prefs.getBool('@setup_complete') ?? false,
     );
@@ -261,7 +361,7 @@ class SafetyProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.keyUserName, profile.name);
     await prefs.setString(AppConstants.keyUserPhone, profile.phone);
-    await prefs.setStringList('@trusted_contacts', profile.trustedContacts);
+    await prefs.setStringList('trusted_contacts', profile.trustedContacts);
     await prefs.setBool('@profile_complete', profile.isComplete);
     await prefs.setBool('@setup_complete', profile.isSetupComplete);
     _trustedContacts = profile.trustedContacts;
@@ -274,7 +374,7 @@ class SafetyProvider extends ChangeNotifier {
     final validContacts = _inputContacts.where((c) => c.trim().length >= 10).toList();
     _trustedContacts = validContacts;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('@trusted_contacts', validContacts);
+    await prefs.setStringList('trusted_contacts', validContacts);
     _userProfile = _userProfile.copyWith(trustedContacts: validContacts);
     notifyListeners();
   }
@@ -328,22 +428,32 @@ class SafetyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearAlerts() {
+    _alerts.clear();
+    notifyListeners();
+  }
+
+  void removeAlert(String id) {
+    _alerts.removeWhere((a) => a.id == id);
+    notifyListeners();
+  }
+
   void refreshSOSState() { notifyListeners(); }
   
   Future<bool> submitCommunityReport(String type, String desc, int severity) async {
     try {
       if (latitude == null || longitude == null) return false;
-      final response = await api.ApiService.submitCommunityReport(
-        _userProfile.phone,
-        latitude!,
-        longitude!,
-        type,
-        desc,
-        severity,
-        anonymous: true,
+      
+      final success = await _communityProvider?.submitReport(
+        phone: _userProfile.phone,
+        latitude: latitude!,
+        longitude: longitude!,
+        incidentType: type,
+        description: desc,
+        severity: severity,
       );
       
-      if (response != null) {
+      if (success == true) {
         _alerts.insert(0, AlertItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(), 
           type: 'REPORT', 
@@ -364,6 +474,7 @@ class SafetyProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sosProvider?.removeListener(_onSOSStateChanged);
     _durationTimer?.cancel();
     super.dispose();
   }

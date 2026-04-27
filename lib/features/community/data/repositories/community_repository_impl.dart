@@ -1,10 +1,13 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/services/api_service.dart';
+import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/socket_service.dart';
 import '../../domain/models/community_report_model.dart';
 import '../../domain/repositories/community_repository.dart';
 
 class CommunityRepositoryImpl implements CommunityRepository {
+  final MongoService _mongoService = MongoService();
+
   CommunityRepositoryImpl();
 
   @override
@@ -18,17 +21,20 @@ class CommunityRepositoryImpl implements CommunityRepository {
     bool anonymous = true,
   }) async {
     try {
-      final result = await ApiService.submitCommunityReport(
-        phone,
-        latitude,
-        longitude,
-        incidentType,
-        description,
-        severity,
-        anonymous: anonymous,
-      );
+      final reportData = {
+        'phone': phone,
+        'lat': latitude,
+        'lon': longitude,
+        'incident_type': incidentType,
+        'description': description,
+        'severity': severity,
+        'anonymous': anonymous,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
 
-      if (result != null) {
+      final success = await _mongoService.submitCommunityReport(reportData);
+
+      if (success) {
         final report = CommunityReportModel(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           latitude: latitude,
@@ -39,12 +45,23 @@ class CommunityRepositoryImpl implements CommunityRepository {
           anonymous: anonymous,
           timestamp: DateTime.now(),
         );
+        
+        // Broadcast to other users via Socket for real-time visibility
+        SocketService().emitCommunityReport({
+          'latitude': latitude,
+          'longitude': longitude,
+          'incidentType': incidentType,
+          'description': description,
+          'severity': severity,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+
         return Right(report);
       } else {
-        return const Left(ServerFailure('Failed to submit community report'));
+        return const Left(ServerFailure('Failed to save report to MongoDB'));
       }
     } catch (e) {
-      return Left(NetworkFailure(e.toString()));
+      return Left(StorageFailure(e.toString()));
     }
   }
 
@@ -55,18 +72,14 @@ class CommunityRepositoryImpl implements CommunityRepository {
     double radiusKm = 10,
   }) async {
     try {
-      final result = await ApiService.fetchNearbyCommunityReports(latitude, longitude);
+      final results = await _mongoService.getNearbyReports(latitude, longitude, radiusKm);
 
-      if (result != null) {
-        final reports = result
-            .map((json) => CommunityReportModel.fromJson(json))
-            .toList();
-        return Right(reports);
-      } else {
-        return const Right([]);
-      }
+      final reports = results
+          .map((json) => CommunityReportModel.fromJson(json))
+          .toList();
+      return Right(reports);
     } catch (e) {
-      return Left(NetworkFailure(e.toString()));
+      return Left(StorageFailure(e.toString()));
     }
   }
 }

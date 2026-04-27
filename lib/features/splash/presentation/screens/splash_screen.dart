@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 
@@ -40,9 +41,16 @@ class _SplashScreenState extends State<SplashScreen>
     _animationController.forward();
 
     // Auto navigate after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 3), () async {
+      final prefs = await SharedPreferences.getInstance();
+      final contactsSaved = prefs.getBool('contacts_saved') ?? false;
+      
       if (mounted) {
-        Navigator.pushReplacementNamed(context, '/onboarding');
+        if (contactsSaved) {
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          Navigator.pushReplacementNamed(context, '/onboarding');
+        }
       }
     });
   }

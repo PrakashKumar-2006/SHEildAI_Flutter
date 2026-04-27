@@ -29,9 +29,10 @@ import 'features/auth/presentation/providers/auth_provider.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
 import 'features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'features/contacts/presentation/screens/contact_setup_screen.dart';
+import 'features/contacts/presentation/screens/manage_contacts_screen.dart';
 import 'features/location/presentation/screens/location_screen.dart';
 import 'screens/main_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/sos_screen.dart';
 import 'screens/alerts_screen.dart';
 import 'screens/profile_screen.dart';
@@ -111,6 +112,7 @@ class App extends StatelessWidget {
                     locationService: locationService,
                   ),
         ),
+        // ProxyProvider4 — SOSProvider now requires ContactRepositoryImpl
         ChangeNotifierProxyProvider4<SOSRepositoryImpl, LocationService, LocationProvider, ContactRepositoryImpl, SOSProvider>(
           create: (context) => SOSProvider(
             sosRepository: context.read<SOSRepositoryImpl>(),
@@ -133,13 +135,8 @@ class App extends StatelessWidget {
           update: (_, contactRepo, contactProvider) =>
               contactProvider ?? ContactProvider(contactRepository: contactRepo),
         ),
-        ChangeNotifierProxyProvider2<VoiceService, SOSProvider, VoiceProvider>(
-          create: (context) => VoiceProvider(voiceService: context.read<VoiceService>())..initialize(),
-          update: (_, voiceService, sosProvider, voiceProvider) {
-            final provider = voiceProvider ?? VoiceProvider(voiceService: voiceService)..initialize();
-            provider.updateSOSProvider(sosProvider);
-            return provider;
-          },
+        ChangeNotifierProvider<VoiceProvider>(
+          create: (_) => VoiceProvider(),
         ),
         ChangeNotifierProvider<AuthProvider>(
           create: (context) => AuthProvider(context.read<StorageService>()),
@@ -177,6 +174,8 @@ class App extends StatelessWidget {
               '/splash': (context) => SplashScreen(),
               '/onboarding': (context) => OnboardingScreen(),
               '/login': (context) => const LoginScreen(),
+              '/setup_contacts': (context) => const ContactSetupScreen(),
+              '/manage_contacts': (context) => const ManageContactsScreen(),
               '/home': (context) => const MainScreen(),
               '/sos': (context) => SOSScreen(),
               '/location': (context) => LocationScreen(),
@@ -216,6 +215,13 @@ class AppBootstrap extends StatelessWidget {
 
     if (!auth.isAuthenticated) {
       return const LoginScreen();
+    }
+
+    final storage = context.read<StorageService>();
+    final hasContacts = storage.getTrustedContacts().isNotEmpty;
+
+    if (!hasContacts) {
+      return const ContactSetupScreen();
     }
 
     if (!safety.userProfile.isSetupComplete) {

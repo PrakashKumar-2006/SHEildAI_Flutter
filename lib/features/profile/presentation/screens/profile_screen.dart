@@ -72,12 +72,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           _buildOptionItem(
                             context,
-                            icon: Ionicons.people,
-                            iconColor: const Color(0xFF1976D2),
-                            iconBg: const Color(0xFFE3F2FD),
+                            icon: Ionicons.heart,
+                            iconColor: const Color(0xFFFF0000),
+                            iconBg: const Color(0xFFFFE5E5),
                             title: 'SOS Guardians',
                             subtitle: contactCount == 0 ? 'No contacts' : '$contactCount contact${contactCount > 1 ? 's' : ''}',
-                            onTap: () {},
+                            onTap: () async {
+                              await Navigator.pushNamed(context, '/manage_contacts');
+                              if (context.mounted) {
+                                context.read<ContactProvider>().loadContacts();
+                              }
+                            },
                           ),
                         ]);
                       }

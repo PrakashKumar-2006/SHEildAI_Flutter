@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../core/app_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class NotificationBellPopup extends StatefulWidget {
   final Color? iconColor;
@@ -119,6 +120,16 @@ class _NotificationBellPopupState extends State<NotificationBellPopup> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Notifications', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.textPrimary)),
+                      const Spacer(),
+                      if (alerts.isNotEmpty)
+                        TextButton(
+                          onPressed: () {
+                            context.read<SafetyProvider>().clearAlerts();
+                            Navigator.of(ctx).pop();
+                          },
+                          child: const Text('Clear All', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                        ),
+                      const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () => Navigator.of(ctx).pop(),
                         child: Icon(Icons.close_rounded, color: theme.textPrimary),
@@ -149,74 +160,103 @@ class _NotificationBellPopupState extends State<NotificationBellPopup> {
                             
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Column(
                                 children: [
-                                  // Avatar
-                                  SizedBox(
-                                    width: 48, height: 48,
-                                    child: Stack(
-                                      children: [
-                                        Container(
-                                          width: 48, height: 48,
-                                          decoration: BoxDecoration(
-                                            color: isSOS ? const Color(0xFFFFEBEE) : (isDark ? const Color(0xFF1e3a8a) : const Color(0xFF0D1B6E)),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Icon(
-                                            isSOS ? Icons.campaign_rounded : Icons.shield_rounded,
-                                            color: isSOS ? const Color(0xFFC62828) : Colors.white,
-                                            size: 24,
-                                          ),
-                                        ),
-                                        Positioned(
-                                          bottom: 0, right: 0,
-                                          child: Container(
-                                            width: 18, height: 18,
-                                            decoration: BoxDecoration(
-                                              color: theme.surface,
-                                              shape: BoxShape.circle,
-                                              border: Border.all(color: theme.surface, width: 1.5),
-                                            ),
-                                            child: Icon(
-                                              isSOS ? Icons.error_rounded : Icons.warning_rounded,
-                                              color: isSOS ? Colors.red : Colors.orange,
-                                              size: 14,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Content
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        RichText(
-                                          text: TextSpan(
-                                            style: TextStyle(color: theme.textPrimary, fontSize: 14, height: 1.4),
-                                            children: [
-                                              TextSpan(text: isSOS ? 'SOS System ' : 'Safety Engine ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                              TextSpan(text: isSOS ? 'reported an ' : 'detected a '),
-                                              TextSpan(text: '${alert.title} ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                              TextSpan(text: alert.body),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  // Time
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(_getTimeAgo(alert.timestamp), style: TextStyle(color: theme.textSecondary, fontSize: 12)),
-                                      const SizedBox(height: 8),
-                                      Icon(Icons.more_vert_rounded, size: 16, color: theme.textSecondary),
+                                      // Avatar
+                                      SizedBox(
+                                        width: 48, height: 48,
+                                        child: Stack(
+                                          children: [
+                                            Container(
+                                              width: 48, height: 48,
+                                              decoration: BoxDecoration(
+                                                color: isSOS ? const Color(0xFFFFEBEE) : (isDark ? const Color(0xFF1e3a8a) : const Color(0xFF0D1B6E)),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                isSOS ? Icons.campaign_rounded : Icons.shield_rounded,
+                                                color: isSOS ? const Color(0xFFC62828) : Colors.white,
+                                                size: 24,
+                                              ),
+                                            ),
+                                            Positioned(
+                                              bottom: 0, right: 0,
+                                              child: Container(
+                                                width: 18, height: 18,
+                                                decoration: BoxDecoration(
+                                                  color: theme.surface,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(color: theme.surface, width: 1.5),
+                                                ),
+                                                child: Icon(
+                                                  isSOS ? Icons.error_rounded : Icons.warning_rounded,
+                                                  color: isSOS ? Colors.red : Colors.orange,
+                                                  size: 14,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      // Content
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            RichText(
+                                              text: TextSpan(
+                                                style: TextStyle(color: theme.textPrimary, fontSize: 14, height: 1.4),
+                                                children: [
+                                                  TextSpan(text: isSOS ? 'SOS System ' : 'Safety Engine ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                  TextSpan(text: isSOS ? 'reported an ' : 'detected a '),
+                                                  TextSpan(text: '${alert.title} ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                  TextSpan(text: alert.body),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Time & Actions
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(_getTimeAgo(alert.timestamp), style: TextStyle(color: theme.textSecondary, fontSize: 12)),
+                                          const SizedBox(height: 8),
+                                          GestureDetector(
+                                            onTap: () => ctx.read<SafetyProvider>().removeAlert(alert.id),
+                                            child: Icon(Icons.delete_outline_rounded, size: 18, color: theme.danger.withOpacity(0.7)),
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
+                                  if (alert.type == 'COMMUNITY_SOS' && alert.latitude != null && alert.longitude != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 10, left: 60),
+                                      child: ElevatedButton.icon(
+                                        onPressed: () async {
+                                          final url = Uri.parse('google.navigation:q=${alert.latitude},${alert.longitude}');
+                                          if (await canLaunchUrl(url)) {
+                                            await launchUrl(url);
+                                          } else {
+                                            final webUrl = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${alert.latitude},${alert.longitude}');
+                                            await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+                                          }
+                                        },
+                                        icon: const Icon(Icons.navigation_rounded, size: 18, color: Colors.white),
+                                        label: const Text('Navigate to Victim', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFD32F2F),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             );

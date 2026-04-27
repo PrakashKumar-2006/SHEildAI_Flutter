@@ -98,6 +98,7 @@ dependencies:
   geocoding: ^3.0.0
   sms_advanced: ^1.0.3
   battery_plus: ^6.2.1
+  socket_io_client: ^3.1.4
 
 dev_dependencies:
   flutter_test:

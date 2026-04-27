@@ -6,18 +6,34 @@ import 'core/services/hive_service.dart';
 import 'core/services/sync_service.dart';
 import 'core/services/mongo_service.dart';
 import 'core/services/ml_service.dart';
+import 'core/services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize Firebase from google-services.json
-  await Firebase.initializeApp();
+  try {
+    // We wrap this in a try-catch because if google-services.json is missing,
+    // this will throw an error at runtime.
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Firebase initialization skipped or failed: $e");
+    debugPrint("Ensure google-services.json is present for Firebase features.");
+  }
   
   // Load environment variables from .env file
-  await dotenv.load(fileName: ".env");
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint("Warning: .env file not found or failed to load. Using defaults: $e");
+  }
   
   // Initialize Hive for local storage
   await HiveService().initialize();
+
+  // Pre-warm SharedPreferences so StorageService synchronous reads work
+  // immediately in AuthProvider's constructor (session restore on cold start).
+  await StorageService().init();
   
   // Initialize SyncService for offline queue
   await SyncService().initialize();
@@ -26,9 +42,9 @@ void main() async {
   // This ensures the API is warm by the time the user's location loads.
   MLService.wakeUp();
 
-  // Pre-connect to MongoDB to verify connectivity
+  // Initialize MongoDB connection (blocking to ensure readiness)
+  final mongoService = MongoService();
   try {
-    final mongoService = MongoService();
     await mongoService.connect();
     debugPrint("MongoDB initialized successfully on startup");
   } catch (e) {

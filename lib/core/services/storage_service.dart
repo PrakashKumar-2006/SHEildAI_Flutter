@@ -142,6 +142,13 @@ class StorageService {
         .toList();
   }
 
+  // Retrieve the simple List<String> of trusted contacts
+  List<String> getTrustedContacts() {
+    final List<String>? contacts = getStringList('trusted_contacts');
+    // Return saved contacts or fallback to empty list
+    return contacts ?? [];
+  }
+
   Future<bool> setLastSosTime(DateTime time) async {
     return await setInt(AppConstants.keyLastSosTime, time.millisecondsSinceEpoch);
   }

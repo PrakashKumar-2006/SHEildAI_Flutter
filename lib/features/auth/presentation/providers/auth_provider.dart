@@ -3,25 +3,74 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/mongo_service.dart';
+import '../../../../core/constants/app_constants.dart';
+
+// Fallback user class for when Firebase is not configured
+class MockUser {
+  final String uid;
+  final String? email;
+  final String? displayName;
+  final String? photoURL;
+
+  MockUser({required this.uid, this.email, this.displayName, this.photoURL});
+  
+  Future<void> updateDisplayName(String name) async {}
+  Future<void> reload() async {}
+}
 
 class AuthProvider extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  FirebaseAuth? _auth;
   final StorageService _storageService;
+  bool _isFirebaseAvailable = false;
 
   bool _isLoading = false;
   String? _error;
-  User? _user;
+  dynamic _user; // Using dynamic to support both Firebase User and MockUser
 
   AuthProvider(this._storageService) {
-    _auth.authStateChanges().listen((User? user) {
-      _user = user;
-      notifyListeners();
-    });
+    // ── Restore persisted session (survives cold restarts) ──────────────────
+    // StorageService is synchronously readable after app.dart calls init().
+    // If the user previously logged in and did NOT explicitly sign out,
+    // we restore a lightweight MockUser so isAuthenticated is true
+    // immediately — before the Firebase authStateChanges stream even fires.
+    final wasLoggedIn = _storageService.getBool(AppConstants.keyIsLoggedIn) ?? false;
+    if (wasLoggedIn) {
+      final savedName  = _storageService.getString(AppConstants.keyUserName) ?? 'User';
+      final savedPhone = _storageService.getString(AppConstants.keyUserPhone) ?? '';
+      _user = MockUser(uid: savedPhone.isNotEmpty ? savedPhone : 'restored_session',
+                       email: savedPhone,
+                       displayName: savedName);
+      debugPrint('[AuthProvider] Session restored — user: $savedName');
+    }
+
+    try {
+      _auth = FirebaseAuth.instance;
+      _isFirebaseAvailable = true;
+      _auth!.authStateChanges().listen((User? user) {
+        // Firebase has reported a live session — use it (overrides the
+        // MockUser restore above) or, if null, defer to the persisted flag
+        // so a Firebase sign-out doesn't unexpectedly kick out MongoDB users.
+        if (user != null) {
+          _user = user;
+          notifyListeners();
+        } else if (!(_storageService.getBool(AppConstants.keyIsLoggedIn) ?? false)) {
+          // Only clear if we genuinely have no persisted session.
+          _user = null;
+          notifyListeners();
+        }
+      });
+    } catch (e) {
+      debugPrint("AuthProvider: Firebase not available. Auth features will be disabled. Error: $e");
+      _isFirebaseAvailable = false;
+    }
   }
+
+  bool get isFirebaseAvailable => _isFirebaseAvailable;
+
 
   bool get isLoading => _isLoading;
   String? get error => _error;
-  User? get user => _user;
+  dynamic get user => _user;
   bool get isAuthenticated => _user != null;
 
   void setLoading(bool value) {
@@ -37,8 +86,46 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> signUp(String email, String password, String name) async {
     setLoading(true);
     setError(null);
+    if (!_isFirebaseAvailable || _auth == null) {
+      // Fallback to MongoDB-only signup
+      try {
+        final mongoService = MongoService();
+        if (!mongoService.isConnected) await mongoService.connect();
+        
+        final existing = await mongoService.getUser(email);
+        if (existing != null) {
+          setError('User already exists in database.');
+          setLoading(false);
+          return false;
+        }
+
+        await mongoService.createUser({
+          'email': email,
+          'phone': email,
+          'password': password, // Note: In production use hashing, but this is a fallback for exploration
+          'createdAt': DateTime.now().toIso8601String(),
+          'name': name,
+          'profile': {},
+        });
+
+        _user = MockUser(uid: email, email: email, displayName: name);
+        await _storageService.setUserPhone(email);
+        await _storageService.setUserName(name);
+        await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+        
+        setLoading(false);
+        return true;
+      } catch (e) {
+        debugPrint('Local signup failed: $e. Falling back to Guest Explorer mode.');
+        _user = MockUser(uid: 'guest_explorer', email: email, displayName: 'Guest Explorer');
+        await _storageService.setUserName('Guest Explorer');
+        await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+        setLoading(false);
+        return true; // Allow exploration even if DB fails
+      }
+    }
     try {
-      UserCredential userCred = await _auth.createUserWithEmailAndPassword(
+      UserCredential userCred = await _auth!.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -47,10 +134,11 @@ class AuthProvider extends ChangeNotifier {
          // Update Firebase display name
          await _user!.updateDisplayName(name);
          await _user!.reload();
-         _user = _auth.currentUser; // Get updated user instance
+         _user = _auth?.currentUser; // Get updated user instance
          
          await _storageService.setUserPhone(_user!.email ?? '');
          await _storageService.setUserName(name);
+         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
          
          // Save user to MongoDB
          try {
@@ -78,11 +166,58 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // ── Persist login flag for Firebase signUp path ───────────────────────────
+  Future<void> _persistFirebaseSession(dynamic firebaseUser, String? nameOverride) async {
+    final name = nameOverride ?? firebaseUser.displayName ?? 'User';
+    final email = firebaseUser.email ?? '';
+    await _storageService.setUserName(name);
+    await _storageService.setUserPhone(email);
+    await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+  }
+
   Future<bool> signIn(String email, String password) async {
     setLoading(true);
     setError(null);
+    if (!_isFirebaseAvailable || _auth == null) {
+      // Fallback to MongoDB-only signin
+      try {
+        final mongoService = MongoService();
+        if (!mongoService.isConnected) await mongoService.connect();
+        
+        final userData = await mongoService.getUser(email);
+        if (userData == null) {
+          setError('User not found.');
+          setLoading(false);
+          return false;
+        }
+
+        // Basic password check for the fallback
+        if (userData['password'] != null && userData['password'] != password) {
+          setError('Invalid password.');
+          setLoading(false);
+          return false;
+        }
+
+        final name = userData['name'] as String? ?? email.split('@')[0];
+        _user = MockUser(uid: email, email: email, displayName: name);
+        
+        await _storageService.setUserName(name);
+        await _storageService.setUserPhone(userData['phone'] ?? email);
+        await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+        
+        setLoading(false);
+        return true;
+      } catch (e) {
+        debugPrint('Local login failed: $e. Falling back to Guest Explorer mode.');
+        _user = MockUser(uid: 'guest_explorer', email: email, displayName: 'Guest Explorer');
+        await _storageService.setUserName('Guest Explorer');
+        await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+        setLoading(false);
+        return true; // Allow exploration even if DB fails
+      }
+    }
     try {
-      UserCredential userCred = await _auth.signInWithEmailAndPassword(
+      UserCredential userCred = await _auth!.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -100,16 +235,21 @@ class AuthProvider extends ChangeNotifier {
             final name = userData['name'] as String;
             await _storageService.setUserName(name);
             await _storageService.setUserPhone(userData['phone'] ?? email);
+            await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
             
             // Sync Firebase display name if it's null
             if (_user!.displayName == null || _user!.displayName!.isEmpty) {
               await _user!.updateDisplayName(name);
               await _user!.reload();
-              _user = _auth.currentUser;
+              _user = _auth?.currentUser;
             }
+          } else {
+            // MongoDB had no extra data — still persist the session
+            await _persistFirebaseSession(_user, null);
           }
         } catch (dbError) {
           debugPrint("Failed to sync user data from MongoDB: $dbError");
+          await _persistFirebaseSession(_user, null);
         }
       }
       
@@ -148,8 +288,13 @@ class AuthProvider extends ChangeNotifier {
         idToken: googleAuth.idToken,
       );
 
+      if (!_isFirebaseAvailable || _auth == null) {
+        setError('Google Sign-In requires Firebase configuration. Please use Email/Password sign-in for exploration.');
+        setLoading(false);
+        return false;
+      }
       // Sign in to Firebase with the Google [UserCredential]
-      UserCredential userCred = await _auth.signInWithCredential(credential);
+      UserCredential userCred = await _auth!.signInWithCredential(credential);
       _user = userCred.user;
       
       if (_user != null) {
@@ -158,6 +303,7 @@ class AuthProvider extends ChangeNotifier {
          // Save to local storage for quick access
          await _storageService.setUserPhone(_user!.email ?? '');
          await _storageService.setUserName(userName);
+         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
          
          // Sync with MongoDB
          try {
@@ -194,8 +340,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    await _auth.signOut();
-    await GoogleSignIn.instance.signOut();
+    if (_isFirebaseAvailable && _auth != null) {
+      await _auth!.signOut();
+      await GoogleSignIn.instance.signOut();
+    }
+    // Clear the persisted session so the login screen shows next launch.
+    await _storageService.setBool(AppConstants.keyIsLoggedIn, false);
     _user = null;
     notifyListeners();
   }
