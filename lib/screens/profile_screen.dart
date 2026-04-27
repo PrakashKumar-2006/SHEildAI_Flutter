@@ -251,15 +251,23 @@ class ProfileScreen extends StatelessWidget {
             child: const Icon(Icons.person_rounded, color: Colors.white, size: 50),
           ),
           const SizedBox(height: 16),
-          Text(
-            safety.userProfile.name.isNotEmpty 
-                ? safety.userProfile.name 
-                : (context.read<AuthProvider>().user != null 
-                    ? (context.read<AuthProvider>().user as dynamic).displayName ?? 'User'
-                    : (context.read<StorageService>().getUserName() != 'Safety Watcher' 
-                       ? context.read<StorageService>().getUserName() 
-                       : 'User')),
-            style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800),
+          Consumer<AuthProvider>(
+            builder: (context, auth, _) {
+              final authName = auth.user?.displayName;
+              final storageName = StorageService().getUserName();
+              
+              String displayName = 'User';
+              if (authName != null && authName.isNotEmpty && authName.toLowerCase() != 'user') {
+                displayName = authName;
+              } else if (storageName != 'Safety Watcher' && storageName.isNotEmpty && storageName.toLowerCase() != 'user') {
+                displayName = storageName;
+              }
+              
+              return Text(
+                displayName,
+                style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800),
+              );
+            },
           ),
           const SizedBox(height: 4),
           Text(

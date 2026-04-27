@@ -41,6 +41,7 @@ class AuthProvider extends ChangeNotifier {
                        email: savedPhone,
                        displayName: savedName);
       debugPrint('[AuthProvider] Session restored — user: $savedName');
+      syncProfile(); // Ensure name is correct if it was generic
     }
 
     try {
@@ -52,6 +53,7 @@ class AuthProvider extends ChangeNotifier {
         // so a Firebase sign-out doesn't unexpectedly kick out MongoDB users.
         if (user != null) {
           _user = user;
+          syncProfile(); // Ensure name is correct
           notifyListeners();
         } else if (!(_storageService.getBool(AppConstants.keyIsLoggedIn) ?? false)) {
           // Only clear if we genuinely have no persisted session.
@@ -62,6 +64,73 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("AuthProvider: Firebase not available. Auth features will be disabled. Error: $e");
       _isFirebaseAvailable = false;
+    }
+  }
+
+  /// Synchronizes user profile data across services.
+  /// If the name is generic (e.g., "User" or "Safety Watcher"), it attempts
+  /// to extract a better name from the email address.
+  Future<void> syncProfile() async {
+    if (_user == null) return;
+
+    String? currentName;
+    String? email;
+
+    if (_user is User) {
+      currentName = (_user as User).displayName;
+      email = (_user as User).email;
+    } else if (_user is MockUser) {
+      currentName = (_user as MockUser).displayName;
+      email = (_user as MockUser).email;
+    }
+
+    final isGeneric = currentName == null || 
+                      currentName.isEmpty || 
+                      currentName.toLowerCase() == 'user' || 
+                      currentName == 'Safety Watcher';
+
+    if (isGeneric && email != null && email.isNotEmpty) {
+      // Extract name from email: prakash.kumar@gmail.com -> Prakash Kumar
+      final namePart = email.split('@')[0];
+      final extractedName = namePart
+          .split(RegExp(r'[._-]'))
+          .map((s) => s.isNotEmpty ? s[0].toUpperCase() + s.substring(1) : '')
+          .join(' ');
+
+      debugPrint('[AuthProvider] Syncing profile: extracted "$extractedName" from "$email"');
+      
+      // Update local storage
+      await _storageService.setUserName(extractedName);
+      
+      // Update Firebase if applicable
+      if (_user is User) {
+        try {
+          await (_user as User).updateDisplayName(extractedName);
+          await (_user as User).reload();
+          _user = _auth?.currentUser;
+        } catch (e) {
+          debugPrint('Failed to update Firebase display name during sync: $e');
+        }
+      } else if (_user is MockUser) {
+        // Update mock user
+        _user = MockUser(
+          uid: (_user as MockUser).uid,
+          email: (_user as MockUser).email,
+          displayName: extractedName,
+          photoURL: (_user as MockUser).photoURL,
+        );
+      }
+
+      // Update MongoDB
+      try {
+        final mongoService = MongoService();
+        if (!mongoService.isConnected) await mongoService.connect();
+        await mongoService.updateUser(email, {'name': extractedName});
+      } catch (e) {
+        debugPrint('Failed to update MongoDB during sync: $e');
+      }
+
+      notifyListeners();
     }
   }
 
@@ -298,7 +367,32 @@ class AuthProvider extends ChangeNotifier {
       _user = userCred.user;
       
       if (_user != null) {
-         final userName = _user!.displayName ?? (_user!.email?.split('@')[0] ?? 'Google User');
+         // Get name from Google or extract from email
+         String? googleName = _user!.displayName;
+         String? email = _user!.email;
+         
+         String userName = 'User';
+         if (googleName != null && googleName.isNotEmpty && googleName.toLowerCase() != 'user') {
+           userName = googleName;
+         } else if (email != null && email.isNotEmpty) {
+           // Extract name from email: prakash.kumar@gmail.com -> Prakash Kumar
+           final namePart = email.split('@')[0];
+           userName = namePart
+               .split(RegExp(r'[._-]'))
+               .map((s) => s.isNotEmpty ? s[0].toUpperCase() + s.substring(1) : '')
+               .join(' ');
+         }
+
+         // Update Firebase display name if it's currently null or just "User"
+         if (_user!.displayName == null || _user!.displayName!.isEmpty || _user!.displayName!.toLowerCase() == 'user') {
+           try {
+             await _user!.updateDisplayName(userName);
+             await _user!.reload();
+             _user = _auth?.currentUser; // Refresh local instance
+           } catch (e) {
+             debugPrint('Failed to update Firebase display name: $e');
+           }
+         }
          
          // Save to local storage for quick access
          await _storageService.setUserPhone(_user!.email ?? '');
@@ -321,9 +415,17 @@ class AuthProvider extends ChangeNotifier {
                'name': userName,
                'profile': {'photoUrl': _user!.photoURL},
              });
-           } else if (existingUser['name'] == null || existingUser['name'] == existingUser['email']?.split('@')[0]) {
-             // Update name if it's currently just a fallback
-             await mongoService.updateUser(_user!.email!, {'name': userName});
+           } else {
+             // Update name if it's currently null, "User", or matches the email prefix exactly (suggesting a previous fallback)
+             final existingName = existingUser['name'] as String?;
+             final emailPrefix = _user!.email?.split('@')[0];
+             
+             if (existingName == null || 
+                 existingName.toLowerCase() == 'user' || 
+                 existingName == emailPrefix ||
+                 existingName == 'Safety Watcher') {
+               await mongoService.updateUser(_user!.email!, {'name': userName});
+             }
            }
          } catch (dbError) {
            debugPrint("Failed to sync Google user to MongoDB: $dbError");
