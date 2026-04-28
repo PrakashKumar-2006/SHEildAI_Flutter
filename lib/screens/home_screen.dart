@@ -9,6 +9,7 @@ import '../features/community/presentation/providers/community_provider.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
 import 'profile_screen.dart';
+import '../shared/widgets/crowd_risk_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -116,6 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 8),
                         // Safety Score Circle
                         _buildSafetyScoreCard(riskLabel, riskScore, riskColor, isDark, theme, lang, safety),
+                        const CrowdRiskIndicator(),
                         const SizedBox(height: 20),
                         // Safety Insights
                         _buildSafetyInsightsCard(theme, isDark, safety),
@@ -404,7 +406,32 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 10),
         
         // 3-Hour Forecast
-        if (forecast != null) ...[
+        if (safety.forecast == null)
+          Container(
+            padding: const EdgeInsets.all(16),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: theme.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Center(
+              child: Column(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0D1B6E)),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Loading Safety Intelligence...',
+                    style: TextStyle(fontSize: 11, color: theme.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (forecast != null) ...[
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(

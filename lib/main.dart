@@ -5,6 +5,7 @@ import 'app.dart';
 import 'core/services/hive_service.dart';
 import 'core/services/sync_service.dart';
 import 'core/services/mongo_service.dart';
+import 'core/services/ml_service.dart';
 import 'core/services/storage_service.dart';
 
 void main() async {
@@ -36,6 +37,10 @@ void main() async {
   
   // Initialize SyncService for offline queue
   await SyncService().initialize();
+
+  // Fire wake-up ping to Hugging Face ML Space in background.
+  // This ensures the API is warm by the time the user's location loads.
+  MLService.wakeUp();
 
   // Initialize MongoDB connection (blocking to ensure readiness)
   final mongoService = MongoService();

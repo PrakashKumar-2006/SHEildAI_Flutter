@@ -195,9 +195,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Name
           Consumer<AuthProvider>(
             builder: (context, auth, _) {
-              final name = auth.user?.displayName ?? StorageService().getUserName();
+              final authName = auth.user?.displayName;
+              final storageName = StorageService().getUserName();
+              
+              // Logic: Use Auth name if it's not generic, otherwise use Storage name if it's not generic, fallback to "User"
+              String displayName = 'User';
+              if (authName != null && authName.isNotEmpty && authName.toLowerCase() != 'user') {
+                displayName = authName;
+              } else if (storageName != 'Safety Watcher' && storageName.isNotEmpty && storageName.toLowerCase() != 'user') {
+                displayName = storageName;
+              }
+              
               return Text(
-                name,
+                displayName,
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,

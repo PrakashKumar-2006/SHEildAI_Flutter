@@ -1,35 +1,55 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class MLService {
   static const String baseUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/api';
-  
+  static const String _healthUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/';
+
+  /// Silently wake up the Hugging Face Space in background.
+  /// HF free-tier spaces "sleep" after inactivity; first request can take 30-60s.
+  /// Call this once on app startup so real API calls succeed instantly.
+  static Future<void> wakeUp() async {
+    try {
+      debugPrint('[MLService] Waking up HF Space...');
+      await http.get(Uri.parse(_healthUrl)).timeout(const Duration(seconds: 90));
+      debugPrint('[MLService] HF Space is awake.');
+    } catch (e) {
+      debugPrint('[MLService] Wake-up ping failed (non-fatal): $e');
+    }
+  }
+
   Future<Map<String, dynamic>> _postWithRetry(String endpoint, Map<String, dynamic> body) async {
     int retries = 0;
-    while (retries < 3) {
+    const maxRetries = 5;
+    while (retries < maxRetries) {
       try {
         final response = await http.post(
           Uri.parse('$baseUrl/$endpoint'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(body),
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 60)); // 60s — handles cold start
 
         if (response.statusCode == 200) {
           return jsonDecode(response.body);
-        } else if (response.statusCode == 503 || response.statusCode == 404) {
-          // HF Space might be sleeping
+        } else if (response.statusCode == 503 || response.statusCode == 404 || response.statusCode == 502) {
+          // HF Space is starting up
           retries++;
-          await Future.delayed(Duration(seconds: 2 * retries));
+          final waitSec = retries * 5;
+          debugPrint('[MLService] HF Space not ready (${response.statusCode}), retrying in ${waitSec}s...');
+          await Future.delayed(Duration(seconds: waitSec));
         } else {
-          throw Exception('Failed to call ML API: ${response.statusCode}');
+          throw Exception('ML API error: ${response.statusCode}');
         }
       } catch (e) {
         retries++;
-        if (retries >= 3) rethrow;
-        await Future.delayed(Duration(seconds: 2 * retries));
+        if (retries >= maxRetries) rethrow;
+        final waitSec = retries * 3;
+        debugPrint('[MLService] $endpoint failed, retry $retries/$maxRetries in ${waitSec}s: $e');
+        await Future.delayed(Duration(seconds: waitSec));
       }
     }
-    throw Exception('ML API call failed after retries');
+    throw Exception('ML API call failed after $maxRetries retries');
   }
 
   // Risk Prediction
