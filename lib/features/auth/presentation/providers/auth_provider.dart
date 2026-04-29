@@ -24,8 +24,11 @@ class AuthProvider extends ChangeNotifier {
   bool _isFirebaseAvailable = false;
 
   bool _isLoading = false;
+  bool _isSyncing = false;
   String? _error;
   dynamic _user; // Using dynamic to support both Firebase User and MockUser
+
+  bool get isSyncing => _isSyncing;
 
   AuthProvider(this._storageService) {
     // ── Restore persisted session (survives cold restarts) ──────────────────
@@ -54,6 +57,7 @@ class AuthProvider extends ChangeNotifier {
         if (user != null) {
           _user = user;
           syncProfile(); // Ensure name is correct
+          syncUserData(user.email ?? ''); // Sync contacts and full profile
           notifyListeners();
         } else if (!(_storageService.getBool(AppConstants.keyIsLoggedIn) ?? false)) {
           // Only clear if we genuinely have no persisted session.
@@ -64,6 +68,76 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("AuthProvider: Firebase not available. Auth features will be disabled. Error: $e");
       _isFirebaseAvailable = false;
+    }
+  }
+
+  /// Synchronizes all user data (profile, contacts) from MongoDB to local storage.
+  /// This prevents the app from asking for "Trusted Contacts" after every login.
+  Future<void> syncUserData(String email) async {
+    if (email.isEmpty) return;
+    
+    _isSyncing = true;
+    notifyListeners();
+    
+    try {
+      final mongoService = MongoService();
+      if (!mongoService.isConnected) await mongoService.connect();
+      
+      debugPrint('[AuthProvider] Syncing user data for: $email');
+      
+      // 1. Fetch User Document
+      final userDoc = await mongoService.getUserByEmail(email);
+      if (userDoc != null) {
+        final name = userDoc['name'] as String? ?? '';
+        final phone = userDoc['phone'] as String? ?? '';
+        
+        // Update local profile data if not already set
+        if (name.isNotEmpty) await _storageService.setUserName(name);
+        if (phone.isNotEmpty) await _storageService.setUserPhone(phone);
+
+        // 2. Sync Trusted Contacts
+        List<String> trustedContacts = [];
+        
+        // Try from user document profile field
+        final profile = userDoc['profile'] as Map<String, dynamic>?;
+        if (profile != null && profile['trustedContacts'] != null) {
+          trustedContacts.addAll(List<String>.from(profile['trustedContacts']));
+        }
+        
+        // Try from emergency_contacts collection
+        final contactsFromColl = await mongoService.getContactsByEmail(email);
+        if (contactsFromColl.isNotEmpty) {
+          for (var c in contactsFromColl) {
+            final p = c['phone'] as String?;
+            if (p != null && !trustedContacts.contains(p)) {
+              trustedContacts.add(p);
+            }
+          }
+        }
+        
+        // Try from phone if we have one
+        if (phone.isNotEmpty) {
+          final contactsByPhone = await mongoService.getContacts(phone);
+          for (var c in contactsByPhone) {
+            final p = c['phone'] as String?;
+            if (p != null && !trustedContacts.contains(p)) {
+              trustedContacts.add(p);
+            }
+          }
+        }
+
+        if (trustedContacts.isNotEmpty) {
+          debugPrint('[AuthProvider] Found ${trustedContacts.length} contacts in MongoDB, syncing locally.');
+          await _storageService.setStringList('trusted_contacts', trustedContacts);
+          await _storageService.setBool('@setup_complete', true);
+          await _storageService.setBool('@profile_complete', true);
+        }
+      }
+    } catch (e) {
+      debugPrint('[AuthProvider] Error during syncUserData: $e');
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
     }
   }
 
@@ -129,8 +203,30 @@ class AuthProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('Failed to update MongoDB during sync: $e');
       }
-
+      
       notifyListeners();
+    }
+  }
+
+  Future<void> updateTrustedContacts(List<String> contacts) async {
+    if (_user == null) return;
+    
+    final email = _user is User ? (_user as User).email : (_user as MockUser).email;
+    if (email == null) return;
+
+    try {
+      final mongoService = MongoService();
+      if (!mongoService.isConnected) await mongoService.connect();
+      
+      // Update the 'profile.trustedContacts' field in the user document
+      await mongoService.updateUser(email, {'profile.trustedContacts': contacts});
+      
+      // Also update the 'emergency_contacts' collection for backward compatibility
+      // (Optional: loop and add if they don't exist)
+      
+      debugPrint('[AuthProvider] Trusted contacts synced to MongoDB.');
+    } catch (e) {
+      debugPrint('[AuthProvider] Failed to sync contacts to MongoDB: $e');
     }
   }
 
@@ -320,6 +416,9 @@ class AuthProvider extends ChangeNotifier {
           debugPrint("Failed to sync user data from MongoDB: $dbError");
           await _persistFirebaseSession(_user, null);
         }
+        
+        // Sync full profile and contacts from MongoDB to prevent redundant setup
+        await syncUserData(email);
       }
       
       setLoading(false);
@@ -430,6 +529,9 @@ class AuthProvider extends ChangeNotifier {
          } catch (dbError) {
            debugPrint("Failed to sync Google user to MongoDB: $dbError");
          }
+         
+         // Sync full profile and contacts from MongoDB to prevent redundant setup
+         await syncUserData(_user!.email ?? '');
       }
 
       setLoading(false);
@@ -450,5 +552,19 @@ class AuthProvider extends ChangeNotifier {
     await _storageService.setBool(AppConstants.keyIsLoggedIn, false);
     _user = null;
     notifyListeners();
+  }
+
+  Future<bool> verifyOTP(String otp) async {
+    setLoading(true);
+    await Future.delayed(const Duration(seconds: 1)); // Mock verification delay
+    
+    if (otp == '123456') { // Mock OTP
+      setLoading(false);
+      return true;
+    } else {
+      setError('Invalid OTP');
+      setLoading(false);
+      return false;
+    }
   }
 }

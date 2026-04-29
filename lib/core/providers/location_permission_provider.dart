@@ -92,10 +92,11 @@ class LocationPermissionProvider extends ChangeNotifier {
 
   Future<bool> requestLocationPermission() async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
     try {
-      // First check if GPS is enabled
+      // 1. Check if GPS is enabled first
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         _gpsStatus = GpsStatus.disabled;
@@ -105,38 +106,53 @@ class LocationPermissionProvider extends ChangeNotifier {
       }
       _gpsStatus = GpsStatus.enabled;
 
-      // Request permission
+      // 2. Request initial permission (While In Use)
       LocationPermission permission = await Geolocator.requestPermission();
       
-      switch (permission) {
-        case LocationPermission.always:
-        case LocationPermission.whileInUse:
-          _permissionStatus = PermissionStatus.granted;
-          _startLocationUpdates();
-          break;
-        case LocationPermission.denied:
-          _permissionStatus = PermissionStatus.denied;
-          break;
-        case LocationPermission.deniedForever:
-          _permissionStatus = PermissionStatus.blocked;
-          break;
-        case LocationPermission.unableToDetermine:
-          _permissionStatus = PermissionStatus.unavailable;
-          break;
+      // 3. If they gave While In Use, we ideally want Always for safety apps
+      if (permission == LocationPermission.whileInUse) {
+        // We can try to request again for Always, though on some Android versions 
+        // this requires a separate flow or user must manually change in settings.
+        // For now, we accept whileInUse as "granted" but if we need Always, 
+        // the overlay will handle the escalation if it detects it's not Always.
+        _permissionStatus = PermissionStatus.granted;
+      } else if (permission == LocationPermission.always) {
+        _permissionStatus = PermissionStatus.granted;
+      } else if (permission == LocationPermission.denied) {
+        _permissionStatus = PermissionStatus.denied;
+      } else if (permission == LocationPermission.deniedForever) {
+        _permissionStatus = PermissionStatus.blocked;
       }
 
-      _errorMessage = null;
+      if (_permissionStatus == PermissionStatus.granted) {
+        _startLocationUpdates();
+      }
+
       _isLoading = false;
       notifyListeners();
-      
       return _permissionStatus == PermissionStatus.granted;
     } catch (e) {
       _errorMessage = 'Failed to request permission: $e';
       _isLoading = false;
-      _permissionStatus = PermissionStatus.unavailable;
       notifyListeners();
       return false;
     }
+  }
+
+  Future<bool> requestBackgroundPermission() async {
+    _isLoading = true;
+    notifyListeners();
+    
+    // On Android 10+, this usually triggers a system dialog or takes user to settings
+    LocationPermission permission = await Geolocator.requestPermission();
+    
+    if (permission == LocationPermission.always) {
+      _permissionStatus = PermissionStatus.granted;
+    }
+    
+    _isLoading = false;
+    notifyListeners();
+    return permission == LocationPermission.always;
   }
 
   Future<void> openLocationSettings() async {

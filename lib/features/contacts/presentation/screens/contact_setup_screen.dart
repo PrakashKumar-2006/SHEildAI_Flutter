@@ -3,7 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../shared/widgets/custom_button.dart';
+import 'package:provider/provider.dart';
 import '../../../../app.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 class ContactSetupScreen extends StatefulWidget {
   const ContactSetupScreen({super.key});
@@ -83,8 +85,15 @@ class _ContactSetupScreenState extends State<ContactSetupScreen> {
     // Save as List<String> with the requested key
     await prefs.setStringList('trusted_contacts', numbers);
     
+    // Sync to MongoDB if logged in
+    if (mounted) {
+      final auth = context.read<AuthProvider>();
+      await auth.updateTrustedContacts(numbers);
+    }
+    
     // Set the flag to true
     await prefs.setBool('contacts_saved', true);
+    await prefs.setBool('@setup_complete', true);
 
     if (mounted) {
       // Return to the Bootstrap gate to let it decide the next step (SetupPermissionsScreen)

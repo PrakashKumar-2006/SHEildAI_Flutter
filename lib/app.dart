@@ -39,6 +39,7 @@ import 'screens/profile_screen.dart';
 import 'screens/signin_screen.dart';
 import 'screens/setup_permissions_screen.dart';
 import 'providers/providers.dart';
+import 'shared/widgets/location_blocking_overlay.dart';
 import 'core/app_theme.dart' as new_theme;
 
 class App extends StatelessWidget {
@@ -198,6 +199,15 @@ class AppBootstrap extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final safety = context.watch<SafetyProvider>();
 
+    return Stack(
+      children: [
+        _buildContent(context, auth, safety),
+        const LocationBlockingOverlay(),
+      ],
+    );
+  }
+
+  Widget _buildContent(BuildContext context, AuthProvider auth, SafetyProvider safety) {
     if (!safety.isAppReady) {
       return const Scaffold(
         body: Center(
@@ -217,10 +227,28 @@ class AppBootstrap extends StatelessWidget {
       return const LoginScreen();
     }
 
+    // While we are syncing data from MongoDB (after login), show a loader
+    // to prevent showing the "Add Trusted Contacts" screen incorrectly.
+    if (auth.isSyncing) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Restoring your profile...'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final storage = context.read<StorageService>();
+    final isSetupComplete = storage.getBool('@setup_complete') ?? false;
     final hasContacts = storage.getTrustedContacts().isNotEmpty;
 
-    if (!hasContacts) {
+    if (!isSetupComplete && !hasContacts) {
       return const ContactSetupScreen();
     }
 

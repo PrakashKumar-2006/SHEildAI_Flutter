@@ -9,6 +9,8 @@ import '../features/routes/presentation/screens/routes_screen.dart';
 import 'sos_screen.dart';
 import 'alerts_screen.dart';
 import 'profile_screen.dart';
+import '../shared/widgets/location_blocking_overlay.dart';
+import '../core/providers/location_permission_provider.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -58,6 +60,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
       context.read<SOSProvider>().syncWithNative();
+      context.read<LocationPermissionProvider>().refreshStatus();
     }
   }
 

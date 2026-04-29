@@ -30,27 +30,12 @@ class MongoService {
 
       String finalUri = _connectionString!;
       
-      // Handle Atlas SRV strings more robustly
-      if (finalUri.contains('mongodb+srv')) {
-        // If URI doesn't have a database name, inject it
-        // Format is usually mongodb+srv://user:pass@cluster.net/?options
-        final parts = finalUri.split('.net/');
-        if (parts.length == 2) {
-          final afterHost = parts[1];
-          if (afterHost.isEmpty || afterHost.startsWith('?')) {
-            finalUri = '${parts[0]}.net/$dbName${afterHost.startsWith('?') ? afterHost : '/$afterHost'}';
-          }
-        }
-        
-        // Ensure authSource=admin for Atlas if not specified
-        if (!finalUri.contains('authSource')) {
-          finalUri = finalUri.contains('?') 
-              ? '$finalUri&authSource=admin' 
-              : '$finalUri?authSource=admin';
-        }
+      // If URI doesn't have a database name, inject it before the query parameters
+      if (finalUri.contains('.net/') && !finalUri.contains('.net/$dbName')) {
+        finalUri = finalUri.replaceFirst('.net/', '.net/$dbName');
       }
       
-      debugPrint('[MongoService] Finalized URI: ${finalUri.replaceFirst(RegExp(r':.*@'), ':****@')}');
+      debugPrint('[MongoService] Connecting with URI: ${finalUri.replaceFirst(RegExp(r':.*@'), ':****@')}');
       
       _db = await Db.create(finalUri);
       await _db!.open();
@@ -93,6 +78,16 @@ class MongoService {
     try {
       final collection = getCollection('users');
       final result = await collection.findOne(where.eq('phone', phone));
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    try {
+      final collection = getCollection('users');
+      final result = await collection.findOne(where.eq('email', email));
       return result;
     } catch (e) {
       return null;
@@ -175,6 +170,16 @@ class MongoService {
     try {
       final collection = getCollection('emergency_contacts');
       final result = await collection.find(where.eq('user_phone', phone)).toList();
+      return result;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getContactsByEmail(String email) async {
+    try {
+      final collection = getCollection('emergency_contacts');
+      final result = await collection.find(where.eq('user_email', email)).toList();
       return result;
     } catch (e) {
       return [];

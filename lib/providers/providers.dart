@@ -334,6 +334,11 @@ class SafetyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshProfile() async {
+    await _loadUserProfile();
+    notifyListeners();
+  }
+
   Future<void> _loadUserProfile() async {
     final prefs = await SharedPreferences.getInstance();
     _userProfile = UserProfile(
