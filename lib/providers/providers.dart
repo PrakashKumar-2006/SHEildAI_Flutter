@@ -469,7 +469,8 @@ class SafetyProvider extends ChangeNotifier {
     _trustedContacts = profile.trustedContacts;
     
     // Sync to MongoDB so the change is persisted across logins
-    final email = prefs.getString(AppConstants.keyUserEmail) ?? '';
+    String email = prefs.getString(AppConstants.keyUserEmail) ?? '';
+    if (email.isEmpty) email = _userProfile.phone;
     if (email.isNotEmpty) {
       try {
         final mongo = MongoService();
@@ -510,7 +511,8 @@ class SafetyProvider extends ChangeNotifier {
     _userProfile = _userProfile.copyWith(trustedContacts: validContacts);
     
     // Cloud sync
-    final email = prefs.getString(AppConstants.keyUserEmail) ?? _userProfile.phone;
+    String email = prefs.getString(AppConstants.keyUserEmail) ?? '';
+    if (email.isEmpty) email = _userProfile.phone;
 
     if (email.isNotEmpty) {
       try {

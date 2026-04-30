@@ -378,33 +378,21 @@ class AuthProvider extends ChangeNotifier {
       if (_user != null) {
          // Update Firebase display name
          await _user!.updateDisplayName(name);
-         await _user!.reload();
-         _user = _auth?.currentUser; // Get updated user instance
          
-         await _storageService.setUserPhone(_user!.email ?? '');
-         await _storageService.setUserEmail(_user!.email ?? '');
-         await _storageService.setUserName(name);
-         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+         // Send verification email
+         await _user!.sendEmailVerification();
          
-         // Save user to MongoDB
-         try {
-           final mongoService = MongoService();
-           if (!mongoService.isConnected) {
-             await mongoService.connect();
-           }
-           await mongoService.createUser({
-             'email': email,
-             'phone': email, // Fallback since UI might use email as phone
-             'createdAt': DateTime.now().toIso8601String(),
-             'name': name,
-             'profile': {},
-           });
-         } catch (dbError) {
-           debugPrint("Failed to save user to MongoDB: $dbError");
-         }
+         // Sign out immediately so they can't access the app yet
+         await _auth!.signOut();
+         _user = null;
+         
+         // Set success message in error field (LoginScreen will display this in green)
+         setError('Verification link sent to $email. Please check your inbox and verify to login.');
+         setLoading(false);
+         return false; // Return false so UI doesn't navigate
       }
       setLoading(false);
-      return true;
+      return false;
     } on FirebaseAuthException catch (e) {
       setError(e.message ?? 'An error occurred during sign up.');
       setLoading(false);
@@ -472,13 +460,34 @@ class AuthProvider extends ChangeNotifier {
       _user = userCred.user;
       
       if (_user != null) {
+        if (!_user!.emailVerified) {
+          await _auth!.signOut();
+          _user = null;
+          setError('Email not verified. Please check your inbox and verify to login.');
+          setLoading(false);
+          return false;
+        }
+
         // Fetch user data from MongoDB to sync local storage
         try {
           final mongoService = MongoService();
           if (!mongoService.isConnected) {
             await mongoService.connect();
           }
-          final userData = await mongoService.getUser(email);
+          var userData = await mongoService.getUser(email);
+          
+          if (userData == null) {
+            // First time logging in after email verification
+            await mongoService.createUser({
+              'email': email,
+              'phone': email, // Fallback since UI might use email as phone
+              'createdAt': DateTime.now().toIso8601String(),
+              'name': _user!.displayName ?? email.split('@')[0],
+              'profile': {},
+            });
+            userData = await mongoService.getUser(email);
+          }
+          
           if (userData != null && userData['name'] != null) {
             final name = userData['name'] as String;
             await _storageService.setUserName(name);
@@ -509,6 +518,26 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } on FirebaseAuthException catch (e) {
       setError(e.message ?? 'Invalid email or password.');
+      setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> resetPassword(String email) async {
+    setLoading(true);
+    setError(null);
+    try {
+      if (!_isFirebaseAvailable || _auth == null) {
+        setError('Firebase is not available. Cannot reset password.');
+        setLoading(false);
+        return false;
+      }
+      await _auth!.sendPasswordResetEmail(email: email);
+      setError('Password reset link sent to $email.');
+      setLoading(false);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      setError(e.message ?? 'An error occurred while sending reset link.');
       setLoading(false);
       return false;
     }

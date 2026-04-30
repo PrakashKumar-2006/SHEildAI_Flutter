@@ -103,6 +103,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
   }
 
+  void _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _showSnackBar('Please enter your email address first');
+      return;
+    }
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      _showSnackBar('Please enter a valid email address');
+      return;
+    }
+
+    final provider = context.read<AuthProvider>();
+    await provider.resetPassword(email);
+  }
+
   void _googleSignIn() async {
     final success = await context.read<AuthProvider>().signInWithGoogle();
     if (success && mounted) {
@@ -290,18 +305,19 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.05),
+                    color: error.contains('link sent') ? Colors.green.withOpacity(0.05) : Colors.red.withOpacity(0.05),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.red.withOpacity(0.2)),
+                    border: Border.all(color: error.contains('link sent') ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+                      Icon(error.contains('link sent') ? Icons.check_circle_outline : Icons.error_outline, 
+                        color: error.contains('link sent') ? Colors.green : AppColors.error, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           error,
-                          style: const TextStyle(color: AppColors.error, fontSize: 12),
+                          style: TextStyle(color: error.contains('link sent') ? Colors.green : AppColors.error, fontSize: 12),
                         ),
                       ),
                     ],
@@ -358,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: _handleForgotPassword,
                     child: const Text(
                       'Forgot Password?',
                       style: TextStyle(

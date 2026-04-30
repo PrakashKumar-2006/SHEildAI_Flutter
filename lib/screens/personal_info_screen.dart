@@ -45,6 +45,8 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     super.dispose();
   }
 
+  bool _isSaving = false;
+
   Future<void> _handleSave() async {
     if (_isEditing) {
       final name = _nameController.text.trim();
@@ -57,8 +59,30 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a valid 10-digit number.')));
         return;
       }
-      final safety = context.read<SafetyProvider>();
-      await safety.updateUserProfile(safety.userProfile.copyWith(name: name, phone: phone));
+      
+      setState(() => _isSaving = true);
+      try {
+        final safety = context.read<SafetyProvider>();
+        await safety.updateUserProfile(safety.userProfile.copyWith(name: name, phone: phone));
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Profile saved successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error saving profile: $e'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isSaving = false);
+      }
     }
     setState(() => _isEditing = !_isEditing);
   }
@@ -98,11 +122,16 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: _handleSave,
-                    child: Text(
-                      _isEditing ? lang.t('save') : lang.t('edit'),
-                      style: TextStyle(color: theme.accent, fontWeight: FontWeight.w800, fontSize: 14),
-                    ),
+                    onTap: _isSaving ? null : _handleSave,
+                    child: _isSaving
+                        ? SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(color: theme.accent, strokeWidth: 2),
+                          )
+                        : Text(
+                            _isEditing ? lang.t('save') : lang.t('edit'),
+                            style: TextStyle(color: theme.accent, fontWeight: FontWeight.w800, fontSize: 14),
+                          ),
                   ),
                 ],
               ),

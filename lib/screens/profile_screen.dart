@@ -33,9 +33,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final lang = context.watch<LanguageProvider>();
     final safety = context.watch<SafetyProvider>();
     final isDark = theme.isDarkMode;
-    
-    // Safety check for navigator context
-    final canPop = Navigator.of(context).canPop();
 
     return Scaffold(
       backgroundColor: theme.background,
@@ -48,18 +45,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Row(
                 children: [
-                  if (canPop)
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.centerLeft,
-                        child: Icon(Icons.arrow_back_rounded, color: theme.textPrimary, size: 24),
-                      ),
-                    )
-                  else
-                    const SizedBox(width: 40),
+                  const SizedBox(width: 40),
                   Expanded(
                     child: Text(
                       lang.t('profile_title'),
