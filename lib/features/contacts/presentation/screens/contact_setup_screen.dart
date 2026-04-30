@@ -7,6 +7,7 @@ import '../../../../shared/widgets/custom_button.dart';
 import '../../../../app.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
 import '../providers/contact_provider.dart';
+import '../../../../providers/providers.dart';
 
 class ContactSetupScreen extends StatefulWidget {
   const ContactSetupScreen({super.key});
