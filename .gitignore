@@ -55,7 +55,7 @@ app.*.map.json
 /android/app/build/
 /android/local.properties
 /android/key.properties
-/android/app/google-services.json
+#/android/app/google-services.json
 
 # iOS build and secrets
 /ios/Flutter/Generated.xcconfig

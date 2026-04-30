@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "751857328066",
+    "project_id": "sheild-flutter",
+    "storage_bucket": "sheild-flutter.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:751857328066:android:20f72702101a97d7ed005b",
+        "android_client_info": {
+          "package_name": "com.shieldai.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "751857328066-c6b1sp7hvasnj2plfn04r07jvgluo5cn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.shieldai.app",
+            "certificate_hash": "72b936484538ca804931ad8b4209996cff79de66"
+          }
+        },
+        {
+          "client_id": "751857328066-89str56pgvprvs23b7qlff5afljgup1b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBS8OqXkdTGlEwtpn58_6OZJTHZCl2jiZw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "751857328066-466t2j193gvaq38sgraqe6ke4a7jl5nh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
