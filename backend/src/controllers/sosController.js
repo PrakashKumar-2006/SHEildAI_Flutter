@@ -1,55 +1,65 @@
-const SOS = require('../models/SOS');
+const sosRepository = require('../repositories/SOSRepository');
+const logger = require('../utils/logger');
+const crypto = require('crypto');
 
-// @desc    Create new SOS alert
-// @route   POST /api/sos
-exports.createSOS = async (req, res) => {
-  const { location } = req.body;
+const sosController = {
+  triggerSOS: async (req, res) => {
+    const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
+    try {
+      const { user_id, latitude, longitude, message } = req.body;
+      const phone = user_id; // Mapping user_id to phone
 
-  try {
-    const sos = await SOS.create({
-      user_phone: req.user.phone,
-      location,
-      status: 'active'
-    });
+      if (!phone) {
+        return res.status(400).json({ error: 'User ID (phone) is required' });
+      }
 
-    res.status(201).json(sos);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+      const sosData = {
+        user_phone: phone,
+        location: {
+          lat: latitude,
+          lon: longitude
+        },
+        message: message || 'SOS triggered',
+        status: 'active'
+      };
 
-// @desc    Get user's SOS history
-// @route   GET /api/sos/history
-exports.getSOSHistory = async (req, res) => {
-  try {
-    const sosList = await SOS.find({ user_phone: req.user.phone }).sort({ createdAt: -1 });
-    res.json(sosList);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+      const sos = await sosRepository.createSOS(sosData, traceId);
 
-// @desc    Update SOS status
-// @route   PUT /api/sos/:id/status
-exports.updateSOSStatus = async (req, res) => {
-  const { status } = req.body;
-
-  try {
-    const sos = await SOS.findById(req.params.id);
-
-    if (!sos) {
-      return res.status(404).json({ message: 'SOS alert not found' });
+      logger.info(`SOS triggered and persisted for phone: ${phone}`, traceId);
+      res.status(200).json({ 
+        success: true, 
+        message: 'SOS triggered and persisted', 
+        sosId: sos._id 
+      });
+    } catch (error) {
+      logger.error('triggerSOS error', traceId, error);
+      res.status(500).json({ error: 'Internal server error', traceId });
     }
+  },
 
-    if (sos.user_phone !== req.user.phone) {
-      return res.status(401).json({ message: 'Not authorized to update this SOS' });
+  updateStatus: async (req, res) => {
+    const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
+    try {
+      const { sosId } = req.params;
+      const { status } = req.body;
+
+      if (!sosId || !status) {
+        return res.status(400).json({ error: 'SOS ID and status are required' });
+      }
+
+      const updated = await sosRepository.updateStatus(sosId, status, traceId);
+
+      if (!updated) {
+        return res.status(404).json({ error: 'SOS record not found' });
+      }
+
+      logger.info(`SOS status updated to ${status} for ID: ${sosId}`, traceId);
+      res.status(200).json({ success: true, message: `SOS status updated to ${status}` });
+    } catch (error) {
+      logger.error('updateStatus error', traceId, error);
+      res.status(500).json({ error: 'Internal server error', traceId });
     }
-
-    sos.status = status;
-    await sos.save();
-
-    res.json(sos);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
   }
 };
+
+module.exports = sosController;

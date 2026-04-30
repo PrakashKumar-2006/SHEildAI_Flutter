@@ -7,6 +7,7 @@ const connectDB = require('./config/db');
 
 const authRoutes = require('./routes/authRoutes');
 const sosRoutes = require('./routes/sosRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 // Load env vars
 dotenv.config();
@@ -35,6 +36,7 @@ app.use(limiter);
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/sos', sosRoutes);
+app.use('/api/contacts', contactRoutes);
 
 // Root route
 app.get('/', (req, res) => {

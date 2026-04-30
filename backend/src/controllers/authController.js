@@ -1,85 +1,79 @@
-const User = require('../models/User');
+const userRepository = require('../repositories/UserRepository');
 const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
+const crypto = require('crypto');
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '7d', // Reduced from 30d for better security. Consider 1h with a refresh token in the future.
-  });
-};
+const authController = {
+  // Simple token generation for demo/testing
+  getToken: async (req, res) => {
+    const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
+    try {
+      const { phone } = req.body;
+      if (!phone) {
+        return res.status(400).json({ error: 'Phone number is required' });
+      }
 
-// @desc    Register a new user
-// @route   POST /api/auth/register
-exports.registerUser = async (req, res) => {
-  const { name, phone, password } = req.body;
+      // Check if user exists in MongoDB
+      const user = await userRepository.findByPhone(phone, traceId);
+      
+      const token = jwt.sign(
+        { phone, userId: user ? user._id : null },
+        process.env.JWT_SECRET || 'sheildai_secret',
+        { expiresIn: '7d' }
+      );
 
-  try {
-    const userExists = await User.findOne({ phone });
-
-    if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      logger.info(`Token generated for phone: ${phone}`, traceId);
+      res.status(200).json({ token, userExists: !!user });
+    } catch (error) {
+      logger.error('getToken error', traceId, error);
+      res.status(500).json({ error: 'Internal server error', traceId });
     }
+  },
 
-    const user = await User.create({
-      name,
-      phone,
-      password,
-    });
+  updateLocation: async (req, res) => {
+    const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
+    try {
+      const { user_id, latitude, longitude, name } = req.body;
+      const phone = user_id; // Mapping user_id to phone for this flow
+      
+      if (!phone) {
+        return res.status(400).json({ error: 'User ID (phone) is required' });
+      }
 
-    if (user) {
-      res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        phone: user.phone,
-        token: generateToken(user._id),
-      });
-    } else {
-      res.status(400).json({ message: 'Invalid user data' });
+      let user = await userRepository.findByPhone(phone, traceId);
+      
+      if (!user) {
+        logger.info(`Creating new shadow user for phone: ${phone}`, traceId);
+        user = await userRepository.createUser({
+          phone: phone,
+          name: name || 'User',
+          last_lat: latitude,
+          last_lon: longitude,
+          last_seen: new Date()
+        }, traceId);
+      } else {
+        await userRepository.updateLastLocation(phone, latitude, longitude, traceId);
+      }
+
+      res.status(200).json({ success: true, message: 'Location updated' });
+    } catch (error) {
+      logger.error('updateLocation error', traceId, error);
+      res.status(500).json({ error: 'Internal server error', traceId });
     }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  },
+
+  getProfile: async (req, res) => {
+    const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
+    try {
+      const { userId } = req.params;
+      const user = await userRepository.findByPhone(userId, traceId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      res.status(200).json(user);
+    } catch (error) {
+      logger.error('getProfile error', traceId, error);
+      res.status(500).json({ error: 'Internal server error', traceId });
+    }
   }
 };
 
-// @desc    Auth user & get token
-// @route   POST /api/auth/login
-exports.loginUser = async (req, res) => {
-  const { phone, password } = req.body;
-
-  try {
-    const user = await User.findOne({ phone });
-
-    if (user && (await user.matchPassword(password))) {
-      res.json({
-        _id: user._id,
-        name: user.name,
-        phone: user.phone,
-        token: generateToken(user._id),
-      });
-    } else {
-      res.status(401).json({ message: 'Invalid phone or password' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get user profile
-// @route   GET /api/auth/profile
-exports.getUserProfile = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-
-    if (user) {
-      res.json({
-        _id: user._id,
-        name: user.name,
-        phone: user.phone,
-        profile: user.profile
-      });
-    } else {
-      res.status(404).json({ message: 'User not found' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+module.exports = authController;
