@@ -11,28 +11,37 @@ class SOSContactsScreen extends StatefulWidget {
 
 class _SOSContactsScreenState extends State<SOSContactsScreen> {
   bool _isEditing = false;
+  bool _isLoadingContacts = true;
   final List<ContactControllerGroup> _controllers = [];
 
   @override
   void initState() {
     super.initState();
-    _initializeControllers();
+    // Defer to post-frame so context is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadContactsFromDB();
+    });
   }
 
-  void _initializeControllers() {
+  /// Fetches latest contacts from MongoDB then rebuilds controllers
+  Future<void> _loadContactsFromDB() async {
     final safety = context.read<SafetyProvider>();
-    final contacts = safety.inputContacts;
-    
-    for (var contact in contacts) {
-      _controllers.add(ContactControllerGroup(
-        name: contact.name,
-        phone: contact.phone,
-      ));
-    }
-    
-    if (_controllers.isEmpty) {
-      _controllers.add(ContactControllerGroup());
-    }
+    await safety.refreshProfile(); // pulls fresh data from MongoDB
+    if (!mounted) return;
+    setState(() {
+      _controllers.clear();
+      final contacts = safety.trustedContacts;
+      for (var contact in contacts) {
+        _controllers.add(ContactControllerGroup(
+          name: contact.name,
+          phone: contact.phone,
+        ));
+      }
+      if (_controllers.isEmpty) {
+        _controllers.add(ContactControllerGroup());
+      }
+      _isLoadingContacts = false;
+    });
   }
 
   @override
@@ -46,27 +55,115 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
   void _addContact() {
     if (_controllers.length < 5) {
       setState(() => _controllers.add(ContactControllerGroup()));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum 5 trusted contacts allowed.')),
+      );
     }
   }
 
-  void _removeContact(int index) {
-    if (_controllers.length > 1) {
+  Future<void> _removeContact(int index) async {
+    // Minimum 1 contact must remain
+    if (_controllers.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('At least 1 trusted contact is required for your safety.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final contactName = _controllers[index].nameController.text.trim();
+    final displayName = contactName.isNotEmpty ? contactName : 'this contact';
+
+    // Confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+            SizedBox(width: 8),
+            Text('Remove Contact', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to remove "$displayName" from your trusted contacts?',
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Remove', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
       _controllers[index].dispose();
       setState(() => _controllers.removeAt(index));
     }
   }
 
+  bool _isSaving = false;
+
   Future<void> _handleSave() async {
-    final safety = context.read<SafetyProvider>();
-    final List<GuardianContact> newContacts = _controllers.map((group) => GuardianContact(
-      name: group.nameController.text.trim(),
-      phone: group.phoneController.text.trim(),
-    )).toList();
-    
-    safety.setInputContacts(newContacts);
-    await safety.saveTrustedContacts();
-    setState(() => _isEditing = false);
+    // Validate at least 1 valid contact
+    final validCount = _controllers.where((g) => g.phoneController.text.trim().length >= 10).length;
+    if (validCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please add at least 1 valid phone number (10 digits).'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final safety = context.read<SafetyProvider>();
+      final List<GuardianContact> newContacts = _controllers.map((group) => GuardianContact(
+        name: group.nameController.text.trim(),
+        phone: group.phoneController.text.trim(),
+      )).toList();
+      
+      safety.setInputContacts(newContacts);
+      await safety.saveTrustedContacts();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Contacts saved successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        setState(() => _isEditing = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving contacts: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +174,48 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
 
     return Scaffold(
       backgroundColor: theme.background,
-      body: SafeArea(
+      body: _isLoadingContacts
+          ? SafeArea(
+              child: Column(
+                children: [
+                  // Header still visible while loading
+                  Container(
+                    color: theme.background,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Container(width: 40, height: 40, alignment: Alignment.centerLeft,
+                            child: Icon(Icons.arrow_back_rounded, color: theme.textPrimary, size: 24)),
+                        ),
+                        Expanded(
+                          child: Text(
+                            lang.t('sentinel_contacts'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: theme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        const SizedBox(width: 40),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: theme.accent),
+                          const SizedBox(height: 16),
+                          Text('Loading contacts...', style: TextStyle(color: theme.textSecondary, fontSize: 14)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : SafeArea(
         child: Column(
           children: [
             // Header
@@ -101,11 +239,15 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
                   GestureDetector(
                     onTap: () {
                       if (_isEditing) {
-                        // Reset controllers to original values
+                        // Reset controllers to original (DB) values
                         setState(() {
                           for (var group in _controllers) group.dispose();
                           _controllers.clear();
-                          _initializeControllers();
+                          final contacts = safety.trustedContacts;
+                          for (var c in contacts) {
+                            _controllers.add(ContactControllerGroup(name: c.name, phone: c.phone));
+                          }
+                          if (_controllers.isEmpty) _controllers.add(ContactControllerGroup());
                           _isEditing = false;
                         });
                       } else {
@@ -251,11 +393,18 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text('Contact ${e.key + 1}', style: TextStyle(color: theme.accent, fontSize: 12, fontWeight: FontWeight.bold)),
-                                      if (_controllers.length > 1)
-                                        GestureDetector(
-                                          onTap: () => _removeContact(e.key),
-                                          child: const Icon(Icons.remove_circle_rounded, color: Color(0xFFFF4D4D), size: 20),
+                                      GestureDetector(
+                                        onTap: () => _removeContact(e.key),
+                                        child: Icon(
+                                          _controllers.length <= 1
+                                              ? Icons.lock_outline_rounded
+                                              : Icons.remove_circle_rounded,
+                                          color: _controllers.length <= 1
+                                              ? Colors.orange
+                                              : const Color(0xFFFF4D4D),
+                                          size: 20,
                                         ),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 8),
@@ -283,22 +432,35 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
                             )),
                             const SizedBox(height: 10),
                             GestureDetector(
-                              onTap: _handleSave,
+                              onTap: _isSaving ? null : _handleSave,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 15),
                                 decoration: BoxDecoration(
-                                  color: theme.accent,
+                                  color: _isSaving
+                                      ? theme.accent.withOpacity(0.6)
+                                      : theme.accent,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
-                                    const SizedBox(width: 8),
-                                    Text(lang.t('verify_save'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-                                  ],
-                                ),
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        width: 22, height: 22,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white, strokeWidth: 2.5),
+                                      )
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.check_circle_outline,
+                                              color: Colors.white, size: 20),
+                                          const SizedBox(width: 8),
+                                          Text(lang.t('verify_save'),
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w800)),
+                                        ],
+                                      ),
                               ),
                             ),
                           ],

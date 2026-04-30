@@ -10,8 +10,22 @@ import 'notifications_settings_screen.dart';
 import 'paywall_screen.dart';
 import '../core/services/storage_service.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Refresh profile from MongoDB so contact count & name are always current
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SafetyProvider>().refreshProfile();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

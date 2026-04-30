@@ -11,15 +11,31 @@ class PersonalInfoScreen extends StatefulWidget {
 
 class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   bool _isEditing = false;
+  bool _isLoadingProfile = true;
   late TextEditingController _nameController;
   late TextEditingController _phoneController;
 
   @override
   void initState() {
     super.initState();
+    _nameController = TextEditingController();
+    _phoneController = TextEditingController();
+    // Refresh profile from MongoDB to get latest data
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadLatestProfile();
+    });
+  }
+
+  Future<void> _loadLatestProfile() async {
     final safety = context.read<SafetyProvider>();
-    _nameController = TextEditingController(text: safety.userProfile.name);
-    _phoneController = TextEditingController(text: safety.userProfile.phone);
+    await safety.refreshProfile();
+    if (mounted) {
+      setState(() {
+        _nameController.text = safety.userProfile.name;
+        _phoneController.text = safety.userProfile.phone;
+        _isLoadingProfile = false;
+      });
+    }
   }
 
   @override
@@ -56,7 +72,9 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
 
     return Scaffold(
       backgroundColor: theme.background,
-      body: SafeArea(
+      body: _isLoadingProfile
+          ? Center(child: CircularProgressIndicator(color: theme.accent))
+          : SafeArea(
         child: Column(
           children: [
             // Header

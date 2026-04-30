@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -40,8 +41,9 @@ class AuthProvider extends ChangeNotifier {
     if (wasLoggedIn) {
       final savedName  = _storageService.getString(AppConstants.keyUserName) ?? 'User';
       final savedPhone = _storageService.getString(AppConstants.keyUserPhone) ?? '';
+      final savedEmail = _storageService.getString(AppConstants.keyUserEmail) ?? '';
       _user = MockUser(uid: savedPhone.isNotEmpty ? savedPhone : 'restored_session',
-                       email: savedPhone,
+                       email: savedEmail.isNotEmpty ? savedEmail : savedPhone,
                        displayName: savedName);
       debugPrint('[AuthProvider] Session restored — user: $savedName');
       syncProfile(); // Ensure name is correct if it was generic
@@ -94,41 +96,63 @@ class AuthProvider extends ChangeNotifier {
         // Update local profile data if not already set
         if (name.isNotEmpty) await _storageService.setUserName(name);
         if (phone.isNotEmpty) await _storageService.setUserPhone(phone);
+        await _storageService.setUserEmail(email);
 
-        // 2. Sync Trusted Contacts
-        List<String> trustedContacts = [];
+        // 2. Sync Trusted Contacts (full name + phone details)
+        List<String> trustedContactPhones = [];
+        List<Map<String, dynamic>> fullContactDetails = [];
+        Set<String> seenPhones = {};
         
-        // Try from user document profile field
-        final profile = userDoc['profile'] as Map<String, dynamic>?;
-        if (profile != null && profile['trustedContacts'] != null) {
-          trustedContacts.addAll(List<String>.from(profile['trustedContacts']));
-        }
-        
-        // Try from emergency_contacts collection
+        // Fetch from emergency_contacts collection (has full name+phone)
         final contactsFromColl = await mongoService.getContactsByEmail(email);
-        if (contactsFromColl.isNotEmpty) {
-          for (var c in contactsFromColl) {
-            final p = c['phone'] as String?;
-            if (p != null && !trustedContacts.contains(p)) {
-              trustedContacts.add(p);
-            }
+        for (var c in contactsFromColl) {
+          final p = c['phone'] as String?;
+          final n = c['name'] as String? ?? 'Guardian';
+          if (p != null && !seenPhones.contains(p)) {
+            seenPhones.add(p);
+            trustedContactPhones.add(p);
+            fullContactDetails.add({'name': n, 'phone': p});
           }
         }
         
-        // Try from phone if we have one
+        // Also try from phone identifier if we have one
         if (phone.isNotEmpty) {
           final contactsByPhone = await mongoService.getContacts(phone);
           for (var c in contactsByPhone) {
             final p = c['phone'] as String?;
-            if (p != null && !trustedContacts.contains(p)) {
-              trustedContacts.add(p);
+            final n = c['name'] as String? ?? 'Guardian';
+            if (p != null && !seenPhones.contains(p)) {
+              seenPhones.add(p);
+              trustedContactPhones.add(p);
+              fullContactDetails.add({'name': n, 'phone': p});
+            }
+          }
+        }
+        
+        // Fallback: Try from user document profile field (phone-only list)
+        if (fullContactDetails.isEmpty) {
+          final profile = userDoc['profile'] as Map<String, dynamic>?;
+          if (profile != null && profile['trustedContacts'] != null) {
+            final phones = List<String>.from(profile['trustedContacts']);
+            for (final p in phones) {
+              if (!seenPhones.contains(p)) {
+                seenPhones.add(p);
+                trustedContactPhones.add(p);
+                fullContactDetails.add({'name': 'Guardian', 'phone': p});
+              }
             }
           }
         }
 
-        if (trustedContacts.isNotEmpty) {
-          debugPrint('[AuthProvider] Found ${trustedContacts.length} contacts in MongoDB, syncing locally.');
-          await _storageService.setStringList('trusted_contacts', trustedContacts);
+        if (fullContactDetails.isNotEmpty) {
+          debugPrint('[AuthProvider] Found ${fullContactDetails.length} contacts in MongoDB, syncing locally with names.');
+          // Save full contact details (name + phone) for SafetyProvider to read
+          await _storageService.setStringList(
+            'trusted_contacts_full',
+            fullContactDetails.map((c) => jsonEncode(c)).toList(),
+          );
+          // Save phone-only list for quick lookup
+          await _storageService.setStringList('trusted_contacts', trustedContactPhones);
           await _storageService.setBool('@setup_complete', true);
           await _storageService.setBool('@profile_complete', true);
         }
@@ -330,6 +354,7 @@ class AuthProvider extends ChangeNotifier {
 
         _user = MockUser(uid: email, email: email, displayName: name);
         await _storageService.setUserPhone(email);
+        await _storageService.setUserEmail(email);
         await _storageService.setUserName(name);
         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
         
@@ -357,6 +382,7 @@ class AuthProvider extends ChangeNotifier {
          _user = _auth?.currentUser; // Get updated user instance
          
          await _storageService.setUserPhone(_user!.email ?? '');
+         await _storageService.setUserEmail(_user!.email ?? '');
          await _storageService.setUserName(name);
          await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
          
@@ -392,6 +418,7 @@ class AuthProvider extends ChangeNotifier {
     final email = firebaseUser.email ?? '';
     await _storageService.setUserName(name);
     await _storageService.setUserPhone(email);
+    await _storageService.setUserEmail(email);
     await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
   }
 
@@ -423,6 +450,7 @@ class AuthProvider extends ChangeNotifier {
         
         await _storageService.setUserName(name);
         await _storageService.setUserPhone(userData['phone'] ?? email);
+        await _storageService.setUserEmail(email);
         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
         
         setLoading(false);
@@ -455,6 +483,7 @@ class AuthProvider extends ChangeNotifier {
             final name = userData['name'] as String;
             await _storageService.setUserName(name);
             await _storageService.setUserPhone(userData['phone'] ?? email);
+            await _storageService.setUserEmail(email);
             await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
             
             // Sync Firebase display name if it's null
@@ -550,6 +579,7 @@ class AuthProvider extends ChangeNotifier {
          
          // Save to local storage for quick access
          await _storageService.setUserPhone(_user!.email ?? '');
+         await _storageService.setUserEmail(_user!.email ?? '');
          await _storageService.setUserName(userName);
          await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
          

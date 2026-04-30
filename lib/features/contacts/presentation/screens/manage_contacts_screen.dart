@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../providers/providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../shared/widgets/custom_button.dart';
@@ -85,27 +87,38 @@ class _ManageContactsScreenState extends State<ManageContactsScreen> {
       return;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final List<String> numbers = _controllers
-        .map((c) => _normalizePhone(c.text))
-        .where((text) => text.isNotEmpty)
+    final safety = context.read<SafetyProvider>();
+    final List<GuardianContact> contacts = _controllers
+        .map((c) => GuardianContact(name: 'Guardian', phone: _normalizePhone(c.text)))
+        .where((c) => c.phone.isNotEmpty)
         .toList();
 
-    if (numbers.isEmpty) {
+    if (contacts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please add at least one trusted contact.')),
       );
       return;
     }
 
-    await prefs.setStringList('trusted_contacts', numbers);
-    await prefs.setBool('contacts_saved', true);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Contacts updated successfully.')),
-      );
-      Navigator.pop(context);
+    try {
+      setState(() => _isLoading = true);
+      safety.setInputContacts(contacts);
+      await safety.saveTrustedContacts();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Contacts updated successfully and synced to cloud.')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to sync with cloud, saved locally: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

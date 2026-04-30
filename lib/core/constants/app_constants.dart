@@ -23,6 +23,8 @@ class AppConstants {
   static const String keyLastSosTime = 'last_sos_time';
   static const String keyUserName = 'user_name';
   static const String keyUserPhone = 'user_phone';
+  static const String keyUserEmail = 'user_email';
+
   /// Persisted login session flag — true after a successful sign-in,
   /// cleared on explicit sign-out. Survives cold restarts so the user
   /// is not forced to re-authenticate on every app launch.

@@ -34,14 +34,13 @@ void main() async {
   // This ensures the API is warm by the time the user's location loads.
   MLService.wakeUp();
 
-  // Initialize MongoDB connection (blocking to ensure readiness)
+  // Initialize MongoDB connection in background (non-blocking for faster startup)
   final mongoService = MongoService();
-  try {
-    await mongoService.connect();
-    debugPrint("MongoDB initialized successfully on startup");
-  } catch (e) {
+  mongoService.connect().then((_) {
+    debugPrint("MongoDB initialized successfully");
+  }).catchError((e) {
     debugPrint("MongoDB initialization failed: $e");
-  }
+  });
   
   runApp(const App());
 }

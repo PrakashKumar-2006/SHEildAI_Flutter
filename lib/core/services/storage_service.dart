@@ -127,6 +127,14 @@ class StorageService {
     return getString(AppConstants.keyUserPhone) ?? '+919876543210';
   }
 
+  Future<bool> setUserEmail(String email) async {
+    return await setString(AppConstants.keyUserEmail, email);
+  }
+
+  String getUserEmail() {
+    return getString(AppConstants.keyUserEmail) ?? '';
+  }
+
   Future<bool> setEmergencyContacts(List<Map<String, dynamic>> contacts) async {
     return await setStringList(
       AppConstants.keyEmergencyContacts,

@@ -2,6 +2,7 @@ import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/mongo_service.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/contact_model.dart';
 import '../../domain/repositories/contact_repository.dart';
 import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
@@ -12,14 +13,18 @@ class ContactRepositoryImpl implements ContactRepository {
 
   ContactRepositoryImpl(this._mongoService, this._storageService);
 
-  String get _userEmail => _storageService.getString('user_phone') ?? '';
+  String get _userEmail => _storageService.getString(AppConstants.keyUserEmail) ?? '';
+  String get _userPhone => _storageService.getString(AppConstants.keyUserPhone) ?? '';
 
   @override
   Future<Either<Failure, List<ContactModel>>> getContacts() async {
     try {
-      if (_userEmail.isEmpty) return const Right([]);
+      if (_userEmail.isEmpty && _userPhone.isEmpty) return const Right([]);
       
-      final contactsData = await _mongoService.getContactsByEmail(_userEmail);
+      final contactsData = await _mongoService.getContactsForUser(
+        email: _userEmail,
+        phone: _userPhone,
+      );
       final contacts = contactsData.map((json) {
         // Map MongoDB _id to string id for ContactModel
         final Map<String, dynamic> mappedJson = Map.from(json);

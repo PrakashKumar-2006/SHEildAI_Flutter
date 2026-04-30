@@ -360,6 +360,10 @@ class SafetyProvider extends ChangeNotifier {
     
     // 1. Get identifiers
     final phone = prefs.getString(AppConstants.keyUserPhone) ?? '';
+    final email = prefs.getString(AppConstants.keyUserEmail) ?? '';
+    
+    // Fallback: If email is missing, use phone (for legacy sessions)
+    final identifier = email.isNotEmpty ? email : phone;
     
     // 2. Load contacts from local storage first (JSON)
     final savedContactsJson = prefs.getStringList('trusted_contacts_full') ?? [];
@@ -382,38 +386,54 @@ class SafetyProvider extends ChangeNotifier {
     );
 
     // 3. Deep sync from MongoDB (Always do this to get latest names/phones)
-    if (phone.isNotEmpty) {
+    if (identifier.isNotEmpty) {
       try {
         final mongo = MongoService();
         if (!mongo.isConnected) await mongo.connect();
         
         // Fetch User Doc for name/profile info
-        final userDoc = await mongo.getUserByEmail(phone);
+        final userDoc = await mongo.getUserByEmail(identifier);
         if (userDoc != null) {
           final mongoName = userDoc['name'] as String? ?? '';
-          if (mongoName.isNotEmpty && mongoName != _userProfile.name) {
+          final mongoPhone = userDoc['phone'] as String? ?? '';
+          // Always prefer MongoDB data — it is the source of truth
+          if (mongoName.isNotEmpty) {
             _userProfile.name = mongoName;
             await prefs.setString(AppConstants.keyUserName, mongoName);
+          }
+          if (mongoPhone.isNotEmpty && _userProfile.phone.isEmpty) {
+            _userProfile.phone = mongoPhone;
+            await prefs.setString(AppConstants.keyUserPhone, mongoPhone);
           }
         }
 
         // Fetch from emergency_contacts collection for full details
-        final contactsData = await mongo.getContactsByEmail(phone);
+        List<Map<String, dynamic>> contactsData = await mongo.getContactsByEmail(identifier);
+        
+        // Also try by phone if email-based lookup returned nothing
+        if (contactsData.isEmpty && phone.isNotEmpty && phone != identifier) {
+          contactsData = await mongo.getContactsByEmail(phone);
+        }
+        
         if (contactsData.isNotEmpty) {
-          final mongoContacts = contactsData.map((data) => GuardianContact(
-            name: data['name'] ?? 'Guardian',
-            phone: data['phone'] ?? '',
-          )).toList();
+          final mongoContacts = contactsData
+            .where((data) => (data['phone'] as String? ?? '').isNotEmpty)
+            .map((data) => GuardianContact(
+              name: data['name'] as String? ?? 'Guardian',
+              phone: data['phone'] as String? ?? '',
+            )).toList();
           
-          _userProfile.trustedContacts = mongoContacts;
-          
-          // Save to local storage
-          await prefs.setStringList('trusted_contacts_full', 
-            mongoContacts.map((c) => jsonEncode(c.toJson())).toList());
-          await prefs.setStringList('trusted_contacts', 
-            mongoContacts.map((c) => c.phone).toList());
+          if (mongoContacts.isNotEmpty) {
+            _userProfile.trustedContacts = mongoContacts;
             
-          debugPrint('[SafetyProvider] Deep synced ${mongoContacts.length} contacts from MongoDB');
+            // Save to local storage
+            await prefs.setStringList('trusted_contacts_full', 
+              mongoContacts.map((c) => jsonEncode(c.toJson())).toList());
+            await prefs.setStringList('trusted_contacts', 
+              mongoContacts.map((c) => c.phone).toList());
+              
+            debugPrint('[SafetyProvider] Deep synced ${mongoContacts.length} contacts from MongoDB');
+          }
         }
       } catch (e) {
         debugPrint('[SafetyProvider] Deep sync error: $e');
@@ -447,6 +467,25 @@ class SafetyProvider extends ChangeNotifier {
     await prefs.setBool('@profile_complete', profile.isComplete);
     await prefs.setBool('@setup_complete', profile.isSetupComplete);
     _trustedContacts = profile.trustedContacts;
+    
+    // Sync to MongoDB so the change is persisted across logins
+    final email = prefs.getString(AppConstants.keyUserEmail) ?? '';
+    if (email.isNotEmpty) {
+      try {
+        final mongo = MongoService();
+        if (!mongo.isConnected) await mongo.connect();
+        final updates = <String, dynamic>{};
+        if (profile.name.isNotEmpty) updates['name'] = profile.name;
+        if (profile.phone.isNotEmpty) updates['phone'] = profile.phone;
+        if (updates.isNotEmpty) {
+          await mongo.updateUser(email, updates);
+          debugPrint('[SafetyProvider] Profile synced to MongoDB: $updates');
+        }
+      } catch (e) {
+        debugPrint('[SafetyProvider] Failed to sync profile to MongoDB: $e');
+      }
+    }
+    
     notifyListeners();
   }
 
@@ -454,6 +493,12 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> saveTrustedContacts() async {
     final validContacts = _inputContacts.where((c) => c.phone.trim().length >= 10).toList();
+    
+    // Compute which phones were removed so we can delete them from MongoDB
+    final oldPhones = _trustedContacts.map((c) => c.phone).toSet();
+    final newPhones = validContacts.map((c) => c.phone).toSet();
+    final deletedPhones = oldPhones.difference(newPhones);
+    
     _trustedContacts = validContacts;
     final prefs = await SharedPreferences.getInstance();
     
@@ -465,23 +510,31 @@ class SafetyProvider extends ChangeNotifier {
     _userProfile = _userProfile.copyWith(trustedContacts: validContacts);
     
     // Cloud sync
-    if (_userProfile.phone.isNotEmpty) {
+    final email = prefs.getString(AppConstants.keyUserEmail) ?? _userProfile.phone;
+
+    if (email.isNotEmpty) {
       try {
         final mongo = MongoService();
         if (!mongo.isConnected) await mongo.connect();
         
-        // 1. Update user profile list
-        await mongo.updateUser(_userProfile.phone, {
+        // 1. Delete removed contacts from emergency_contacts collection
+        for (final phone in deletedPhones) {
+          debugPrint('[SafetyProvider] Deleting contact with phone=$phone from MongoDB');
+          await mongo.deleteContactByPhone(email, phone);
+        }
+        
+        // 2. Update user profile trusted list
+        await mongo.updateUser(email, {
           'profile.trustedContacts': validContacts.map((c) => c.phone).toList(),
         });
         
-        // 2. Update individual contacts in emergency_contacts collection
+        // 3. Upsert remaining contacts in emergency_contacts collection
         for (var c in validContacts) {
-          await mongo.addContact(_userProfile.phone, {
+          await mongo.addContact(email, {
             'name': c.name,
             'phone': c.phone,
             'relationship': 'Guardian',
-            'user_email': _userProfile.phone,
+            'user_email': email,
           });
         }
       } catch (e) {
