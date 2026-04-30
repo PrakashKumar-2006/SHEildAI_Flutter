@@ -65,3 +65,7 @@ app.*.map.json
 /ios/.external_build_artifacts
 /ios/Podfile.lock
 /ios/Pods/
+
+# Memory dumps
+*.hprof
+
