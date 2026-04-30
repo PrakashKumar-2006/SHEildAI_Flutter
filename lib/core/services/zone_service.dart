@@ -226,7 +226,9 @@ class ZoneService extends ChangeNotifier {
 
   double _calculateDistance(LatLng point1, LatLng point2) {
     const Distance distance = Distance();
-    return distance.as(LengthUnit.Kilometer, point1, point2);
+    // Return distance in km using precise meters calculation
+    final double meters = distance(point1, point2);
+    return meters / 1000.0;
   }
 
   @override

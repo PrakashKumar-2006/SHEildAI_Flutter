@@ -41,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Circle(
           circleId: CircleId(zone.id),
           center: LatLng(zone.center.latitude, zone.center.longitude),
-          radius: 1000, // Explicit 1km radius as requested
+          radius: zone.radius * 1000, // Match logical radius in meters
           fillColor: color.withOpacity(0.3),
           strokeColor: color,
           strokeWidth: 2,
