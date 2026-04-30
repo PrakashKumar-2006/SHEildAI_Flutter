@@ -1,141 +1,379 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'api_service.dart';
 
+// ─────────────────────────────────────────────
+//  CONFIG — tune all thresholds in one place
+// ─────────────────────────────────────────────
+class _Cfg {
+  // OSM
+  static const double scanRadius        = 1200.0; // metres
+  static const int    osmTimeoutSec     = 12;
+  static const int    maxPlacesDisplay  = 25;
 
+  // POI weights
+  static const double weightPolice      = 18.0;
+  static const double weightHospital    = 14.0;
+  static const double weightShopOrFood  = 8.0;
+  static const double weightDefault     = 5.0;
+  static const double policeNearbyMetres = 400.0;
+
+  // Safety-score → risk mapping
+  static const double safetyHighThreshold = 40.0;
+  static const double safetyMidThreshold  = 15.0;
+  static const double baseRiskLow         = 15.0;
+  static const double baseRiskMid         = 30.0;
+  static const double baseRiskHigh        = 50.0;
+  static const double policeOverrideRisk  = 10.0;
+  static const double maxRiskScore        = 100.0;
+
+  // Time-of-day risk multipliers
+  static const double eveningStartHour    = 18.0; // 6 PM
+  static const double eveningEndHour      = 22.0; // 10 PM
+  static const double eveningMaxMult      = 2.0;
+  static const double nightMult           = 2.5;  // 10 PM – 5 AM
+  static const double nightEndHour        = 5.0;
+
+  // Community report penalties
+  static const double penaltyHigh         = 25.0;
+  static const double penaltyMedium       = 12.0;
+  static const double penaltyLow          = 5.0;
+  static const double communityHighThresh = 20.0;
+
+  // Cache
+  static const Duration cacheTtl         = Duration(minutes: 8);
+  static const double   cacheTileDegrees = 0.005; // ~500 m tile
+}
+
+// ─────────────────────────────────────────────
+//  RESULT MODEL
+// ─────────────────────────────────────────────
 class CrowdDensityResult {
-  final double score; 
-  final String densityLevel; 
-  final int poiCount;
-  final List<String> detectedPlaces; 
+  final double riskScore;          // 0–100 (higher = more risky)
+  final String densityLevel;       // human-readable label
+  final int    poiCount;
+  final List<String> detectedPlaces;
+  final bool   hasRecentCommunityAlerts;
   final String? errorMessage;
 
-  CrowdDensityResult({
-    required this.score,
+  const CrowdDensityResult({
+    required this.riskScore,
     required this.densityLevel,
     required this.poiCount,
     required this.detectedPlaces,
+    this.hasRecentCommunityAlerts = false,
     this.errorMessage,
   });
+
+  /// Convenience: normalised 0–1 value for UI progress bars.
+  double get normalised => riskScore / _Cfg.maxRiskScore;
+
+  @override
+  String toString() =>
+      'CrowdDensityResult(score: $riskScore, level: $densityLevel, '
+      'pois: $poiCount, alerts: $hasRecentCommunityAlerts)';
 }
 
+// ─────────────────────────────────────────────
+//  SIMPLE IN-MEMORY CACHE ENTRY
+// ─────────────────────────────────────────────
+class _CacheEntry {
+  final CrowdDensityResult result;
+  final DateTime expiresAt;
+  _CacheEntry(this.result) : expiresAt = DateTime.now().add(_Cfg.cacheTtl);
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+}
+
+// ─────────────────────────────────────────────
+//  SERVICE
+// ─────────────────────────────────────────────
 class CrowdDensityService {
-  static const List<String> _overpassServers = [
+  final http.Client _client;
+
+  CrowdDensityService({http.Client? client})
+      : _client = client ?? http.Client();
+
+  // ── Overpass mirror list ──────────────────
+  static const List<String> _servers = [
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-    'https://overpass.n.osmsurround.org/api/interpreter',
   ];
 
+  // ── Tile-keyed cache ─────────────────────
+  final Map<String, _CacheEntry> _cache = {};
+
+  String _tileKey(double lat, double lon) {
+    final tLat = (lat / _Cfg.cacheTileDegrees).floor();
+    final tLon = (lon / _Cfg.cacheTileDegrees).floor();
+    return '$tLat:$tLon';
+  }
+
+  // ─────────────────────────────────────────
+  //  PUBLIC ENTRY POINT
+  // ─────────────────────────────────────────
   Future<CrowdDensityResult> getDensityScore(double lat, double lon) async {
-    // Full expanded query — NWR with 1.5km radius
-    final fullQuery = '''
-      [out:json][timeout:25];
-      (
-        nwr(around:1500,$lat,$lon)["amenity"~"market_place|bus_station|university|college|hospital|theatre|cinema|restaurant|cafe|bank|atm|police|place_of_worship|pharmacy|clinic|school|library|community_centre|townhall"];
-        nwr(around:1500,$lat,$lon)["shop"];
-        nwr(around:1500,$lat,$lon)["public_transport"~"station|platform|stop_position"];
-        nwr(around:1500,$lat,$lon)["leisure"~"park|garden|stadium|playground|sports_centre"];
-        nwr(around:1500,$lat,$lon)["tourism"~"hotel|museum|attraction|viewpoint"];
-        nwr(around:1500,$lat,$lon)["building"~"retail|commercial|apartments|hotel"];
-      );
-      out tags;
-    ''';
-
-    // Simpler fallback — node-only with 2km radius (faster on slow connections)
-    final simpleQuery = '''
-      [out:json][timeout:20];
-      (
-        node(around:2000,$lat,$lon)["amenity"~"restaurant|cafe|bank|hospital|police|school|pharmacy|bus_station"];
-        node(around:2000,$lat,$lon)["shop"];
-        node(around:2000,$lat,$lon)["leisure"~"park|stadium"];
-      );
-      out tags;
-    ''';
-
-    for (final query in [fullQuery, simpleQuery]) {
-      for (String url in _overpassServers) {
-        try {
-          final response = await http.post(
-            Uri.parse(url),
-            headers: {
-              'User-Agent': 'SHEildAI-SafetyApp/1.1 (https://github.com/shieldai)',
-              'Accept': 'application/json',
-            },
-            body: {'data': query},
-          ).timeout(const Duration(seconds: 10)); // Aggressive timeout for faster server rotation
-
-          if (response.statusCode == 200) {
-            final data = json.decode(response.body);
-            final List elements = data['elements'] ?? [];
-            if (elements.isNotEmpty) {
-              return _calculateScore(elements);
-            }
-            // Empty result — try next server before giving up
-          }
-        } catch (e) {
-          debugPrint('[CrowdDensity] Server $url failed: $e');
-        }
-      }
+    // 1. Cache hit?
+    final key   = _tileKey(lat, lon);
+    final entry = _cache[key];
+    if (entry != null && !entry.isExpired) {
+      debugPrint('[CrowdDensity] Cache hit for $key');
+      return entry.result;
     }
 
-    // Graceful fallback: If API is totally unreachable, provide a safe baseline
-    // instead of showing a red error to the user.
+    // 2. Fetch OSM + community reports in parallel
+    final results = await Future.wait([
+      _fetchOsmResult(lat, lon),
+      _fetchCommunityPenalty(lat, lon),
+    ]);
+
+    final osmResult       = results[0] as CrowdDensityResult;
+    final communityResult = results[1] as _CommunityPenalty;
+
+    // 3. Merge
+    final final_ = _merge(osmResult, communityResult);
+
+    // 4. Store in cache
+    _cache[key] = _CacheEntry(final_);
+    return final_;
+  }
+
+  /// Dispose the underlying HTTP client when the service is no longer needed.
+  void dispose() => _client.close();
+
+  // ─────────────────────────────────────────
+  //  OSM FETCH  (races all servers, first wins)
+  // ─────────────────────────────────────────
+  Future<CrowdDensityResult> _fetchOsmResult(double lat, double lon) async {
+    final query = _buildQuery(lat, lon);
+
+    // Race all mirrors – fastest non-error response wins
+    try {
+      final response = await Future.any(
+        _servers.map(
+          (url) => _client
+              .post(
+                Uri.parse(url),
+                headers: {'User-Agent': 'SHEildAI-SafetyApp/1.2'},
+                body: {'data': query},
+              )
+              .timeout(Duration(seconds: _Cfg.osmTimeoutSec))
+              .then((res) {
+                if (res.statusCode != 200) {
+                  throw Exception('HTTP ${res.statusCode} from $url');
+                }
+                return res;
+              }),
+        ),
+      );
+      final data     = json.decode(response.body) as Map<String, dynamic>;
+      final elements = (data['elements'] as List?) ?? [];
+      return _calculateRiskScore(elements, lat, lon);
+    } catch (e) {
+      debugPrint('[CrowdDensity] All OSM servers failed: $e');
+      // Graceful degradation — return a neutral "data limited" result
+      return const CrowdDensityResult(
+        riskScore: 18,
+        densityLevel: 'Safe (Data Limited)',
+        poiCount: 0,
+        detectedPlaces: [],
+        errorMessage: 'OSM unavailable',
+      );
+    }
+  }
+
+  // ─────────────────────────────────────────
+  //  COMMUNITY PENALTY FETCH
+  // ─────────────────────────────────────────
+  Future<_CommunityPenalty> _fetchCommunityPenalty(
+      double lat, double lon) async {
+    try {
+      final reports =
+          await ApiService.fetchNearbyCommunityReports(lat, lon, 1.0);
+      if (reports == null || reports.isEmpty) return const _CommunityPenalty();
+
+      double penalty = 0;
+      for (final report in reports) {
+        final sev = (report['severity'] as String?)?.toLowerCase() ?? 'low';
+        if (sev == 'high')        penalty += _Cfg.penaltyHigh;
+        else if (sev == 'medium') penalty += _Cfg.penaltyMedium;
+        else                      penalty += _Cfg.penaltyLow;
+      }
+      return _CommunityPenalty(penalty: penalty, reportCount: reports.length);
+    } catch (e) {
+      debugPrint('[CrowdDensity] Community sync failed: $e');
+      return const _CommunityPenalty();
+    }
+  }
+
+  // ─────────────────────────────────────────
+  //  MERGE OSM + COMMUNITY
+  // ─────────────────────────────────────────
+  CrowdDensityResult _merge(
+      CrowdDensityResult osm, _CommunityPenalty community) {
+    if (community.penalty <= 0) return osm;
+
+    final newScore =
+        min(_Cfg.maxRiskScore, osm.riskScore + community.penalty);
+
+    final newLevel = community.penalty > _Cfg.communityHighThresh
+        ? 'High Risk (Community Alerts)'
+        : 'Caution (Recent Reports)';
+
     return CrowdDensityResult(
-      score: 18, 
-      densityLevel: 'Safe (Data Limited)', 
-      poiCount: 0,
-      detectedPlaces: [],
-      errorMessage: null,
+      riskScore: newScore,
+      densityLevel: newLevel,
+      poiCount: osm.poiCount,
+      detectedPlaces: osm.detectedPlaces,
+      hasRecentCommunityAlerts: true,
     );
   }
 
-  CrowdDensityResult _calculateScore(List elements) {
-    double crowdScore = 0;
-    List<String> places = [];
+  // ─────────────────────────────────────────
+  //  RISK SCORE CALCULATION
+  // ─────────────────────────────────────────
+  CrowdDensityResult _calculateRiskScore(
+      List<dynamic> elements, double userLat, double userLon) {
+    double     safetyScore    = 0;
+    bool       hasPoliceNearby = false;
+    final      Set<String> placesSet = {};
 
-    for (var element in elements) {
-      final tags = element['tags'] ?? {};
-      String? name = tags['name'] ?? tags['amenity'] ?? tags['shop'] ?? tags['leisure'];
-      
-      if (name != null && name.length > 2) {
-        name = name.replaceAll('_', ' ').split(' ').map((s) => s.isNotEmpty ? s[0].toUpperCase() + s.substring(1) : '').join(' ');
-        if (!places.contains(name)) {
-          places.add(name);
-          // Different weight for different types of POIs
-          if (tags['amenity'] == 'police' || tags['amenity'] == 'hospital') {
-            crowdScore += 12;
-          } else if (tags['shop'] != null || tags['amenity'] == 'restaurant') {
-            crowdScore += 8;
-          } else {
-            crowdScore += 5;
-          }
-        }
+    for (final element in elements) {
+      final tags   = (element['tags']   as Map?)              ?? {};
+      final center = (element['center'] as Map?) ??
+          {'lat': element['lat'], 'lon': element['lon']};
+
+      final eLat = (center['lat'] as num?)?.toDouble();
+      final eLon = (center['lon'] as num?)?.toDouble();
+      if (eLat == null || eLon == null) continue;
+
+      final distMetres =
+          _haversineKm(userLat, userLon, eLat, eLon) * 1000;
+      // Linear decay: full weight at 0m, zero at scanRadius
+      final decay = max(0.1, 1.0 - (distMetres / _Cfg.scanRadius));
+
+      final name = (tags['name']     as String?) ??
+                   (tags['amenity']  as String?) ??
+                   (tags['shop']     as String?) ??
+                   (tags['leisure']  as String?);
+      if (name == null) continue;
+
+      placesSet.add(name);
+
+      double weight = _Cfg.weightDefault;
+      if (tags['amenity'] == 'police') {
+        weight = _Cfg.weightPolice;
+        if (distMetres < _Cfg.policeNearbyMetres) hasPoliceNearby = true;
+      } else if (tags['amenity'] == 'hospital') {
+        weight = _Cfg.weightHospital;
+      } else if (tags['shop'] != null ||
+          tags['amenity'] == 'restaurant' ||
+          tags['amenity'] == 'cafe') {
+        weight = _Cfg.weightShopOrFood;
       }
+      safetyScore += weight * decay;
     }
 
-    double riskScore = 0;
-    String level = 'Safe';
-    final hour = DateTime.now().hour;
-    bool isNight = hour >= 20 || hour <= 5;
+    final timeMultiplier = _timeRiskMultiplier();
+    double riskScore;
+    String level;
 
-    if (crowdScore >= 30) {
-      riskScore = 15;
-      level = 'Safe (Active Area)';
-    } else if (crowdScore >= 10) {
-      riskScore = 25;
-      level = 'Safe Zone';
+    if (hasPoliceNearby) {
+      riskScore = _Cfg.policeOverrideRisk;
+      level     = 'Very Safe (Police Nearby)';
+    } else if (safetyScore >= _Cfg.safetyHighThreshold) {
+      riskScore = min(_Cfg.maxRiskScore,
+          _Cfg.baseRiskLow * timeMultiplier);
+      level     = 'Active Area';
+    } else if (safetyScore >= _Cfg.safetyMidThreshold) {
+      riskScore = min(_Cfg.maxRiskScore,
+          _Cfg.baseRiskMid * timeMultiplier);
+      level     = 'Moderate Activity';
     } else {
-      riskScore = isNight ? 85 : 55;
-      level = isNight ? 'Isolated (High Risk)' : 'Isolated Area';
+      riskScore = min(_Cfg.maxRiskScore,
+          _Cfg.baseRiskHigh * timeMultiplier);
+      final hour = _localHour();
+      level = (hour > 20 || hour < _Cfg.nightEndHour)
+          ? 'Isolated (High Risk)'
+          : 'Quiet Area';
     }
+
+    // Cap display list so the UI is not flooded
+    final places = placesSet.take(_Cfg.maxPlacesDisplay).toList();
 
     return CrowdDensityResult(
-      score: riskScore,
+      riskScore: riskScore,
       densityLevel: level,
       poiCount: elements.length,
       detectedPlaces: places,
     );
   }
+
+  // ─────────────────────────────────────────
+  //  TIME RISK MULTIPLIER  (device local time)
+  // ─────────────────────────────────────────
+  /// Returns a multiplier ≥ 1.0.
+  /// NOTE: uses device local time. For accuracy across timezones,
+  /// pass a UTC offset derived from the coordinates (future improvement).
+  double _timeRiskMultiplier() {
+    final hour = _localHour();
+
+    if (hour >= _Cfg.eveningStartHour && hour <= _Cfg.eveningEndHour) {
+      // Ramps from 1.0 at 6 PM → 2.0 at 10 PM
+      final t = (hour - _Cfg.eveningStartHour) /
+          (_Cfg.eveningEndHour - _Cfg.eveningStartHour);
+      return 1.0 + t * (_Cfg.eveningMaxMult - 1.0);
+    }
+    if (hour > _Cfg.eveningEndHour || hour < _Cfg.nightEndHour) {
+      return _Cfg.nightMult;
+    }
+    return 1.0;
+  }
+
+  double _localHour() {
+    final now = DateTime.now();
+    return now.hour + (now.minute / 60.0);
+  }
+
+  // ─────────────────────────────────────────
+  //  OVERPASS QUERY BUILDER
+  // ─────────────────────────────────────────
+  String _buildQuery(double lat, double lon) => '''
+[out:json][timeout:25];
+(
+  nwr(around:${_Cfg.scanRadius},$lat,$lon)["amenity"~"market_place|bus_station|university|hospital|police|pharmacy|restaurant|cafe"];
+  nwr(around:${_Cfg.scanRadius},$lat,$lon)["shop"];
+  nwr(around:${_Cfg.scanRadius},$lat,$lon)["public_transport"~"station|stop_position"];
+  nwr(around:${_Cfg.scanRadius},$lat,$lon)["leisure"~"park|stadium|sports_centre"];
+);
+out center tags;
+''';
+
+  // ─────────────────────────────────────────
+  //  HAVERSINE  (no external dependency)
+  // ─────────────────────────────────────────
+  double _haversineKm(
+      double lat1, double lon1, double lat2, double lon2) {
+    const r   = 6371.0; // Earth radius in km
+    const rad = pi / 180.0;
+    final dLat = (lat2 - lat1) * rad;
+    final dLon = (lon2 - lon1) * rad;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * rad) * cos(lat2 * rad) *
+            sin(dLon / 2) * sin(dLon / 2);
+    return 2 * r * asin(sqrt(a));
+  }
+}
+
+// ─────────────────────────────────────────────
+//  INTERNAL HELPER — community penalty data
+// ─────────────────────────────────────────────
+class _CommunityPenalty {
+  final double penalty;
+  final int    reportCount;
+  const _CommunityPenalty({this.penalty = 0, this.reportCount = 0});
 }

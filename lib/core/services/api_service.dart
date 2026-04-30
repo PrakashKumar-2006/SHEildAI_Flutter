@@ -205,4 +205,21 @@ class ApiService {
       return null;
     }
   }
+
+  static Future<List<Map<String, dynamic>>?> fetchNearbyCommunityReports(double lat, double lon, double radiusKm) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_backendUrl/api/community/nearby?lat=$lat&lon=$lon&radius=$radiusKm'))
+          .timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.cast<Map<String, dynamic>>();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[ApiService] Error fetching nearby reports: $e');
+      return null;
+    }
+  }
 }
