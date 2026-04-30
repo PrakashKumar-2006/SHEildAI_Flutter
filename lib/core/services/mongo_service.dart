@@ -160,6 +160,7 @@ class MongoService {
   // High-level Domain Operations (Refactored to use generic wrappers)
 
   Future<Map<String, dynamic>?> getUserByEmail(String email) => findOne('users', where.eq('email', email));
+  Future<Map<String, dynamic>?> getUser(String email) => getUserByEmail(email);
 
   Future<bool> createUser(Map<String, dynamic> userData) async {
     final result = await insertOne('users', userData);
@@ -200,6 +201,7 @@ class MongoService {
   }
 
   Future<List<Map<String, dynamic>>> getContactsByEmail(String email) => find('emergency_contacts', where.eq('user_email', email));
+  Future<List<Map<String, dynamic>>> getContacts(String identifier) => getContactsByEmail(identifier);
 
   Future<bool> deleteContact(String contactId) async {
     final result = await deleteOne('emergency_contacts', where.eq('_id', ObjectId.parse(contactId)));
@@ -249,7 +251,7 @@ class MongoService {
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {
     try {
-      return await find('community_reports', where.near('location', [lon, lat], maxDistance: radiusKm * 1000));
+      return await find('community_reports', where.near('location', [lon, lat], radiusKm * 1000));
     } catch (e) {
       debugPrint('[MongoService] Geo-query failed, using fallback filter');
       final all = await find('community_reports', where.sortBy('created_at', descending: true).limit(100));

@@ -142,8 +142,8 @@ class _CrowdRiskIndicatorState extends State<CrowdRiskIndicator> {
       );
     }
 
-    final bool isSafe = _result!.score < 30;
-    final bool isWarning = _result!.score >= 30 && _result!.score < 60;
+    final bool isSafe = _result!.riskScore < 30;
+    final bool isWarning = _result!.riskScore >= 30 && _result!.riskScore < 60;
     final Color statusColor = isSafe 
         ? const Color(0xFF43A047) 
         : (isWarning ? const Color(0xFFFBC02D) : const Color(0xFFD32F2F));
@@ -208,7 +208,7 @@ class _CrowdRiskIndicatorState extends State<CrowdRiskIndicator> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  "${_result!.score.toInt()}% Risk",
+                  "${_result!.riskScore.toInt()}% Risk",
                   style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w800),
                 ),
               ),
