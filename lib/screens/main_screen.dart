@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../core/app_theme.dart';
 import '../features/sos/presentation/providers/sos_provider.dart';
 import '../features/voice/presentation/providers/voice_provider.dart';
 import 'home_screen.dart';
@@ -9,7 +8,6 @@ import '../features/routes/presentation/screens/routes_screen.dart';
 import 'sos_screen.dart';
 import 'alerts_screen.dart';
 import 'profile_screen.dart';
-import '../shared/widgets/location_blocking_overlay.dart';
 import '../core/providers/location_permission_provider.dart';
 
 class MainScreen extends StatefulWidget {

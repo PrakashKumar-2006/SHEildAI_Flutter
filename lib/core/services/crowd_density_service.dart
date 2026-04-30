@@ -64,7 +64,7 @@ class CrowdDensityService {
               'Accept': 'application/json',
             },
             body: {'data': query},
-          ).timeout(const Duration(seconds: 20));
+          ).timeout(const Duration(seconds: 10)); // Aggressive timeout for faster server rotation
 
           if (response.statusCode == 200) {
             final data = json.decode(response.body);

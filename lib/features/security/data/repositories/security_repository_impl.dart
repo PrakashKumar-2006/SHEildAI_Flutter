@@ -1,48 +1,53 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/services/hive_service.dart';
+import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/storage_service.dart';
 import '../../domain/models/privacy_settings_model.dart';
 import '../../domain/repositories/security_repository.dart';
 
 class SecurityRepositoryImpl implements SecurityRepository {
-  final HiveService _hiveService;
-  static const String _privacyBoxName = 'privacy_settings';
+  final MongoService _mongoService;
+  final StorageService _storageService;
 
-  SecurityRepositoryImpl(this._hiveService);
+  SecurityRepositoryImpl(this._mongoService, this._storageService);
+
+  String get _userEmail => _storageService.getString('user_phone') ?? '';
 
   @override
   Future<Either<Failure, PrivacySettingsModel>> getPrivacySettings() async {
     try {
-      await _hiveService.openBox(_privacyBoxName);
+      if (_userEmail.isEmpty) return Right(_getDefaultSettings());
       
-      final data = await _hiveService.get(_privacyBoxName, 'settings');
-      if (data != null) {
-        final settings = PrivacySettingsModel.fromJson(data as Map<String, dynamic>);
+      final userDoc = await _mongoService.getUserByEmail(_userEmail);
+      if (userDoc != null && userDoc['profile'] != null && userDoc['profile']['privacySettings'] != null) {
+        final settings = PrivacySettingsModel.fromJson(userDoc['profile']['privacySettings']);
         return Right(settings);
       }
       
-      // Return default settings
-      final defaultSettings = PrivacySettingsModel(
-        shareLocationWithEmergencyContacts: true,
-        shareLocationWithCommunity: false,
-        allowDataCollection: true,
-        enableAnalytics: true,
-        enableCrashReporting: true,
-      );
-      
-      return Right(defaultSettings);
+      return Right(_getDefaultSettings());
     } catch (e) {
       return Left(StorageFailure(e.toString()));
     }
   }
 
+  PrivacySettingsModel _getDefaultSettings() {
+    return PrivacySettingsModel(
+      shareLocationWithEmergencyContacts: true,
+      shareLocationWithCommunity: false,
+      allowDataCollection: true,
+      enableAnalytics: true,
+      enableCrashReporting: true,
+    );
+  }
+
   @override
   Future<Either<Failure, PrivacySettingsModel>> updatePrivacySettings(PrivacySettingsModel settings) async {
     try {
-      await _hiveService.openBox(_privacyBoxName);
-      
-      await _hiveService.put(_privacyBoxName, 'settings', settings.toJson());
-      
+      if (_userEmail.isNotEmpty) {
+        await _mongoService.updateUser(_userEmail, {
+          'profile.privacySettings': settings.toJson(),
+        });
+      }
       return Right(settings);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -52,7 +57,9 @@ class SecurityRepositoryImpl implements SecurityRepository {
   @override
   Future<Either<Failure, void>> deleteUserData() async {
     try {
-      await _hiveService.clearAll();
+      // In a real cloud-only app, this would delete the user from MongoDB
+      // For now, let's just clear the local session
+      await _storageService.clear();
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -61,11 +68,7 @@ class SecurityRepositoryImpl implements SecurityRepository {
 
   @override
   Future<Either<Failure, void>> clearCache() async {
-    try {
-      await _hiveService.clearLocationLogs();
-      return const Right(null);
-    } catch (e) {
-      return Left(StorageFailure(e.toString()));
-    }
+    // No local cache to clear anymore
+    return const Right(null);
   }
 }

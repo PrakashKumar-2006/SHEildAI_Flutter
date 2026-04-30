@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import '../constants/app_constants.dart';
 
 class LocationService {
   static final LocationService _instance = LocationService._internal();

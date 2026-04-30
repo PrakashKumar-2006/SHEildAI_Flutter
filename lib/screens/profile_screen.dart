@@ -174,7 +174,7 @@ class ProfileScreen extends StatelessWidget {
                           Switch(
                             value: isDark,
                             onChanged: (_) => context.read<ThemeProvider>().toggleTheme(),
-                            activeColor: const Color(0xFF3F51B5),
+                            activeThumbColor: const Color(0xFF3F51B5),
                           ),
                         ],
                       ),
@@ -253,18 +253,8 @@ class ProfileScreen extends StatelessWidget {
           const SizedBox(height: 16),
           Consumer<AuthProvider>(
             builder: (context, auth, _) {
-              final authName = auth.user?.displayName;
-              final storageName = StorageService().getUserName();
-              
-              String displayName = 'User';
-              if (authName != null && authName.isNotEmpty && authName.toLowerCase() != 'user') {
-                displayName = authName;
-              } else if (storageName != 'Safety Watcher' && storageName.isNotEmpty && storageName.toLowerCase() != 'user') {
-                displayName = storageName;
-              }
-              
               return Text(
-                displayName,
+                auth.userDisplayName,
                 style: TextStyle(color: theme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800),
               );
             },

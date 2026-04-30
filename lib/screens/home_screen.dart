@@ -503,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   );
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -540,7 +540,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-        )).toList(),
+        )),
       ],
     );
   }
@@ -641,7 +641,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Switch(
             value: safety.isSafetyModeActive,
             onChanged: (v) => safety.setVoiceListening(v),
-            activeColor: const Color(0xFFef4444),
+            activeThumbColor: const Color(0xFFef4444),
           ),
         ],
       ),

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../../community/presentation/providers/community_provider.dart';
 import '../../../location/presentation/providers/location_provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:latlong2/latlong.dart' as ll;
 import '../../../../core/services/storage_service.dart';
 
 class AlertsScreen extends StatefulWidget {

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../core/app_theme.dart';
 
 /// Single-screen permission gate shown once after first login.
 ///

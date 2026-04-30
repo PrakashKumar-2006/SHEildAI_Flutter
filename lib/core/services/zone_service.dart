@@ -200,8 +200,9 @@ class ZoneService extends ChangeNotifier {
 
   void _startSiren(ZoneType zoneType) {
     int durationSeconds = 0;
-    if (zoneType == ZoneType.moderate) durationSeconds = 4;
-    else if (zoneType == ZoneType.high) durationSeconds = 6;
+    if (zoneType == ZoneType.moderate) {
+      durationSeconds = 4;
+    } else if (zoneType == ZoneType.high) durationSeconds = 6;
     else if (zoneType == ZoneType.critical) durationSeconds = 8;
 
     if (durationSeconds > 0) {

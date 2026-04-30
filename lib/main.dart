@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'app.dart';
-import 'core/services/hive_service.dart';
-import 'core/services/sync_service.dart';
 import 'core/services/mongo_service.dart';
 import 'core/services/ml_service.dart';
 import 'core/services/storage_service.dart';
@@ -28,16 +26,10 @@ void main() async {
     debugPrint("Warning: .env file not found or failed to load. Using defaults: $e");
   }
   
-  // Initialize Hive for local storage
-  await HiveService().initialize();
-
   // Pre-warm SharedPreferences so StorageService synchronous reads work
   // immediately in AuthProvider's constructor (session restore on cold start).
   await StorageService().init();
   
-  // Initialize SyncService for offline queue
-  await SyncService().initialize();
-
   // Fire wake-up ping to Hugging Face ML Space in background.
   // This ensures the API is warm by the time the user's location loads.
   MLService.wakeUp();

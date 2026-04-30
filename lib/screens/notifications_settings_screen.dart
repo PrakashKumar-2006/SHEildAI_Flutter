@@ -162,7 +162,7 @@ class _NotificationsSettingsScreenState extends State<NotificationsSettingsScree
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: const Color(0xFF0D1B6E),
+            activeThumbColor: const Color(0xFF0D1B6E),
           ),
         ],
       ),

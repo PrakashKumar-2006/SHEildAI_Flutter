@@ -2,8 +2,6 @@ import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/storage_service.dart';
-import '../../../../core/services/hive_service.dart';
-import '../../../../core/services/sync_service.dart';
 import '../../../../core/services/api_service.dart';
 import '../../../../core/services/socket_service.dart';
 import '../../../../core/services/mongo_service.dart';
@@ -13,18 +11,15 @@ import '../../domain/repositories/sos_repository.dart';
 class SOSRepositoryImpl implements SOSRepository {
   final StorageService _storageService;
   final NotificationService _notificationService;
-  final HiveService _hiveService;
-  final SyncService _syncService;
+  final MongoService _mongoService;
 
   SOSRepositoryImpl({
     required StorageService storageService,
     required NotificationService notificationService,
-    required HiveService hiveService,
-    required SyncService syncService,
+    required MongoService mongoService,
   })  : _storageService = storageService,
         _notificationService = notificationService,
-        _hiveService = hiveService,
-        _syncService = syncService;
+        _mongoService = mongoService;
 
   @override
   Future<Either<Failure, SOSModel>> triggerSOS({
@@ -45,16 +40,7 @@ class SOSRepositoryImpl implements SOSRepository {
         message: message ?? 'SOS activated! Emergency assistance needed.',
       );
 
-      // Save SOS to Hive storage
-      await _hiveService.saveSOS(sosModel.toJson());
-
-      // Add to sync queue for offline support
-      await _syncService.addToQueue({
-        'type': 'sos_triggered',
-        'data': sosModel.toJson(),
-      });
-
-      // Store active SOS
+      // Store active SOS in session storage (not long-term database)
       await _storageService.setString('active_sos', sosId);
       await _storageService.setLastSosTime(DateTime.now());
 
@@ -78,8 +64,8 @@ class SOSRepositoryImpl implements SOSRepository {
         'message': sosModel.message,
       });
 
-      // Persist to MongoDB Atlas directly for robustness
-      MongoService().createSOS({
+      // Persist to MongoDB Atlas exclusively
+      await _mongoService.createSOS({
         'sos_id': sosId,
         'user_phone': phone,
         'name': userName,
@@ -100,14 +86,23 @@ class SOSRepositoryImpl implements SOSRepository {
   }
 
   @override
-  Future<Either<Failure, void>> cancelSOS(String sosId) async {
+  Future<Either<Failure, List<SOSModel>>> getSOSHistory() async {
     try {
-      await _storageService.remove('active_sos');
-      await _notificationService.cancelSOSNotifications();
+      final phone = _storageService.getString('user_phone') ?? '';
+      if (phone.isEmpty) return const Right([]);
+      
+      final historyData = await _mongoService.getUserSOSHistory(phone);
+      final history = historyData.map((json) => SOSModel.fromJson(json)).toList();
+      return Right(history);
+    } catch (e) {
+      return Left(StorageFailure(e.toString()));
+    }
+  }
 
-      // Update SOS status in Hive storage
-      await _hiveService.updateSOSStatus(sosId, 'cancelled');
-
+  @override
+  Future<Either<Failure, void>> updateSOSStatus(String sosId, String status) async {
+    try {
+      await _mongoService.updateSOSStatus(sosId, status);
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -115,11 +110,11 @@ class SOSRepositoryImpl implements SOSRepository {
   }
 
   @override
-  Future<Either<Failure, List<SOSModel>>> getSOSHistory() async {
+  Future<Either<Failure, void>> cancelSOS(String sosId) async {
     try {
-      final historyData = await _hiveService.getSOSHistory();
-      final sosList = historyData.map((json) => SOSModel.fromJson(json)).toList();
-      return Right(sosList);
+      await _mongoService.updateSOSStatus(sosId, 'cancelled');
+      await _storageService.remove('active_sos');
+      return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
     }
@@ -128,11 +123,10 @@ class SOSRepositoryImpl implements SOSRepository {
   @override
   Future<Either<Failure, bool>> isSOSActive() async {
     try {
-      final activeSOS = _storageService.getString('active_sos');
-      return Right(activeSOS != null);
+      final activeSosId = _storageService.getString('active_sos');
+      return Right(activeSosId != null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
     }
   }
-
 }

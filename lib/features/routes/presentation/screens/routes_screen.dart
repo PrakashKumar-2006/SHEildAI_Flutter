@@ -10,7 +10,6 @@ import '../providers/routes_provider.dart';
 import '../../../../core/services/osrm_service.dart';
 import '../../../../core/models/zone_model.dart';
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 
 class RoutesScreen extends StatefulWidget {
   const RoutesScreen({super.key});

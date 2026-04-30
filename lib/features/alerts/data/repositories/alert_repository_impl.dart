@@ -1,16 +1,19 @@
 import 'dart:async';
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/services/hive_service.dart';
+import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/storage_service.dart';
 import '../../domain/models/alert_model.dart';
 import '../../domain/repositories/alert_repository.dart';
 
 class AlertRepositoryImpl implements AlertRepository {
-  final HiveService _hiveService;
-  static const String _alertsBoxName = 'alerts';
+  final MongoService _mongoService;
+  final StorageService _storageService;
   final StreamController<List<AlertModel>> _alertsController = StreamController<List<AlertModel>>.broadcast();
 
-  AlertRepositoryImpl(this._hiveService);
+  AlertRepositoryImpl(this._mongoService, this._storageService);
+
+  String get _userEmail => _storageService.getString('user_phone') ?? '';
 
   @override
   Stream<List<AlertModel>> get alertsStream => _alertsController.stream;
@@ -18,14 +21,19 @@ class AlertRepositoryImpl implements AlertRepository {
   @override
   Future<Either<Failure, List<AlertModel>>> getAlerts() async {
     try {
-      await _hiveService.openBox(_alertsBoxName);
+      if (_userEmail.isEmpty) return const Right([]);
       
-      final allData = await _hiveService.getAll(_alertsBoxName);
-      final alerts = allData
-          .map((data) => AlertModel.fromJson(data as Map<String, dynamic>))
-          .toList()
-          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      final allData = await _mongoService.getAlerts(_userEmail);
+      final alerts = allData.map((data) {
+        final Map<String, dynamic> mappedJson = Map.from(data);
+        if (data['_id'] != null) {
+          mappedJson['id'] = data['_id'].toString();
+        }
+        return AlertModel.fromJson(mappedJson);
+      }).toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
+      _alertsController.add(alerts);
       return Right(alerts);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -35,16 +43,15 @@ class AlertRepositoryImpl implements AlertRepository {
   @override
   Future<Either<Failure, AlertModel>> addAlert(AlertModel alert) async {
     try {
-      await _hiveService.openBox(_alertsBoxName);
+      if (_userEmail.isEmpty) return Left(StorageFailure('User not logged in'));
       
-      await _hiveService.put(_alertsBoxName, alert.id, alert.toJson());
+      final alertData = alert.toJson();
+      alertData['user_email'] = _userEmail;
+      
+      await _mongoService.createAlert(alertData);
       
       // Update stream
-      final result = await getAlerts();
-      result.fold(
-        (failure) => null,
-        (alerts) => _alertsController.add(alerts),
-      );
+      await getAlerts();
       
       return Right(alert);
     } catch (e) {
@@ -55,21 +62,10 @@ class AlertRepositoryImpl implements AlertRepository {
   @override
   Future<Either<Failure, void>> markAsRead(String alertId) async {
     try {
-      await _hiveService.openBox(_alertsBoxName);
+      await _mongoService.updateAlert(alertId, {'isRead': true});
       
-      final data = await _hiveService.get(_alertsBoxName, alertId);
-      if (data != null) {
-        final alert = AlertModel.fromJson(data as Map<String, dynamic>);
-        final updatedAlert = alert.copyWith(isRead: true);
-        await _hiveService.put(_alertsBoxName, alertId, updatedAlert.toJson());
-        
-        // Update stream
-        final result = await getAlerts();
-        result.fold(
-          (failure) => null,
-          (alerts) => _alertsController.add(alerts),
-        );
-      }
+      // Update stream
+      await getAlerts();
       
       return const Right(null);
     } catch (e) {
@@ -80,16 +76,10 @@ class AlertRepositoryImpl implements AlertRepository {
   @override
   Future<Either<Failure, void>> deleteAlert(String alertId) async {
     try {
-      await _hiveService.openBox(_alertsBoxName);
-      
-      await _hiveService.delete(_alertsBoxName, alertId);
+      await _mongoService.deleteAlert(alertId);
       
       // Update stream
-      final result = await getAlerts();
-      result.fold(
-        (failure) => null,
-        (alerts) => _alertsController.add(alerts),
-      );
+      await getAlerts();
       
       return const Right(null);
     } catch (e) {
@@ -100,24 +90,22 @@ class AlertRepositoryImpl implements AlertRepository {
   @override
   Future<Either<Failure, void>> clearAllAlerts() async {
     try {
-      await _hiveService.openBox(_alertsBoxName);
-      
-      await _hiveService.openBox(_alertsBoxName);
-      final box = await _hiveService.getAll(_alertsBoxName);
-      for (final data in box) {
-        final alertId = data['id'] as String;
-        await _hiveService.delete(_alertsBoxName, alertId);
-      }
+      // For simplicity, we'll delete them one by one or add a clearAll method to MongoService
+      // For now, let's just use the existing getAlerts and delete loop
+      final alertsResult = await getAlerts();
+      await alertsResult.fold(
+        (failure) async => null,
+        (alerts) async {
+          for (var alert in alerts) {
+            await _mongoService.deleteAlert(alert.id);
+          }
+        },
+      );
       
       _alertsController.add([]);
-      
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
     }
-  }
-
-  void dispose() {
-    _alertsController.close();
   }
 }

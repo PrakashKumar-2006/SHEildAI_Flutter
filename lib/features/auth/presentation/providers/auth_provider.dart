@@ -238,6 +238,61 @@ class AuthProvider extends ChangeNotifier {
   dynamic get user => _user;
   bool get isAuthenticated => _user != null;
 
+  String get userPhone {
+    if (_user == null) return '';
+    if (_user is User) return (_user as User).email ?? '';
+    if (_user is MockUser) return (_user as MockUser).email ?? '';
+    return '';
+  }
+
+  String get userDisplayName {
+    if (_user == null) return '';
+    if (_user is User) return (_user as User).displayName ?? 'User';
+    if (_user is MockUser) return (_user as MockUser).displayName ?? 'User';
+    return 'User';
+  }
+
+  Future<void> updateProfile({required String name, required String phone}) async {
+    if (_user == null) return;
+    
+    final currentEmail = _user is User ? (_user as User).email : (_user as MockUser).email;
+    if (currentEmail == null) return;
+
+    try {
+      final mongoService = MongoService();
+      if (!mongoService.isConnected) await mongoService.connect();
+      
+      // Update MongoDB
+      await mongoService.updateUser(currentEmail, {
+        'name': name,
+        'phone': phone,
+      });
+
+      // Update Local Storage
+      await _storageService.setUserName(name);
+      await _storageService.setUserPhone(phone);
+
+      // Update Firebase Display Name if applicable
+      if (_user is User) {
+        await (_user as User).updateDisplayName(name);
+        await (_user as User).reload();
+        _user = _auth?.currentUser;
+      } else if (_user is MockUser) {
+        _user = MockUser(
+          uid: (_user as MockUser).uid,
+          email: (_user as MockUser).email,
+          displayName: name,
+        );
+      }
+      
+      notifyListeners();
+      debugPrint('[AuthProvider] Profile updated in MongoDB and local storage.');
+    } catch (e) {
+      debugPrint('[AuthProvider] Failed to update profile: $e');
+      rethrow;
+    }
+  }
+
   void setLoading(bool value) {
     _isLoading = value;
     notifyListeners();
@@ -440,7 +495,7 @@ class AuthProvider extends ChangeNotifier {
       );
 
       // Trigger the authentication flow (google_sign_in 7.x API)
-      final GoogleSignInAccount? googleUser = await GoogleSignIn.instance.authenticate();
+      final GoogleSignInAccount googleUser = await GoogleSignIn.instance.authenticate();
 
       // If user cancels the sign-in
       if (googleUser == null) {
@@ -449,7 +504,7 @@ class AuthProvider extends ChangeNotifier {
       }
 
       // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
       // Create a new credential (idToken only in 7.x)
       final OAuthCredential credential = GoogleAuthProvider.credential(

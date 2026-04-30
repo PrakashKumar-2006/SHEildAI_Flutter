@@ -7,7 +7,6 @@ import '../../data/repositories/sos_repository_impl.dart';
 import '../../domain/models/sos_model.dart';
 import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/services/sms_service.dart';
-import '../../../../core/services/video_recording_service.dart';
 import '../../../../features/contacts/data/repositories/contact_repository_impl.dart';
 
 class SOSProvider extends ChangeNotifier {
@@ -274,10 +273,8 @@ class SOSProvider extends ChangeNotifier {
             debugPrint('[SOS] SMS error: $e');
           });
 
-          // Start background video recording
-          VideoRecordingService().startRecording().catchError((e) {
-            debugPrint('[SOS] Video recording failed: $e');
-          });
+          // The native SOS layer handles background video/audio recording automatically.
+          // No need for duplicate recording on the Flutter side.
         },
       );
     } catch (e) {
@@ -309,11 +306,8 @@ class SOSProvider extends ChangeNotifier {
       _activeSOS = null;
       _isLoading = false;
       _durationTimer?.cancel();
-      // Stop background location tracking and video
+      // Stop background location tracking
       await _locationProvider.stopTracking();
-      if (VideoRecordingService().isRecording) {
-        await VideoRecordingService().stopRecording();
-      }
       notifyListeners();
     } catch (e) {
       _errorMessage = e.toString();

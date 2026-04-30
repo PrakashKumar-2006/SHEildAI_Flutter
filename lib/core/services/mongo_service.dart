@@ -107,13 +107,22 @@ class MongoService {
     }
   }
 
-  Future<bool> updateUser(String phone, Map<String, dynamic> updates) async {
+  Future<bool> updateUser(String email, Map<String, dynamic> updates) async {
     try {
       final collection = getCollection('users');
       final result = await collection.updateOne(
-        where.eq('phone', phone),
+        where.eq('email', email),
         modify.set(updates.keys.first, updates.values.first),
       );
+      // If there are more keys, update them too (simple loop for robust updates)
+      if (updates.length > 1) {
+        for (var entry in updates.entries.skip(1)) {
+          await collection.updateOne(
+            where.eq('email', email),
+            modify.set(entry.key, entry.value),
+          );
+        }
+      }
       return result.isSuccess;
     } catch (e) {
       return false;
@@ -155,12 +164,20 @@ class MongoService {
   }
 
   // Emergency contacts operations
-  Future<bool> addContact(String phone, Map<String, dynamic> contactData) async {
+  Future<bool> addContact(String email, Map<String, dynamic> contactData) async {
     try {
       final collection = getCollection('emergency_contacts');
-      contactData['user_phone'] = phone;
-      await collection.insertOne(contactData);
-      return true;
+      contactData['user_email'] = email;
+      
+      // Use upsert to avoid duplicates based on user_email and contact phone
+      final result = await collection.updateOne(
+        where.eq('user_email', email).and(where.eq('phone', contactData['phone'])),
+        modify.set('name', contactData['name'])
+              .set('relationship', contactData['relationship'] ?? 'Guardian')
+              .set('user_email', email),
+        upsert: true,
+      );
+      return result.isSuccess;
     } catch (e) {
       return false;
     }
@@ -190,6 +207,71 @@ class MongoService {
     try {
       final collection = getCollection('emergency_contacts');
       final result = await collection.deleteOne(where.eq('_id', ObjectId.parse(contactId)));
+      return result.isSuccess;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> updateContact(String contactId, Map<String, dynamic> updates) async {
+    try {
+      final collection = getCollection('emergency_contacts');
+      var modifier = modify;
+      for (var entry in updates.entries) {
+        modifier = modifier.set(entry.key, entry.value);
+      }
+      final result = await collection.updateOne(
+        where.eq('_id', ObjectId.parse(contactId)),
+        modifier,
+      );
+      return result.isSuccess;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Alert operations
+  Future<bool> createAlert(Map<String, dynamic> alertData) async {
+    try {
+      final collection = getCollection('alerts');
+      await collection.insertOne(alertData);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAlerts(String email) async {
+    try {
+      final collection = getCollection('alerts');
+      final result = await collection.find(where.eq('user_email', email)).toList();
+      return result;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<bool> deleteAlert(String alertId) async {
+    try {
+      final collection = getCollection('alerts');
+      final result = await collection.deleteOne(where.eq('_id', ObjectId.parse(alertId)));
+      return result.isSuccess;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> updateAlert(String alertId, Map<String, dynamic> updates) async {
+    try {
+      final collection = getCollection('alerts');
+      var modifier = modify;
+      for (var entry in updates.entries) {
+        modifier = modifier.set(entry.key, entry.value);
+      }
+      final result = await collection.updateOne(
+        where.eq('_id', ObjectId.parse(alertId)),
+        modifier,
+      );
       return result.isSuccess;
     } catch (e) {
       return false;

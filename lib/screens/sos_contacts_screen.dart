@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../core/app_theme.dart';
 
 class SOSContactsScreen extends StatefulWidget {
   const SOSContactsScreen({super.key});
@@ -12,28 +11,41 @@ class SOSContactsScreen extends StatefulWidget {
 
 class _SOSContactsScreenState extends State<SOSContactsScreen> {
   bool _isEditing = false;
-  List<TextEditingController> _controllers = [];
+  final List<ContactControllerGroup> _controllers = [];
 
   @override
   void initState() {
     super.initState();
+    _initializeControllers();
+  }
+
+  void _initializeControllers() {
     final safety = context.read<SafetyProvider>();
     final contacts = safety.inputContacts;
-    _controllers = contacts.map((c) => TextEditingController(text: c)).toList();
-    if (_controllers.isEmpty) _controllers.add(TextEditingController());
+    
+    for (var contact in contacts) {
+      _controllers.add(ContactControllerGroup(
+        name: contact.name,
+        phone: contact.phone,
+      ));
+    }
+    
+    if (_controllers.isEmpty) {
+      _controllers.add(ContactControllerGroup());
+    }
   }
 
   @override
   void dispose() {
-    for (final c in _controllers) {
-      c.dispose();
+    for (final group in _controllers) {
+      group.dispose();
     }
     super.dispose();
   }
 
   void _addContact() {
     if (_controllers.length < 5) {
-      setState(() => _controllers.add(TextEditingController()));
+      setState(() => _controllers.add(ContactControllerGroup()));
     }
   }
 
@@ -45,9 +57,13 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
   }
 
   Future<void> _handleSave() async {
-    final values = _controllers.map((c) => c.text.trim()).toList();
     final safety = context.read<SafetyProvider>();
-    safety.setInputContacts(values);
+    final List<GuardianContact> newContacts = _controllers.map((group) => GuardianContact(
+      name: group.nameController.text.trim(),
+      phone: group.phoneController.text.trim(),
+    )).toList();
+    
+    safety.setInputContacts(newContacts);
     await safety.saveTrustedContacts();
     setState(() => _isEditing = false);
   }
@@ -83,7 +99,19 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () => setState(() => _isEditing = !_isEditing),
+                    onTap: () {
+                      if (_isEditing) {
+                        // Reset controllers to original values
+                        setState(() {
+                          for (var group in _controllers) group.dispose();
+                          _controllers.clear();
+                          _initializeControllers();
+                          _isEditing = false;
+                        });
+                      } else {
+                        setState(() => _isEditing = true);
+                      }
+                    },
                     child: Text(
                       _isEditing ? lang.t('cancel') : lang.t('edit'),
                       style: TextStyle(color: theme.accent, fontWeight: FontWeight.w700, fontSize: 14),
@@ -166,17 +194,18 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'SENTINEL ${e.key + 1}',
+                                      e.value.name.toUpperCase(),
                                       style: TextStyle(color: theme.textSecondary, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1),
                                     ),
                                     const SizedBox(height: 2),
-                                    Text(e.value, style: TextStyle(color: theme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
+                                    Text(e.value.phone, style: TextStyle(color: theme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
                                   ],
                                 ),
                               ),
                             ],
                           ),
                         )),
+                        const SizedBox(height: 10),
                         GestureDetector(
                           onTap: () => setState(() => _isEditing = true),
                           child: Container(
@@ -214,79 +243,88 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
                             ),
                             const SizedBox(height: 16),
                             ..._controllers.asMap().entries.map((e) => Container(
-                              margin: const EdgeInsets.only(bottom: 20),
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: isDark ? Colors.transparent : const Color(0xFFF5F6FA),
-                                borderRadius: BorderRadius.circular(12),
-                                border: isDark ? Border.all(color: theme.border) : null,
-                              ),
-                              child: Row(
+                              margin: const EdgeInsets.only(bottom: 24),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(Icons.call_outlined, color: theme.textSecondary, size: 20),
-                                  Expanded(
-                                    child: TextField(
-                                      controller: e.value,
-                                      keyboardType: TextInputType.phone,
-                                      maxLength: 10,
-                                      style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
-                                      decoration: InputDecoration(
-                                        hintText: 'Contact ${e.key + 1} (10-digits)',
-                                        hintStyle: TextStyle(color: theme.textSecondary),
-                                        border: InputBorder.none,
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                                        counterText: '',
-                                      ),
-                                    ),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('Contact ${e.key + 1}', style: TextStyle(color: theme.accent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      if (_controllers.length > 1)
+                                        GestureDetector(
+                                          onTap: () => _removeContact(e.key),
+                                          child: const Icon(Icons.remove_circle_rounded, color: Color(0xFFFF4D4D), size: 20),
+                                        ),
+                                    ],
                                   ),
-                                  if (_controllers.length > 1)
-                                    GestureDetector(
-                                      onTap: () => _removeContact(e.key),
-                                      child: const Icon(Icons.remove_circle_rounded, color: Color(0xFFFF4D4D), size: 24),
-                                    ),
+                                  const SizedBox(height: 8),
+                                  // Name Field
+                                  _buildTextField(
+                                    controller: e.value.nameController,
+                                    hint: 'Guardian Name',
+                                    icon: Icons.person_outline,
+                                    isDark: isDark,
+                                    theme: theme,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  // Phone Field
+                                  _buildTextField(
+                                    controller: e.value.phoneController,
+                                    hint: 'Phone Number (10 digits)',
+                                    icon: Icons.call_outlined,
+                                    isDark: isDark,
+                                    theme: theme,
+                                    keyboardType: TextInputType.phone,
+                                    maxLength: 10,
+                                  ),
                                 ],
                               ),
                             )),
+                            const SizedBox(height: 10),
                             GestureDetector(
                               onTap: _handleSave,
                               child: Container(
-                                width: double.infinity,
                                 padding: const EdgeInsets.symmetric(vertical: 15),
                                 decoration: BoxDecoration(
                                   color: theme.accent,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text(lang.t('verify_save'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(lang.t('verify_save'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ],
-                    const SizedBox(height: 24),
-                    // Safety tips
+                    const SizedBox(height: 30),
+                    // Safety Protocol
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(lang.t('safety_protocol'), style: TextStyle(color: theme.textPrimary, fontSize: 14, fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 12),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.radio_button_on_rounded, color: Color(0xFF43A047), size: 18),
-                            const SizedBox(width: 10),
-                            Expanded(child: Text(lang.t('tip1'), style: TextStyle(color: theme.textSecondary, fontSize: 13, height: 1.4))),
-                          ],
+                        Text(
+                          lang.t('safety_protocol'),
+                          style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
                         ),
-                        const SizedBox(height: 10),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.lock_outline_rounded, color: Color(0xFF43A047), size: 18),
-                            const SizedBox(width: 10),
-                            Expanded(child: Text(lang.t('tip2'), style: TextStyle(color: theme.textSecondary, fontSize: 13, height: 1.4))),
-                          ],
+                        const SizedBox(height: 16),
+                        _buildProtocolItem(
+                          icon: Icons.check_circle_outline_rounded,
+                          text: lang.t('protocol_sms'),
+                          theme: theme,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProtocolItem(
+                          icon: Icons.lock_outline_rounded,
+                          text: lang.t('protocol_encryption'),
+                          theme: theme,
                         ),
                       ],
                     ),
@@ -298,5 +336,74 @@ class _SOSContactsScreenState extends State<SOSContactsScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    required bool isDark,
+    required ThemeProvider theme,
+    TextInputType keyboardType = TextInputType.text,
+    int? maxLength,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.transparent : const Color(0xFFF5F6FA),
+        borderRadius: BorderRadius.circular(12),
+        border: isDark ? Border.all(color: theme.border) : null,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: theme.textSecondary, size: 20),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              maxLength: maxLength,
+              style: TextStyle(color: theme.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: theme.textSecondary, fontSize: 14),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                counterText: '',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProtocolItem({required IconData icon, required String text, required ThemeProvider theme}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: Colors.green, size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(color: theme.textSecondary, fontSize: 13, height: 1.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class ContactControllerGroup {
+  final TextEditingController nameController;
+  final TextEditingController phoneController;
+
+  ContactControllerGroup({String name = '', String phone = ''})
+      : nameController = TextEditingController(text: name),
+        phoneController = TextEditingController(text: phone);
+
+  void dispose() {
+    nameController.dispose();
+    phoneController.dispose();
   }
 }

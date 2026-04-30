@@ -1,32 +1,35 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/services/hive_service.dart';
+import '../../../../core/services/mongo_service.dart';
 import '../../../../core/services/api_service.dart';
 import '../../domain/models/user_profile_model.dart';
 import '../../domain/repositories/profile_repository.dart';
 
 class ProfileRepositoryImpl implements ProfileRepository {
-  final HiveService _hiveService;
-  static const String _profileBoxName = 'user_profile';
+  final MongoService _mongoService;
 
-  ProfileRepositoryImpl(this._hiveService);
+  ProfileRepositoryImpl(this._mongoService);
 
   @override
-  Future<Either<Failure, UserProfileModel>> getProfile(String userId) async {
+  Future<Either<Failure, UserProfileModel>> getProfile(String email) async {
     try {
-      await _hiveService.openBox(_profileBoxName);
-      
-      final data = await _hiveService.get(_profileBoxName, userId);
-      if (data != null) {
-        final profile = UserProfileModel.fromJson(data as Map<String, dynamic>);
+      final userDoc = await _mongoService.getUserByEmail(email);
+      if (userDoc != null) {
+        // Map Mongo fields to UserProfileModel
+        final profileData = Map<String, dynamic>.from(userDoc['profile'] ?? {});
+        profileData['id'] = userDoc['_id'].toString();
+        profileData['email'] = userDoc['email'];
+        profileData['name'] = userDoc['name'];
+        profileData['phone'] = userDoc['phone'];
+        
+        final profile = UserProfileModel.fromJson(profileData);
         return Right(profile);
       }
       
       // Try fetching from backend
-      final response = await ApiService.getUserProfile(userId);
+      final response = await ApiService.getUserProfile(email);
       if (response != null) {
         final profile = UserProfileModel.fromJson(response);
-        await _hiveService.put(_profileBoxName, userId, profile.toJson());
         return Right(profile);
       }
       
@@ -39,10 +42,12 @@ class ProfileRepositoryImpl implements ProfileRepository {
   @override
   Future<Either<Failure, UserProfileModel>> updateProfile(UserProfileModel profile) async {
     try {
-      await _hiveService.openBox(_profileBoxName);
-      
-      // Update local storage
-      await _hiveService.put(_profileBoxName, profile.id, profile.toJson());
+      // Update on MongoDB
+      await _mongoService.updateUser(profile.email, {
+        'name': profile.name,
+        'phone': profile.phone,
+        'profile': profile.toJson(),
+      });
       
       // Update on backend
       final response = await ApiService.updateUserProfile(profile.toJson());
@@ -58,17 +63,9 @@ class ProfileRepositoryImpl implements ProfileRepository {
   }
 
   @override
-  Future<Either<Failure, void>> updateProfilePicture(String userId, String imagePath) async {
+  Future<Either<Failure, void>> updateProfilePicture(String email, String imagePath) async {
     try {
-      await _hiveService.openBox(_profileBoxName);
-      
-      final data = await _hiveService.get(_profileBoxName, userId);
-      if (data != null) {
-        final profile = UserProfileModel.fromJson(data as Map<String, dynamic>);
-        final updatedProfile = profile.copyWith(profilePicture: imagePath);
-        await _hiveService.put(_profileBoxName, userId, updatedProfile.toJson());
-      }
-      
+      await _mongoService.updateUser(email, {'profile.profilePicture': imagePath});
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -76,17 +73,9 @@ class ProfileRepositoryImpl implements ProfileRepository {
   }
 
   @override
-  Future<Either<Failure, void>> updatePreferences(String userId, Map<String, dynamic> preferences) async {
+  Future<Either<Failure, void>> updatePreferences(String email, Map<String, dynamic> preferences) async {
     try {
-      await _hiveService.openBox(_profileBoxName);
-      
-      final data = await _hiveService.get(_profileBoxName, userId);
-      if (data != null) {
-        final profile = UserProfileModel.fromJson(data as Map<String, dynamic>);
-        final updatedProfile = profile.copyWith(preferences: preferences);
-        await _hiveService.put(_profileBoxName, userId, updatedProfile.toJson());
-      }
-      
+      await _mongoService.updateUser(email, {'profile.preferences': preferences});
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));

@@ -226,7 +226,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
               children: [
                 AnimatedBuilder(
                   animation: _sessionGlow,
-                  builder: (_, __) => Opacity(
+                  builder: (_, _) => Opacity(
                     opacity: _sessionGlow.value,
                     child: Container(
                       width: 10,
@@ -390,7 +390,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
             children: [
               AnimatedBuilder(
                 animation: _recPulse,
-                builder: (_, __) => Transform.scale(
+                builder: (_, _) => Transform.scale(
                   scale: _recPulse.value,
                   child: Container(
                     width: 10, height: 10,
@@ -607,12 +607,12 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                   text: TextSpan(
                     style: TextStyle(color: theme.textSecondary, fontSize: 13, height: 1.5),
                     children: [
-                      TextSpan(text: lang.t('no_active_session') + ' '),
+                      TextSpan(text: '${lang.t('no_active_session')} '),
                       TextSpan(
                         text: lang.t('trigger_sos_cta'),
                         style: TextStyle(fontWeight: FontWeight.w800, color: theme.textPrimary),
                       ),
-                      TextSpan(text: ' ' + lang.t('no_active_session2')),
+                      TextSpan(text: ' ${lang.t('no_active_session2')}'),
                     ],
                   ),
                 ),

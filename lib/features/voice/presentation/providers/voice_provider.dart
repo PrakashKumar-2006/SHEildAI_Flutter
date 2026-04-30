@@ -3,7 +3,7 @@ import '../../../../core/services/sos_platform_service.dart';
 
 class VoiceProvider extends ChangeNotifier {
   bool _isEnabled = false;
-  String _lastRecognizedText = '';
+  final String _lastRecognizedText = '';
   String? _errorMessage;
 
   bool get isEnabled => _isEnabled;

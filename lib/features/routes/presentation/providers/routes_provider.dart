@@ -108,8 +108,9 @@ class RoutesProvider extends ChangeNotifier {
           for (var item in rankedIndices) {
             // ranked_routes might be list of indices or list of maps with index
             int idx = -1;
-            if (item is int) idx = item;
-            else if (item is Map) idx = item['index'] ?? -1;
+            if (item is int) {
+              idx = item;
+            } else if (item is Map) idx = item['index'] ?? -1;
             else idx = int.tryParse(item.toString()) ?? -1;
 
             if (idx >= 0 && idx < routes.length) {

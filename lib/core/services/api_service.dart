@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'hive_service.dart';
+import 'package:flutter/foundation.dart';
+import 'storage_service.dart';
 
 class ApiService {
   static const String _backendUrl = 'https://sheildai1-o.onrender.com';
   static const String _mlApiUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/api';
   static const Duration _timeout = Duration(seconds: 15);
   
-  static const String _tokenBoxName = 'auth_tokens';
+  static const String _tokenPrefix = 'auth_token_';
 
   static Future<http.Response> _fetchWithTimeout(String url, Map<String, String>? headers, String? body) async {
     try {
@@ -32,12 +33,11 @@ class ApiService {
 
   static Future<String?> getAuthToken(String phone, {int retryCount = 0}) async {
     try {
-      // Try to get existing token from Hive
-      final hiveService = HiveService();
-      await hiveService.openBox(_tokenBoxName);
-      final cachedToken = await hiveService.get(_tokenBoxName, phone);
+      // Try to get existing token from StorageService
+      final storageService = StorageService();
+      final cachedToken = storageService.getString('$_tokenPrefix$phone');
       if (cachedToken != null) {
-        return cachedToken as String?;
+        return cachedToken;
       }
       
       // Generate new token
@@ -51,9 +51,9 @@ class ApiService {
         final data = jsonDecode(response.body);
         final token = data['token'] as String?;
         
-        // Store token in Hive
+        // Store token in StorageService
         if (token != null) {
-          await hiveService.put(_tokenBoxName, phone, token);
+          await storageService.setString('$_tokenPrefix$phone', token);
         }
         
         return token;
@@ -75,9 +75,8 @@ class ApiService {
 
   static Future<void> clearAuthToken(String phone) async {
     try {
-      final hiveService = HiveService();
-      await hiveService.openBox(_tokenBoxName);
-      await hiveService.delete(_tokenBoxName, phone);
+      final storageService = StorageService();
+      await storageService.remove('$_tokenPrefix$phone');
     } catch (e) {
       // Ignore errors on clear
     }
@@ -101,22 +100,24 @@ class ApiService {
           'name': name,
         }),
       );
-
-      if (response.statusCode != 200 && retryCount < 3) {
-        await Future.delayed(const Duration(seconds: 4));
+      
+      if (response.statusCode != 200 && retryCount < 5) {
+        await Future.delayed(const Duration(seconds: 5));
         return syncUserLocation(phone, latitude, longitude, name, retryCount: retryCount + 1);
       }
     } catch (e) {
-      if (retryCount < 3) {
-        await Future.delayed(const Duration(seconds: 4));
+      if (retryCount < 5) {
+        await Future.delayed(const Duration(seconds: 5));
         return syncUserLocation(phone, latitude, longitude, name, retryCount: retryCount + 1);
       }
     }
   }
 
-  static Future<Map<String, dynamic>?> triggerCloudSOS(String phone, double latitude, double longitude) async {
+  static Future<void> triggerCloudSOS(String phone, double latitude, double longitude, {int retryCount = 0}) async {
     try {
       final token = await getAuthToken(phone);
+      if (token == null) return;
+
       final response = await _fetchWithTimeout(
         '$_backendUrl/api/sos/trigger',
         {
@@ -129,207 +130,34 @@ class ApiService {
           'longitude': longitude,
         }),
       );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+      
+      if (response.statusCode != 200 && retryCount < 5) {
+        await Future.delayed(const Duration(seconds: 5));
+        return triggerCloudSOS(phone, latitude, longitude, retryCount: retryCount + 1);
       }
-      return null;
     } catch (e) {
-      return null;
+      if (retryCount < 5) {
+        await Future.delayed(const Duration(seconds: 5));
+        return triggerCloudSOS(phone, latitude, longitude, retryCount: retryCount + 1);
+      }
     }
   }
 
-  static Future<Map<String, dynamic>?> fetchPredictedRisk(double latitude, double longitude) async {
-    try {
-      final now = DateTime.now();
-      final response = await _fetchWithTimeout(
-        '$_mlApiUrl/risk',
-        {'Content-Type': 'application/json'},
-        jsonEncode({
-          'lat': latitude,
-          'lon': longitude,
-          'hour': now.hour,
-          'month': now.month,
-          'transport_mode': 'walking',
-          'internet': true,
-          'battery': 100,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> fetchForecast(double lat, double lon, int currentHour, int month) async {
-    try {
-      final response = await _fetchWithTimeout(
-        '$_mlApiUrl/forecast',
-        {'Content-Type': 'application/json'},
-        jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'current_hour': currentHour,
-          'month': month,
-          'is_weekend': 0,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> fetchBestTravelTime(double lat, double lon, int month) async {
-    try {
-      final response = await _fetchWithTimeout(
-        '$_mlApiUrl/best-travel-time',
-        {'Content-Type': 'application/json'},
-        jsonEncode({
-          'lat': lat,
-          'lon': lon,
-          'month': month,
-          'is_weekend': 0,
-          'top_n': 3,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> getSafeRouteV2(
-    double originLat,
-    double originLon,
-    double destLat,
-    double destLon,
-    int hour,
-    int month,
-    List<List<Map<String, double>>> routes,
-  ) async {
-    try {
-      final response = await _fetchWithTimeout(
-        '$_mlApiUrl/safe-route-v2',
-        {'Content-Type': 'application/json'},
-        jsonEncode({
-          'origin_lat': originLat,
-          'origin_lon': originLon,
-          'dest_lat': destLat,
-          'dest_lon': destLon,
-          'hour': hour,
-          'month': month,
-          'is_weekend': 0,
-          'routes': routes,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<List<dynamic>?> fetchHotspots() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_mlApiUrl/hotspots?min_risk=56'),
-      ).timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as List<dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> getSafetyForecast(double latitude, double longitude) async {
-    try {
-      final response = await _fetchWithTimeout(
-        '$_mlApiUrl/forecast',
-        {'Content-Type': 'application/json'},
-        jsonEncode({
-          'latitude': latitude,
-          'longitude': longitude,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> getBestTravelTime(
-    double originLat,
-    double originLon,
-    double destLat,
-    double destLon,
-  ) async {
-    try {
-      final response = await _fetchWithTimeout(
-        '$_mlApiUrl/best-travel-time',
-        {'Content-Type': 'application/json'},
-        jsonEncode({
-          'origin_lat': originLat,
-          'origin_lon': originLon,
-          'dest_lat': destLat,
-          'dest_lon': destLon,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<List<dynamic>?> getHotspots(double latitude, double longitude, double radiusKm) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_mlApiUrl/hotspots?latitude=$latitude&longitude=$longitude&radiusKm=$radiusKm&min_risk=56'),
-      ).timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as List<dynamic>;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
+  // User Profile methods
   static Future<Map<String, dynamic>?> getUserProfile(String userId) async {
     try {
+      final token = await getAuthToken(userId);
+      if (token == null) return null;
+
       final response = await http.get(
-        Uri.parse('$_backendUrl/api/user/$userId'),
+        Uri.parse('$_backendUrl/api/users/profile/$userId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
       ).timeout(_timeout);
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        return jsonDecode(response.body);
       }
       return null;
     } catch (e) {
@@ -337,25 +165,43 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>?> updateUserProfile(Map<String, dynamic> profileData) async {
+  static Future<Map<String, dynamic>?> updateUserProfile(Map<String, dynamic> profile) async {
     try {
-      final token = await getAuthToken(profileData['phone'] as String);
+      final userId = profile['phone'] ?? profile['email'];
+      final token = await getAuthToken(userId);
       if (token == null) return null;
 
       final response = await _fetchWithTimeout(
-        '$_backendUrl/api/user/update',
+        '$_backendUrl/api/users/profile/update',
         {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        jsonEncode(profileData),
+        jsonEncode(profile),
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        return jsonDecode(response.body);
       }
       return null;
     } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>?> fetchHotspots() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_backendUrl/api/zones/hotspots'))
+          .timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.cast<Map<String, dynamic>>();
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[ApiService] Error fetching hotspots: $e');
       return null;
     }
   }

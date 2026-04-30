@@ -1,19 +1,34 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/services/hive_service.dart';
+import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/storage_service.dart';
 import '../../domain/models/contact_model.dart';
 import '../../domain/repositories/contact_repository.dart';
+import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
 
 class ContactRepositoryImpl implements ContactRepository {
-  final HiveService _hiveService;
+  final MongoService _mongoService;
+  final StorageService _storageService;
 
-  ContactRepositoryImpl(this._hiveService);
+  ContactRepositoryImpl(this._mongoService, this._storageService);
+
+  String get _userEmail => _storageService.getString('user_phone') ?? '';
 
   @override
   Future<Either<Failure, List<ContactModel>>> getContacts() async {
     try {
-      final contactsData = await _hiveService.getContacts();
-      final contacts = contactsData.map((json) => ContactModel.fromJson(json)).toList();
+      if (_userEmail.isEmpty) return const Right([]);
+      
+      final contactsData = await _mongoService.getContactsByEmail(_userEmail);
+      final contacts = contactsData.map((json) {
+        // Map MongoDB _id to string id for ContactModel
+        final Map<String, dynamic> mappedJson = Map.from(json);
+        if (json['_id'] != null) {
+          mappedJson['id'] = json['_id'].toString();
+        }
+        return ContactModel.fromJson(mappedJson);
+      }).toList();
+
       // Sort: primary first, then by name
       contacts.sort((a, b) {
         if (a.isPrimary && !b.isPrimary) return -1;
@@ -29,7 +44,13 @@ class ContactRepositoryImpl implements ContactRepository {
   @override
   Future<Either<Failure, ContactModel>> addContact(ContactModel contact) async {
     try {
-      await _hiveService.saveContact(contact.toJson());
+      if (_userEmail.isEmpty) return Left(StorageFailure('User not logged in'));
+      
+      final contactData = contact.toJson();
+      contactData['user_email'] = _userEmail;
+      // Remove local ID if it's just a timestamp, let Mongo handle it or keep it as metadata
+      
+      await _mongoService.addContact(_userEmail, contactData);
       return Right(contact);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -39,7 +60,13 @@ class ContactRepositoryImpl implements ContactRepository {
   @override
   Future<Either<Failure, void>> updateContact(ContactModel contact) async {
     try {
-      await _hiveService.saveContact(contact.toJson());
+      if (contact.id.isEmpty) return Left(StorageFailure('Contact ID missing'));
+      
+      final updates = contact.toJson();
+      updates.remove('id');
+      updates.remove('_id');
+      
+      await _mongoService.updateContact(contact.id, updates);
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -49,7 +76,7 @@ class ContactRepositoryImpl implements ContactRepository {
   @override
   Future<Either<Failure, void>> deleteContact(String contactId) async {
     try {
-      await _hiveService.deleteContact(contactId);
+      await _mongoService.deleteContact(contactId);
       return const Right(null);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
@@ -59,20 +86,14 @@ class ContactRepositoryImpl implements ContactRepository {
   @override
   Future<Either<Failure, void>> setPrimaryContact(String contactId) async {
     try {
-      // Get all contacts
       final contactsResult = await getContacts();
       return contactsResult.fold(
         (failure) => Left(failure),
         (contacts) async {
-          // Update all contacts to remove primary status
           for (final contact in contacts) {
-            final updated = contact.copyWith(isPrimary: false);
-            await _hiveService.saveContact(updated.toJson());
+            final isTarget = contact.id == contactId;
+            await _mongoService.updateContact(contact.id, {'isPrimary': isTarget});
           }
-          // Set the specified contact as primary
-          final primaryContact = contacts.firstWhere((c) => c.id == contactId);
-          final updatedPrimary = primaryContact.copyWith(isPrimary: true);
-          await _hiveService.saveContact(updatedPrimary.toJson());
           return const Right(null);
         },
       );

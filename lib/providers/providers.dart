@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import '../core/constants/app_constants.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ import '../features/community/presentation/providers/community_provider.dart';
 import '../core/services/socket_service.dart';
 import '../core/services/osrm_service.dart';
 import '../core/services/notification_service.dart';
+import '../core/services/mongo_service.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -67,10 +69,20 @@ class LanguageProvider extends ChangeNotifier {
 }
 
 // ─── Models ──────────────────────────────────────────────────────────────────
+class GuardianContact {
+  final String name;
+  final String phone;
+  GuardianContact({required this.name, required this.phone});
+  
+  Map<String, String> toJson() => {'name': name, 'phone': phone};
+  factory GuardianContact.fromJson(Map<String, dynamic> json) => 
+    GuardianContact(name: json['name'] ?? '', phone: json['phone'] ?? '');
+}
+
 class UserProfile {
-  String name; String phone; List<String> trustedContacts; bool isComplete; bool isSetupComplete;
+  String name; String phone; List<GuardianContact> trustedContacts; bool isComplete; bool isSetupComplete;
   UserProfile({this.name = '', this.phone = '', this.trustedContacts = const [], this.isComplete = false, this.isSetupComplete = false});
-  UserProfile copyWith({String? name, String? phone, List<String>? trustedContacts, bool? isComplete, bool? isSetupComplete}) {
+  UserProfile copyWith({String? name, String? phone, List<GuardianContact>? trustedContacts, bool? isComplete, bool? isSetupComplete}) {
     return UserProfile(name: name ?? this.name, phone: phone ?? this.phone, trustedContacts: trustedContacts ?? this.trustedContacts, isComplete: isComplete ?? this.isComplete, isSetupComplete: isSetupComplete ?? this.isSetupComplete);
   }
 }
@@ -85,9 +97,9 @@ class AlertItem {
 class SafetyProvider extends ChangeNotifier {
   bool _isAppReady = false;
   UserProfile _userProfile = UserProfile();
-  List<String> _trustedContacts = [];
-  List<String> _inputContacts = [''];
-  List<AlertItem> _alerts = [];
+  List<GuardianContact> _trustedContacts = [];
+  List<GuardianContact> _inputContacts = [GuardianContact(name: '', phone: '')];
+  final List<AlertItem> _alerts = [];
   String _readableAddress = 'Scanning location...';
   Timer? _durationTimer;
   DateTime? _lastMLUpdate;
@@ -106,8 +118,8 @@ class SafetyProvider extends ChangeNotifier {
 
   bool get isAppReady => _isAppReady;
   UserProfile get userProfile => _userProfile;
-  List<String> get trustedContacts => _trustedContacts;
-  List<String> get inputContacts => _inputContacts;
+  List<GuardianContact> get trustedContacts => _trustedContacts;
+  List<GuardianContact> get inputContacts => _inputContacts;
   bool get isSOSActive => _sosProvider?.isSOSActive ?? false;
 
   /// Returns a granular state string for the SOS screen's session sub-panels.
@@ -241,34 +253,38 @@ class SafetyProvider extends ChangeNotifier {
       final now = DateTime.now();
       if (_lastMLUpdate == null || now.difference(_lastMLUpdate!).inMinutes >= 1) {
         _lastMLUpdate = now;
-        debugPrint('[Safety] Refreshing Safety Intelligence for: $lat, $lon');
-        _mlProvider?.predictRisk(
-          lat: lat, 
-          lon: lon, 
-          hour: now.hour, 
-          month: now.month,
-          battery: _currentBatteryLevel,
-          internet: _hasInternet,
-          isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
-        );
-        _mlProvider?.getForecast(
-          lat: lat, 
-          lon: lon, 
-          currentHour: now.hour, 
-          month: now.month,
-          isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
-        );
-        _mlProvider?.getBestTravelTime(
-          lat: lat, 
-          lon: lon, 
-          month: now.month,
-          isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
-        );
-        _communityProvider?.loadNearbyReports(
-          latitude: lat,
-          longitude: lon,
-          radiusKm: 10,
-        );
+        debugPrint('[Safety] Refreshing Safety Intelligence (Parallel) for: $lat, $lon');
+        
+        // Fire all ML and Community requests in parallel to significantly reduce total load time
+        Future.wait([
+          _mlProvider?.predictRisk(
+            lat: lat, 
+            lon: lon, 
+            hour: now.hour, 
+            month: now.month,
+            battery: _currentBatteryLevel,
+            internet: _hasInternet,
+            isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
+          ) ?? Future.value(),
+          _mlProvider?.getForecast(
+            lat: lat, 
+            lon: lon, 
+            currentHour: now.hour, 
+            month: now.month,
+            isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
+          ) ?? Future.value(),
+          _mlProvider?.getBestTravelTime(
+            lat: lat, 
+            lon: lon, 
+            month: now.month,
+            isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
+          ) ?? Future.value(),
+          _communityProvider?.loadNearbyReports(
+            latitude: lat,
+            longitude: lon,
+            radiusKm: 10,
+          ) ?? Future.value(),
+        ]);
       }
     }
   }
@@ -341,15 +357,73 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> _loadUserProfile() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // 1. Get identifiers
+    final phone = prefs.getString(AppConstants.keyUserPhone) ?? '';
+    
+    // 2. Load contacts from local storage first (JSON)
+    final savedContactsJson = prefs.getStringList('trusted_contacts_full') ?? [];
+    List<GuardianContact> contacts = [];
+    if (savedContactsJson.isNotEmpty) {
+      contacts = savedContactsJson.map((s) => GuardianContact.fromJson(jsonDecode(s))).toList();
+    } else {
+      // Fallback to basic string list if full list is missing
+      final stringList = prefs.getStringList('trusted_contacts') ?? [];
+      contacts = stringList.map((s) => GuardianContact(name: 'Guardian', phone: s)).toList();
+    }
+
+    // 2. Load basic profile
     _userProfile = UserProfile(
       name: prefs.getString(AppConstants.keyUserName) ?? '',
-      phone: prefs.getString(AppConstants.keyUserPhone) ?? '',
-      trustedContacts: prefs.getStringList('trusted_contacts') ?? [],
+      phone: phone,
+      trustedContacts: contacts,
       isComplete: prefs.getBool('@profile_complete') ?? false,
       isSetupComplete: prefs.getBool('@setup_complete') ?? false,
     );
+
+    // 3. Deep sync from MongoDB (Always do this to get latest names/phones)
+    if (phone.isNotEmpty) {
+      try {
+        final mongo = MongoService();
+        if (!mongo.isConnected) await mongo.connect();
+        
+        // Fetch User Doc for name/profile info
+        final userDoc = await mongo.getUserByEmail(phone);
+        if (userDoc != null) {
+          final mongoName = userDoc['name'] as String? ?? '';
+          if (mongoName.isNotEmpty && mongoName != _userProfile.name) {
+            _userProfile.name = mongoName;
+            await prefs.setString(AppConstants.keyUserName, mongoName);
+          }
+        }
+
+        // Fetch from emergency_contacts collection for full details
+        final contactsData = await mongo.getContactsByEmail(phone);
+        if (contactsData.isNotEmpty) {
+          final mongoContacts = contactsData.map((data) => GuardianContact(
+            name: data['name'] ?? 'Guardian',
+            phone: data['phone'] ?? '',
+          )).toList();
+          
+          _userProfile.trustedContacts = mongoContacts;
+          
+          // Save to local storage
+          await prefs.setStringList('trusted_contacts_full', 
+            mongoContacts.map((c) => jsonEncode(c.toJson())).toList());
+          await prefs.setStringList('trusted_contacts', 
+            mongoContacts.map((c) => c.phone).toList());
+            
+          debugPrint('[SafetyProvider] Deep synced ${mongoContacts.length} contacts from MongoDB');
+        }
+      } catch (e) {
+        debugPrint('[SafetyProvider] Deep sync error: $e');
+      }
+    }
+    
     _trustedContacts = _userProfile.trustedContacts;
-    _inputContacts = _trustedContacts.isNotEmpty ? List.from(_trustedContacts) : [''];
+    _inputContacts = _trustedContacts.isNotEmpty 
+      ? List.from(_trustedContacts) 
+      : [GuardianContact(name: '', phone: '')];
   }
 
   Future<void> clearProfile() async {
@@ -357,7 +431,7 @@ class SafetyProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear(); // Clear all saved settings
     _trustedContacts = [];
-    _inputContacts = [''];
+    _inputContacts = [GuardianContact(name: '', phone: '')];
     notifyListeners();
   }
 
@@ -366,21 +440,55 @@ class SafetyProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.keyUserName, profile.name);
     await prefs.setString(AppConstants.keyUserPhone, profile.phone);
-    await prefs.setStringList('trusted_contacts', profile.trustedContacts);
+    await prefs.setStringList('trusted_contacts_full', 
+      profile.trustedContacts.map((c) => jsonEncode(c.toJson())).toList());
+    await prefs.setStringList('trusted_contacts', 
+      profile.trustedContacts.map((c) => c.phone).toList());
     await prefs.setBool('@profile_complete', profile.isComplete);
     await prefs.setBool('@setup_complete', profile.isSetupComplete);
     _trustedContacts = profile.trustedContacts;
     notifyListeners();
   }
 
-  void setInputContacts(List<String> contacts) { _inputContacts = contacts; notifyListeners(); }
+  void setInputContacts(List<GuardianContact> contacts) { _inputContacts = contacts; notifyListeners(); }
 
   Future<void> saveTrustedContacts() async {
-    final validContacts = _inputContacts.where((c) => c.trim().length >= 10).toList();
+    final validContacts = _inputContacts.where((c) => c.phone.trim().length >= 10).toList();
     _trustedContacts = validContacts;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('trusted_contacts', validContacts);
+    
+    await prefs.setStringList('trusted_contacts_full', 
+      validContacts.map((c) => jsonEncode(c.toJson())).toList());
+    await prefs.setStringList('trusted_contacts', 
+      validContacts.map((c) => c.phone).toList());
+      
     _userProfile = _userProfile.copyWith(trustedContacts: validContacts);
+    
+    // Cloud sync
+    if (_userProfile.phone.isNotEmpty) {
+      try {
+        final mongo = MongoService();
+        if (!mongo.isConnected) await mongo.connect();
+        
+        // 1. Update user profile list
+        await mongo.updateUser(_userProfile.phone, {
+          'profile.trustedContacts': validContacts.map((c) => c.phone).toList(),
+        });
+        
+        // 2. Update individual contacts in emergency_contacts collection
+        for (var c in validContacts) {
+          await mongo.addContact(_userProfile.phone, {
+            'name': c.name,
+            'phone': c.phone,
+            'relationship': 'Guardian',
+            'user_email': _userProfile.phone,
+          });
+        }
+      } catch (e) {
+        debugPrint('[SafetyProvider] Failed to sync contacts to cloud: $e');
+      }
+    }
+    
     notifyListeners();
   }
 
@@ -395,9 +503,12 @@ class SafetyProvider extends ChangeNotifier {
       msg = '🚨 EMERGENCY SOS 🚨\nI need help! Please call me immediately!\n(Sent via SHEild AI Safety App)';
     }
     
+    // Extract phone numbers for the SMS service
+    final List<String> phoneNumbers = _trustedContacts.map((c) => c.phone).toList();
+    
     // SOS fires unconditionally - SOSProvider handles location internally
     await _sosProvider!.triggerSOS(
-      customContacts: _trustedContacts.isNotEmpty ? _trustedContacts : null,
+      customContacts: phoneNumbers.isNotEmpty ? phoneNumbers : null,
       customMessage: msg,
     );
     _alerts.insert(0, AlertItem(
@@ -415,7 +526,9 @@ class SafetyProvider extends ChangeNotifier {
     if (_sosProvider != null) {
       await _sosProvider!.cancelSOS();
       final msg = 'SAFE: I am safe now. Thank you for your support. My location: $_readableAddress';
-      SMSService().sendBulkSMS(phoneNumbers: _trustedContacts, message: msg);
+      
+      final List<String> phoneNumbers = _trustedContacts.map((c) => c.phone).toList();
+      SMSService().sendBulkSMS(phoneNumbers: phoneNumbers, message: msg);
       _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SAFE', title: 'Safe Confirmed', body: 'Safety confirmed. Guardians notified.', timestamp: DateTime.now()));
     }
     notifyListeners();

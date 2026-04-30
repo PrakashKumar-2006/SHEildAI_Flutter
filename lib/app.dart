@@ -5,8 +5,6 @@ import 'core/services/location_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/storage_service.dart';
 import 'core/services/voice_service.dart';
-import 'core/services/hive_service.dart';
-import 'core/services/sync_service.dart';
 import 'core/services/api_service.dart';
 import 'core/services/background_monitor_service.dart';
 import 'core/services/mongo_service.dart';
@@ -21,6 +19,9 @@ import 'features/contacts/data/repositories/contact_repository_impl.dart';
 import 'features/contacts/presentation/providers/contact_provider.dart';
 import 'features/community/data/repositories/community_repository_impl.dart';
 import 'features/community/presentation/providers/community_provider.dart';
+import 'features/alerts/data/repositories/alert_repository_impl.dart';
+import 'features/profile/data/repositories/profile_repository_impl.dart';
+import 'features/security/data/repositories/security_repository_impl.dart';
 import 'core/providers/ml_provider.dart';
 import 'core/providers/location_permission_provider.dart';
 import 'features/routes/presentation/providers/routes_provider.dart';
@@ -36,7 +37,6 @@ import 'screens/main_screen.dart';
 import 'screens/sos_screen.dart';
 import 'screens/alerts_screen.dart';
 import 'screens/profile_screen.dart';
-import 'screens/signin_screen.dart';
 import 'screens/setup_permissions_screen.dart';
 import 'providers/providers.dart';
 import 'shared/widgets/location_blocking_overlay.dart';
@@ -60,11 +60,6 @@ class App extends StatelessWidget {
           create: (_) => VoiceService(),
           dispose: (_, service) => service.dispose(),
         ),
-        Provider<HiveService>(create: (_) => HiveService()),
-        Provider<SyncService>(
-          create: (_) => SyncService()..initialize(),
-          dispose: (_, service) => service.dispose(),
-        ),
         Provider<ApiService>(create: (_) => ApiService()),
         Provider<BackgroundMonitorService>(create: (_) => BackgroundMonitorService()..initialize()),
         Provider<MongoService>(
@@ -77,15 +72,32 @@ class App extends StatelessWidget {
           create: (context) => SOSRepositoryImpl(
             storageService: context.read<StorageService>(),
             notificationService: context.read<NotificationService>(),
-            hiveService: context.read<HiveService>(),
-            syncService: context.read<SyncService>(),
+            mongoService: context.read<MongoService>(),
           ),
         ),
         Provider<LocationRepositoryImpl>(
           create: (context) => LocationRepositoryImpl(context.read<LocationService>()),
         ),
         Provider<ContactRepositoryImpl>(
-          create: (context) => ContactRepositoryImpl(context.read<HiveService>()),
+          create: (context) => ContactRepositoryImpl(
+            context.read<MongoService>(),
+            context.read<StorageService>(),
+          ),
+        ),
+        Provider<AlertRepositoryImpl>(
+          create: (context) => AlertRepositoryImpl(
+            context.read<MongoService>(),
+            context.read<StorageService>(),
+          ),
+        ),
+        Provider<ProfileRepositoryImpl>(
+          create: (context) => ProfileRepositoryImpl(context.read<MongoService>()),
+        ),
+        Provider<SecurityRepositoryImpl>(
+          create: (context) => SecurityRepositoryImpl(
+            context.read<MongoService>(),
+            context.read<StorageService>(),
+          ),
         ),
         Provider<CommunityRepositoryImpl>(create: (_) => CommunityRepositoryImpl()),
 

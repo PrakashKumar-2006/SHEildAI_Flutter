@@ -52,8 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (hasLocation && mlProvider.riskPrediction == null && !mlProvider.isLoadingRisk) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         mlProvider.predictRisk(
-          lat: currentLat!,
-          lon: currentLng!,
+          lat: currentLat,
+          lon: currentLng,
           hour: now.hour,
           month: now.month,
           isWeekend: now.weekday >= 5 ? 1 : 0,
@@ -65,8 +65,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (hasLocation && mlProvider.bestTravelTime == null && !mlProvider.isLoadingTravelTime) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         mlProvider.getBestTravelTime(
-          lat: currentLat!,
-          lon: currentLng!,
+          lat: currentLat,
+          lon: currentLng,
           month: now.month,
           isWeekend: now.weekday >= 5 ? 1 : 0,
           topN: 3,
@@ -78,8 +78,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (hasLocation && mlProvider.forecast == null && !mlProvider.isLoadingForecast) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         mlProvider.getForecast(
-          lat: currentLat!,
-          lon: currentLng!,
+          lat: currentLat,
+          lon: currentLng,
           currentHour: now.hour,
           month: now.month,
           isWeekend: now.weekday >= 5 ? 1 : 0,
@@ -998,7 +998,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(16),
         child: hasLocation ? GoogleMap(
           initialCameraPosition: CameraPosition(
-            target: LatLng(currentLat!, currentLng!),
+            target: LatLng(currentLat, currentLng),
             zoom: 15.0,
           ),
           onMapCreated: (controller) {
