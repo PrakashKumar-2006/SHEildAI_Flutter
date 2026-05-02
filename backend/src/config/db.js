@@ -6,30 +6,27 @@ const dataConnection = mongoose.createConnection();
 
 const connectDB = async () => {
   try {
-    // Aggressive URI parser to fix Atlas connection strings (matches Flutter logic)
+    // Ultra-robust URI parser for Atlas (matches Flutter app exactly)
     const prepareUri = (uri) => {
       if (!uri) return uri;
       let injected = uri.trim();
       const dbName = (process.env.MONGO_DB_NAME || 'sheildai').trim();
 
-      if (injected.startsWith('mongodb+srv')) {
+      if (injected.startsWith('mongodb')) {
         const queryIndex = injected.indexOf('?');
         let basePart = queryIndex > -1 ? injected.substring(0, queryIndex) : injected;
         let queryPart = queryIndex > -1 ? injected.substring(queryIndex) : '';
 
-        // If basePart doesn't end with /dbName, add it
+        // Inject Database Name if missing
         if (!basePart.includes('.mongodb.net/')) {
           basePart = basePart.replace('.mongodb.net', `.mongodb.net/${dbName}`);
-        } else {
-          // Check if it ends in just /
-          if (basePart.endsWith('.mongodb.net/')) {
-            basePart += dbName;
-          }
+        } else if (basePart.endsWith('.mongodb.net/')) {
+          basePart += dbName;
         }
         
         injected = basePart + queryPart;
 
-        // Ensure authSource=admin is present
+        // Ensure authSource=admin is present for Atlas
         if (!injected.includes('authSource=')) {
           const sep = injected.includes('?') ? '&' : '?';
           injected = `${injected}${sep}authSource=admin`;
@@ -38,25 +35,37 @@ const connectDB = async () => {
       return injected;
     };
 
+    const dbName = (process.env.MONGO_DB_NAME || 'sheildai').trim();
     const authUri = prepareUri(process.env.MONGO_DB_AUTH_CONNECTION_STRING || process.env.MONGO_URI);
     const dataUri = prepareUri(process.env.MONGO_DB_DATA_CONNECTION_STRING || process.env.MONGO_URI);
-    const dbName = process.env.MONGO_DB_NAME || 'sheildai';
 
     const mask = (uri) => uri ? uri.replace(/:([^@]+)@/, ':****@') : 'null';
-    console.log(`[DB] Attempting AUTH connection to: ${mask(authUri)}`);
-    console.log(`[DB] Attempting DATA connection to: ${mask(dataUri)}`);
+    console.log(`[DB] Global DB Name: ${dbName}`);
+    console.log(`[DB] AUTH URI: ${mask(authUri)}`);
+    console.log(`[DB] DATA URI: ${mask(dataUri)}`);
 
     const options = {
       dbName: dbName,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000,
     };
 
-    await Promise.all([
-      authConnection.openUri(authUri, options).then(() => console.log(`MongoDB AUTH Connected: ${authConnection.host}`)),
-      dataConnection.openUri(dataUri, options).then(() => console.log(`MongoDB DATA Connected: ${dataConnection.host}`))
-    ]);
+    // Connect AUTH
+    try {
+      await authConnection.openUri(authUri, options);
+      console.log(`[DB] SUCCESS: AUTH Connected (${authConnection.host})`);
+    } catch (err) {
+      console.error(`[DB] FAILED: AUTH Connection Error: ${err.message}`);
+    }
+
+    // Connect DATA
+    try {
+      await dataConnection.openUri(dataUri, options);
+      console.log(`[DB] SUCCESS: DATA Connected (${dataConnection.host})`);
+    } catch (err) {
+      console.error(`[DB] FAILED: DATA Connection Error: ${err.message}`);
+    }
   } catch (error) {
-    console.error(`[DB] Connection Critical Error: ${error.message}`);
+    console.error(`[DB] Unexpected Error in connectDB: ${error.message}`);
   }
 };
 
