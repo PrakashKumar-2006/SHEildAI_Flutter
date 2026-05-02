@@ -188,6 +188,11 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _streamSubscription?.cancel();
