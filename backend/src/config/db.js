@@ -6,21 +6,30 @@ const dataConnection = mongoose.createConnection();
 
 const connectDB = async () => {
   try {
-    // Helper to add DB name and authSource=admin if missing (matches Flutter logic)
+    // Aggressive URI parser to fix Atlas connection strings (matches Flutter logic)
     const prepareUri = (uri) => {
       if (!uri) return uri;
-      let injected = uri;
-      const dbName = process.env.MONGO_DB_NAME || 'sheildai';
+      let injected = uri.trim();
+      const dbName = (process.env.MONGO_DB_NAME || 'sheildai').trim();
 
       if (injected.startsWith('mongodb+srv')) {
-        // 1. Inject Database Name if missing (e.g. cluster.mongodb.net/sheildai?...)
-        if (!injected.includes('.mongodb.net/') && !injected.includes('.mongodb.net?')) {
-          injected = injected.replace('.mongodb.net', `.mongodb.net/${dbName}`);
-        } else if (injected.includes('.mongodb.net/?')) {
-          injected = injected.replace('.mongodb.net/?', `.mongodb.net/${dbName}?`);
-        }
+        const queryIndex = injected.indexOf('?');
+        let basePart = queryIndex > -1 ? injected.substring(0, queryIndex) : injected;
+        let queryPart = queryIndex > -1 ? injected.substring(queryIndex) : '';
 
-        // 2. Ensure authSource=admin is present
+        // If basePart doesn't end with /dbName, add it
+        if (!basePart.includes('.mongodb.net/')) {
+          basePart = basePart.replace('.mongodb.net', `.mongodb.net/${dbName}`);
+        } else {
+          // Check if it ends in just /
+          if (basePart.endsWith('.mongodb.net/')) {
+            basePart += dbName;
+          }
+        }
+        
+        injected = basePart + queryPart;
+
+        // Ensure authSource=admin is present
         if (!injected.includes('authSource=')) {
           const sep = injected.includes('?') ? '&' : '?';
           injected = `${injected}${sep}authSource=admin`;
