@@ -9,13 +9,27 @@ const connectDB = async () => {
     const authUri = process.env.MONGO_DB_AUTH_CONNECTION_STRING || process.env.MONGO_URI;
     const dataUri = process.env.MONGO_DB_DATA_CONNECTION_STRING || process.env.MONGO_URI;
 
-    // Helper to add authSource=admin if missing (same as Flutter app logic)
+    // Helper to add DB name and authSource=admin if missing (matches Flutter logic)
     const prepareUri = (uri) => {
-      if (uri && uri.startsWith('mongodb+srv') && !uri.includes('authSource=')) {
-        const sep = uri.includes('?') ? '&' : '?';
-        return `${uri}${sep}authSource=admin`;
+      if (!uri) return uri;
+      let injected = uri;
+      const dbName = process.env.MONGO_DB_NAME || 'sheildai';
+
+      if (injected.startsWith('mongodb+srv')) {
+        // 1. Inject Database Name if missing (e.g. cluster.mongodb.net/sheildai?...)
+        if (!injected.includes('.mongodb.net/') && !injected.includes('.mongodb.net?')) {
+          injected = injected.replace('.mongodb.net', `.mongodb.net/${dbName}`);
+        } else if (injected.includes('.mongodb.net/?')) {
+          injected = injected.replace('.mongodb.net/?', `.mongodb.net/${dbName}?`);
+        }
+
+        // 2. Ensure authSource=admin is present
+        if (!injected.includes('authSource=')) {
+          const sep = injected.includes('?') ? '&' : '?';
+          injected = `${injected}${sep}authSource=admin`;
+        }
       }
-      return uri;
+      return injected;
     };
 
     await Promise.all([
