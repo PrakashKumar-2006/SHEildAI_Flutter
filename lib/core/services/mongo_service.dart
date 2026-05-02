@@ -198,12 +198,25 @@ class MongoService {
 
   // ─── Domain-Specific Methods ───────────────────────────────────────────────
 
-  Future<Map<String, dynamic>?> getUserByEmail(String email) => findOne('users', where.eq('email', email), useAuth: true);
-  Future<Map<String, dynamic>?> getUser(String email) => getUserByEmail(email);
+  Future<Map<String, dynamic>?> getUserByEmail(String identifier) async {
+    if (!isConnected) await connect();
+    // Try email first
+    final byEmail = await findOne('users', where.eq('email', identifier), useAuth: true);
+    if (byEmail != null) return byEmail;
+    
+    // Try phone second (common in this app)
+    return await findOne('users', where.eq('phone', identifier), useAuth: true);
+  }
 
-  Future<bool> createUser(Map<String, dynamic> userData) => insertOne('users', userData, useAuth: true);
+  Future<Map<String, dynamic>?> getUser(String identifier) => getUserByEmail(identifier);
+
+  Future<bool> createUser(Map<String, dynamic> userData) async {
+    if (!isConnected) await connect();
+    return insertOne('users', userData, useAuth: true);
+  }
 
   Future<bool> updateUser(String email, Map<String, dynamic> updates) async {
+    if (!isConnected) await connect();
     // 1. Update Profile in AUTH DB
     var authModifier = modify;
     bool hasProfileUpdates = false;
@@ -253,14 +266,24 @@ class MongoService {
 
   Future<List<Map<String, dynamic>>> getNearbyUsers(double lat, double lon, double radiusKm) async {
     return executeWithRetry(() async {
-      debugPrint('[MongoService] Fetching nearby users from DATA DB within ${radiusKm}km');
+      debugPrint('[MongoService] Fetching nearby users from DATA DB within ${radiusKm}km at [$lat, $lon]');
       final twentyFourHoursAgo = DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
       
-      return await getCollection('user_locations', useAuth: false)
-          .find(where
-              .near('location', [lon, lat], radiusKm * 1000)
-              .and(where.gt('lastSeen', twentyFourHoursAgo)))
-          .toList();
+      // Use explicit $nearSphere with GeoJSON for maximum reliability
+      final selector = {
+        'location': {
+          '\$nearSphere': {
+            '\$geometry': {
+              'type': 'Point',
+              'coordinates': [lon, lat]
+            },
+            '\$maxDistance': radiusKm * 1000 // meters
+          }
+        },
+        'lastSeen': {'\$gt': twentyFourHoursAgo}
+      };
+
+      return await find('user_locations', where.raw(selector), useAuth: false);
     }, useAuth: false);
   }
 
@@ -400,6 +423,7 @@ class MongoService {
   // ─── Community Methods ───────────────────────────────────────────────────
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
+    if (!isConnected) await connect();
     final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
     final lon = (reportData['lon'] ?? reportData['longitude'] as num).toDouble();
     reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
@@ -408,10 +432,22 @@ class MongoService {
   }
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {
+    if (!isConnected) await connect();
     try {
-      return await find('community_reports', where.near('location', [lon, lat], radiusKm * 1000));
+      final selector = {
+        'location': {
+          '\$nearSphere': {
+            '\$geometry': {
+              'type': 'Point',
+              'coordinates': [lon, lat]
+            },
+            '\$maxDistance': radiusKm * 1000 // meters
+          }
+        }
+      };
+      return await find('community_reports', where.raw(selector));
     } catch (e) {
-      debugPrint('[MongoService] Geo-query fallback triggered');
+      debugPrint('[MongoService] Geo-query for reports failed: $e. Falling back to latest.');
       return find('community_reports', where.sortBy('timestamp', descending: true).limit(50));
     }
   }

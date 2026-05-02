@@ -83,7 +83,10 @@ class SOSRepositoryImpl implements SOSRepository {
 
       // --- OPTIONAL BETTER FEATURE: Send SMS to nearby active users ---
       // We do this in a fire-and-forget manner to not block the main SOS flow
-      _notifyNearbyUsers(latitude, longitude, userName, phone).catchError((e) {
+      final email = _storageService.getString('user_email') ?? '';
+      final identifier = email.isNotEmpty ? email : phone;
+      
+      _notifyNearbyUsers(latitude, longitude, userName, phone, identifier).catchError((e) {
         debugPrint('[SOS] Error notifying nearby users: $e');
       });
 
@@ -93,7 +96,7 @@ class SOSRepositoryImpl implements SOSRepository {
     }
   }
 
-  Future<void> _notifyNearbyUsers(double lat, double lon, String victimName, String victimPhone) async {
+  Future<void> _notifyNearbyUsers(double lat, double lon, String victimName, String victimPhone, String victimIdentifier) async {
     try {
       // 1. Fetch nearby users from MongoDB (within 5km)
       final nearbyUsers = await _mongoService.getNearbyUsers(lat, lon, 5.0);
@@ -101,8 +104,8 @@ class SOSRepositoryImpl implements SOSRepository {
       // 2. Filter out the victim themselves
       final others = nearbyUsers.where((u) {
         final phone = u['phone'] as String? ?? '';
-        final email = u['email'] as String? ?? '';
-        return phone != victimPhone && email != victimPhone;
+        final identifier = u['identifier'] as String? ?? '';
+        return phone != victimPhone && identifier != victimIdentifier;
       }).toList();
 
       if (others.isEmpty) {
