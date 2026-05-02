@@ -32,16 +32,25 @@ const connectDB = async () => {
       return injected;
     };
 
-    await Promise.all([
-      authConnection.openUri(prepareUri(authUri)),
-      dataConnection.openUri(prepareUri(dataUri))
-    ]);
+    const authUri = prepareUri(process.env.MONGO_DB_AUTH_CONNECTION_STRING || process.env.MONGO_URI);
+    const dataUri = prepareUri(process.env.MONGO_DB_DATA_CONNECTION_STRING || process.env.MONGO_URI);
+    const dbName = process.env.MONGO_DB_NAME || 'sheildai';
 
-    console.log(`MongoDB AUTH Connected: ${authConnection.host}`);
-    console.log(`MongoDB DATA Connected: ${dataConnection.host}`);
+    const mask = (uri) => uri ? uri.replace(RegExp(r':.*@'), ':****@') : 'null';
+    console.log(`[DB] Attempting AUTH connection to: ${mask(authUri)}`);
+    console.log(`[DB] Attempting DATA connection to: ${mask(dataUri)}`);
+
+    const options = {
+      dbName: dbName,
+      serverSelectionTimeoutMS: 5000,
+    };
+
+    await Promise.all([
+      authConnection.openUri(authUri, options).then(() => console.log(`MongoDB AUTH Connected: ${authConnection.host}`)),
+      dataConnection.openUri(dataUri, options).then(() => console.log(`MongoDB DATA Connected: ${dataConnection.host}`))
+    ]);
   } catch (error) {
-    console.error(`Database Connection Error: ${error.message}`);
-    // Don't exit process here, let the app handle it or retry
+    console.error(`[DB] Connection Critical Error: ${error.message}`);
   }
 };
 
