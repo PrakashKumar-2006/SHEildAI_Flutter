@@ -6,9 +6,6 @@ const dataConnection = mongoose.createConnection();
 
 const connectDB = async () => {
   try {
-    const authUri = process.env.MONGO_DB_AUTH_CONNECTION_STRING || process.env.MONGO_URI;
-    const dataUri = process.env.MONGO_DB_DATA_CONNECTION_STRING || process.env.MONGO_URI;
-
     // Helper to add DB name and authSource=admin if missing (matches Flutter logic)
     const prepareUri = (uri) => {
       if (!uri) return uri;
@@ -36,7 +33,7 @@ const connectDB = async () => {
     const dataUri = prepareUri(process.env.MONGO_DB_DATA_CONNECTION_STRING || process.env.MONGO_URI);
     const dbName = process.env.MONGO_DB_NAME || 'sheildai';
 
-    const mask = (uri) => uri ? uri.replace(RegExp(r':.*@'), ':****@') : 'null';
+    const mask = (uri) => uri ? uri.replace(/:([^@]+)@/, ':****@') : 'null';
     console.log(`[DB] Attempting AUTH connection to: ${mask(authUri)}`);
     console.log(`[DB] Attempting DATA connection to: ${mask(dataUri)}`);
 
