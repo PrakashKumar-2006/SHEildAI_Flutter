@@ -100,6 +100,7 @@ class SafetyProvider extends ChangeNotifier {
   List<GuardianContact> _trustedContacts = [];
   List<GuardianContact> _inputContacts = [GuardianContact(name: '', phone: '')];
   final List<AlertItem> _alerts = [];
+  AlertItem? _pendingSOSAlert;
   String _readableAddress = 'Scanning location...';
   Timer? _durationTimer;
   DateTime? _lastMLUpdate;
@@ -185,6 +186,7 @@ class SafetyProvider extends ChangeNotifier {
   double? get latitude => _locationProvider?.currentLocation?.latitude;
   double? get longitude => _locationProvider?.currentLocation?.longitude;
   List<ZoneModel> get zones => _zoneService?.zones ?? [];
+  AlertItem? get pendingSOSAlert => _pendingSOSAlert;
 
   SafetyProvider() { 
     _init(); 
@@ -306,13 +308,15 @@ class SafetyProvider extends ChangeNotifier {
         final event = msg['event'];
         final data = msg; // In the new SocketService, msg contains all payload data + event name
         
-        if (event == 'sos_broadcast') {
-          final double victimLat = (data['latitude'] as num).toDouble();
-          final double victimLng = (data['longitude'] as num).toDouble();
-          final String victimName = data['name'] ?? 'Someone';
-          final String sosId = data['sosId'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+        if (event == 'emergency_nearby' || event == 'sos_broadcast') {
+          // Backend payload: { title, body, data: { lat, lng, sos_id } }
+          final payload = data['data'] ?? data;
+          final double victimLat = double.tryParse(payload['lat']?.toString() ?? '') ?? 0.0;
+          final double victimLng = double.tryParse(payload['lng']?.toString() ?? '') ?? 0.0;
+          final String victimName = data['title']?.toString().replaceFirst('🚨 Emergency Alert Nearby', '').trim() ?? 'Someone';
+          final String sosId = payload['sos_id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
           
-          if (latitude != null && longitude != null) {
+          if (victimLat != 0.0 && latitude != null && longitude != null) {
             // Calculate distance using OSRMService's Haversine formula
             final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
             if (distanceMeters <= 5000.0) { // 5km radius
@@ -347,6 +351,14 @@ class SafetyProvider extends ChangeNotifier {
       distanceMeters: distance,
     );
     
+    // Trigger pop-up for active users
+    _pendingSOSAlert = _alerts.first;
+    
+    notifyListeners();
+  }
+
+  void clearPendingSOS() {
+    _pendingSOSAlert = null;
     notifyListeners();
   }
 

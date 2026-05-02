@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/services/location_service.dart';
 import '../../data/repositories/location_repository_impl.dart';
 import '../../domain/models/location_model.dart';
+import '../../../../core/services/storage_service.dart';
+import '../../../../core/services/api_service.dart';
+import '../../../../core/services/mongo_service.dart';
 
 class LocationProvider extends ChangeNotifier {
   final LocationRepositoryImpl _locationRepository;
@@ -12,15 +15,21 @@ class LocationProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isTracking = false;
   String? _errorMessage;
+  final StorageService _storageService;
   StreamSubscription? _streamSubscription;
+  Timer? _heartbeatTimer;
+  DateTime? _lastSyncTime;
 
   LocationProvider({
     required LocationRepositoryImpl locationRepository,
     required LocationService locationService,
+    required StorageService storageService,
   })  : _locationRepository = locationRepository,
-        _locationService = locationService {
+        _locationService = locationService,
+        _storageService = storageService {
     // Auto-start on creation
     _bootLocation();
+    _startHeartbeat();
   }
 
   LocationModel? get currentLocation => _currentLocation;
@@ -98,6 +107,47 @@ class LocationProvider extends ChangeNotifier {
     );
   }
 
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _syncLocation();
+    });
+  }
+
+  Future<void> _syncLocation() async {
+    if (_currentLocation == null) return;
+    
+    final now = DateTime.now();
+    // Only sync if moved or 1 minute passed since last sync
+    if (_lastSyncTime != null && now.difference(_lastSyncTime!).inSeconds < 60) {
+       return;
+    }
+
+    final phone = _storageService.getString('user_phone') ?? '';
+    final email = _storageService.getString('user_email') ?? '';
+    final name = _storageService.getString('user_name') ?? 'User';
+    final identifier = email.isNotEmpty ? email : phone;
+
+    if (identifier.isEmpty) return;
+
+    debugPrint('[LocationProvider] Heartbeat sync for $identifier');
+    
+    // 1. Sync with Render Backend (for real-time & cross-platform)
+    ApiService.syncUserLocation(identifier, _currentLocation!.latitude, _currentLocation!.longitude, name);
+    
+    // 2. Sync with MongoDB Atlas (for geospatial queries like finding nearby users)
+    MongoService().updateUser(identifier, {
+      'name': name,
+      'phone': phone,
+      'location': {
+        'latitude': _currentLocation!.latitude,
+        'longitude': _currentLocation!.longitude,
+      }
+    });
+
+    _lastSyncTime = now;
+  }
+
   Future<void> getCurrentLocation() async {
     _isLoading = true;
     _errorMessage = null;
@@ -173,6 +223,7 @@ class LocationProvider extends ChangeNotifier {
   @override
   void dispose() {
     _streamSubscription?.cancel();
+    _heartbeatTimer?.cancel();
     _locationRepository.dispose();
     super.dispose();
   }

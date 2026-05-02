@@ -114,15 +114,17 @@ class App extends StatelessWidget {
           update: (_, locationService, notificationService, zoneService) =>
               zoneService ?? ZoneService(locationService, notificationService)..initialize(),
         ),
-        ChangeNotifierProxyProvider2<LocationRepositoryImpl, LocationService, LocationProvider>(
+        ChangeNotifierProxyProvider3<LocationRepositoryImpl, LocationService, StorageService, LocationProvider>(
           create: (context) => LocationProvider(
             locationRepository: context.read<LocationRepositoryImpl>(),
             locationService: context.read<LocationService>(),
+            storageService: context.read<StorageService>(),
           ),
-          update: (_, locationRepo, locationService, locationProvider) =>
+          update: (_, locationRepo, locationService, storageService, locationProvider) =>
               locationProvider ?? LocationProvider(
                     locationRepository: locationRepo,
                     locationService: locationService,
+                    storageService: storageService,
                   ),
         ),
         // ProxyProvider4 — SOSProvider now requires ContactRepositoryImpl
