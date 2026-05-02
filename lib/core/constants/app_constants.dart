@@ -11,6 +11,7 @@ class AppConstants {
 
   // SOS Settings
   static const int sosCooldownSeconds = 30;
+  static String get mongoUri => dotenv.env['MONGO_URI'] ?? '';
   static const int sosAutoCancelMinutes = 5;
   static const int locationUpdateIntervalSeconds = 5;
 

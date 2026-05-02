@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { dataConnection } = require('../config/db');
 
 const sosSchema = new mongoose.Schema({
   user_phone: {
@@ -27,4 +26,4 @@ const sosSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-module.exports = dataConnection.model('SOS', sosSchema);
+module.exports = mongoose.model('SOS', sosSchema);

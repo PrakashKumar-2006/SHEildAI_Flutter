@@ -1,156 +1,80 @@
-import 'dart:math';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../../../core/constants/app_constants.dart';
 
-/// Centralized MongoDB Service for SHEildAI
-/// Handles connection management, robust error recovery, and CRUD operations.
 class MongoService {
+  Db? _db;
+  bool _isConnected = false;
+  final int _maxRetries = 3;
+
   static final MongoService _instance = MongoService._internal();
   factory MongoService() => _instance;
-
   MongoService._internal();
 
-  Db? _dataDb;
-  Db? _authDb;
-  bool _dataConnected = false;
-  bool _authConnected = false;
-  int _connectionRetries = 0;
-  static const int _maxRetries = 3;
+  bool get isConnected => _isConnected && _db != null && _db!.state == State.OPEN;
 
-  bool get isConnected => _dataConnected && _dataDb?.state == State.OPEN;
-  bool get isAuthConnected => _authConnected && _authDb?.state == State.OPEN;
-  
-  Db? get database => _dataDb;
-  Db? get authDatabase => _authDb;
-
-  /// Connects to both Data and Auth databases.
   Future<void> connect() async {
-    await Future.wait([
-      _connectData(),
-      _connectAuth(),
-    ]);
-  }
+    if (isConnected) return;
 
-  Future<void> _connectData() async {
-    if (_dataConnected && _dataDb?.state == State.OPEN) return;
     try {
-      var uri = dotenv.env['MONGO_DB_DATA_CONNECTION_STRING']?.trim() ?? 
-                dotenv.env['MONGO_DB_CONNECTION_STRING']?.trim() ?? '';
-      _dataDb = await _establishConnection(uri, 'DATA');
-      _dataConnected = true;
-      await _ensureDataIndexes();
+      final uri = dotenv.env['MONGO_URI'] ?? '';
+      if (uri.isEmpty) throw Exception('MONGO_URI is empty in .env');
+
+      final masked = uri.replaceFirst(RegExp(r':.*@'), ':****@');
+      debugPrint('[MongoService] Connecting to Unified Atlas: $masked');
+
+      _db = await Db.create(uri);
+      await _db!.open();
+      _isConnected = true;
+      
+      await _ensureIndexes();
+      debugPrint('[MongoService] SUCCESS: Unified Database Connected');
     } catch (e) {
-      _dataConnected = false;
-      debugPrint('[MongoService] DATA DB Connection Failed: $e');
-    }
-  }
-
-  Future<void> _connectAuth() async {
-    if (_authConnected && _authDb?.state == State.OPEN) return;
-    try {
-      var uri = dotenv.env['MONGO_DB_AUTH_CONNECTION_STRING']?.trim() ?? '';
-      if (uri.isEmpty) {
-        debugPrint('[MongoService] Auth DB string missing, using DATA DB as fallback for Auth.');
-        _authDb = _dataDb;
-        _authConnected = _dataConnected;
-        return;
-      }
-      _authDb = await _establishConnection(uri, 'AUTH');
-      _authConnected = true;
-      await _ensureAuthIndexes();
-    } catch (e) {
-      _authConnected = false;
-      debugPrint('[MongoService] AUTH DB Connection Failed: $e');
-    }
-  }
-
-  Future<Db> _establishConnection(String uri, String label) async {
-    if (uri.isEmpty) throw Exception('$label Connection string missing');
-    
-    // Add authSource=admin fix
-    if (uri.startsWith('mongodb+srv') && !uri.contains('authSource=')) {
-      final sep = uri.contains('?') ? '&' : '?';
-      uri = '$uri${sep}authSource=admin';
-    }
-
-    // Ensure DB name is injected into URI (Atlas URIs often omit it)
-    final dbName = dotenv.env['MONGO_DB_NAME']?.trim() ?? 'sheildai';
-    if (!uri.contains('/$dbName')) {
-      // Handle mongodb+srv://host/?query or mongodb+srv://host
-      if (uri.contains('.net/')) {
-        final netIndex = uri.indexOf('.net/') + 5;
-        if (uri.length == netIndex || uri[netIndex] == '?') {
-          uri = uri.replaceFirst('.net/', '.net/$dbName');
-        }
-      } else if (uri.contains('mongodb.net')) {
-         // Fallback for URIs without trailing slash
-         uri = uri.replaceFirst('mongodb.net', 'mongodb.net/$dbName');
-      }
-    }
-
-    final masked = uri.replaceFirst(RegExp(r':.*@'), ':****@');
-    debugPrint('[MongoService] Connecting to $label Atlas: $masked');
-    
-    try {
-      final db = await Db.create(uri);
-      await db.open();
-      debugPrint('[MongoService] SUCCESS: $label Connected');
-      return db;
-    } catch (e) {
-      debugPrint('[MongoService] FAILED: $label connection failed: $e');
+      _isConnected = false;
+      debugPrint('[MongoService] FAILED: Connection error: $e');
       rethrow;
     }
   }
 
-  Future<void> _ensureDataIndexes() async {
+  Future<void> _ensureIndexes() async {
     try {
-      final reports = _dataDb!.collection('community_reports');
-      await reports.createIndex(keys: {'location': '2dsphere'}, name: 'location_2dsphere');
+      final users = _db!.collection('users');
+      await users.createIndex(keys: {'email': 1}, unique: true, sparse: true);
+      await users.createIndex(keys: {'phone': 1}, unique: true);
       
-      final locations = _dataDb!.collection('user_locations');
-      await locations.createIndex(keys: {'location': '2dsphere'}, name: 'user_location_2dsphere');
+      final locations = _db!.collection('user_locations');
+      await locations.createIndex(keys: {'location': '2dsphere'});
       await locations.createIndex(keys: {'identifier': 1}, unique: true);
+      await locations.createIndex(keys: {'phone': 1});
+
+      final reports = _db!.collection('community_reports');
+      await reports.createIndex(keys: {'location': '2dsphere'});
       
-      debugPrint('[MongoService] DATA Indexes verified.');
-    } catch (e) {
-      debugPrint('[MongoService] DATA Index verification failed: $e');
-    }
-  }
-
-  Future<void> _ensureAuthIndexes() async {
-    try {
-      final users = _authDb!.collection('users');
-      await users.createIndex(keys: {'email': 1}, unique: true);
-      await users.createIndex(keys: {'phone': 1});
-
-      final contacts = _authDb!.collection('emergency_contacts');
+      final contacts = _db!.collection('emergency_contacts');
       await contacts.createIndex(keys: {'user_email': 1});
-      
-      debugPrint('[MongoService] AUTH Indexes verified.');
+      await contacts.createIndex(keys: {'user_phone': 1});
+
+      debugPrint('[MongoService] All indexes verified.');
     } catch (e) {
-      debugPrint('[MongoService] AUTH Index verification failed: $e');
+      debugPrint('[MongoService] Index verification failed: $e');
     }
   }
 
-  /// Higher-order function to wrap DB operations with auto-reconnect and tracing.
-  Future<T> executeWithRetry<T>(Future<T> Function() operation, {bool useAuth = false}) async {
+  Future<T> executeWithRetry<T>(Future<T> Function() operation) async {
     int attempts = 0;
     while (attempts < _maxRetries) {
       try {
-        if (useAuth) {
-          if (!isAuthConnected) await _connectAuth();
-        } else {
-          if (!isConnected) await _connectData();
-        }
+        if (!isConnected) await connect();
         return await operation();
       } catch (e) {
         attempts++;
         final errorStr = e.toString();
-        debugPrint('[MongoService] Op failed (${useAuth ? "AUTH" : "DATA"}, Attempt $attempts): $errorStr');
+        debugPrint('[MongoService] Op failed (Attempt $attempts): $errorStr');
         
         if (errorStr.contains('No master connection') || errorStr.contains('Connection closed')) {
-          if (useAuth) _authConnected = false; else _dataConnected = false;
+          _isConnected = false;
         }
 
         if (attempts >= _maxRetries) rethrow;
@@ -160,68 +84,61 @@ class MongoService {
     throw Exception('Operation failed after retries');
   }
 
-  DbCollection getCollection(String collectionName, {bool useAuth = false}) {
-    final db = useAuth ? _authDb : _dataDb;
-    if (db == null || db.state != State.OPEN) throw Exception('MongoDB ${useAuth ? "AUTH" : "DATA"} not connected');
-    return db.collection(collectionName);
+  DbCollection getCollection(String collectionName) {
+    if (!isConnected) throw Exception('Database not connected');
+    return _db!.collection(collectionName);
   }
 
   // ─── CRUD Operations ──────────────────────────────────────────────────────
 
-  Future<bool> insertOne(String collection, Map<String, dynamic> document, {bool useAuth = false}) async {
+  Future<bool> insertOne(String collection, Map<String, dynamic> document) async {
     return executeWithRetry(() async {
-      debugPrint('[MongoService] Inserting into $collection (${useAuth ? "AUTH" : "DATA"})');
-      final result = await getCollection(collection, useAuth: useAuth).insertOne(document);
+      final result = await getCollection(collection).insertOne(document);
       return result.isSuccess;
-    }, useAuth: useAuth);
+    });
   }
 
-  Future<bool> updateOne(String collection, SelectorBuilder selector, ModifierBuilder update, {bool upsert = false, bool useAuth = false}) async {
+  Future<bool> updateOne(String collection, SelectorBuilder selector, ModifierBuilder update, {bool upsert = false}) async {
     return executeWithRetry(() async {
-      debugPrint('[MongoService] Updating $collection (${useAuth ? "AUTH" : "DATA"}, upsert: $upsert)');
-      final result = await getCollection(collection, useAuth: useAuth).updateOne(selector, update, upsert: upsert);
+      final result = await getCollection(collection).updateOne(selector, update, upsert: upsert);
       return result.isSuccess;
-    }, useAuth: useAuth);
+    });
   }
 
-  Future<Map<String, dynamic>?> findOne(String collection, SelectorBuilder selector, {bool useAuth = false}) async {
+  Future<Map<String, dynamic>?> findOne(String collection, SelectorBuilder selector) async {
     return executeWithRetry(() async {
-      return await getCollection(collection, useAuth: useAuth).findOne(selector);
-    }, useAuth: useAuth);
+      return await getCollection(collection).findOne(selector);
+    });
   }
 
-  Future<List<Map<String, dynamic>>> find(String collection, SelectorBuilder selector, {bool useAuth = false}) async {
+  Future<List<Map<String, dynamic>>> find(String collection, SelectorBuilder selector) async {
     return executeWithRetry(() async {
-      return await getCollection(collection, useAuth: useAuth).find(selector).toList();
-    }, useAuth: useAuth);
+      return await getCollection(collection).find(selector).toList();
+    });
   }
 
   // ─── Domain-Specific Methods ───────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> getUserByEmail(String identifier) async {
-    if (!isConnected) await connect();
     // Try email first
-    final byEmail = await findOne('users', where.eq('email', identifier), useAuth: true);
+    final byEmail = await findOne('users', where.eq('email', identifier));
     if (byEmail != null) return byEmail;
     
-    // Try phone second (common in this app)
-    return await findOne('users', where.eq('phone', identifier), useAuth: true);
+    // Try phone second
+    return await findOne('users', where.eq('phone', identifier));
   }
 
   Future<Map<String, dynamic>?> getUser(String identifier) => getUserByEmail(identifier);
 
   Future<bool> createUser(Map<String, dynamic> userData) async {
-    if (!isConnected) await connect();
-    return insertOne('users', userData, useAuth: true);
+    return insertOne('users', userData);
   }
 
-  Future<bool> updateUser(String email, Map<String, dynamic> updates) async {
-    if (!isConnected) await connect();
-    // 1. Update Profile in AUTH DB
-    var authModifier = modify;
+  Future<bool> updateUser(String identifier, Map<String, dynamic> updates) async {
+    // 1. Update Profile in Unified DB
+    var modifier = modify;
     bool hasProfileUpdates = false;
     
-    // 2. Prepare Location update for DATA DB if present
     Map<String, dynamic>? locationPoint;
     
     for (var entry in updates.entries) {
@@ -233,32 +150,32 @@ class MongoService {
           'coordinates': [lon, lat]
         };
       } else {
-        authModifier = authModifier.set(entry.key, entry.value);
+        modifier = modifier.set(entry.key, entry.value);
         hasProfileUpdates = true;
       }
     }
 
     if (hasProfileUpdates) {
-      await updateOne('users', where.eq('email', email), authModifier, upsert: true, useAuth: true);
+      // Try to find by email or phone for the update selector
+      await updateOne('users', 
+        where.eq('email', identifier).or(where.eq('phone', identifier)), 
+        modifier, upsert: true);
     }
 
-    // 3. Sync Location to DATA DB (for geospatial SOS alerts)
+    // 2. Sync Location (for geospatial SOS alerts)
     if (locationPoint != null) {
-      var dataModifier = modify
+      var locModifier = modify
           .set('location', locationPoint)
-          .set('lastSeen', DateTime.now().toIso8601String());
+          .set('lastSeen', DateTime.now().toIso8601String())
+          .set('identifier', identifier);
       
-      // Also include name/phone for quick access during SOS alerts
-      if (updates.containsKey('name')) dataModifier = dataModifier.set('name', updates['name']);
-      if (updates.containsKey('phone')) dataModifier = dataModifier.set('phone', updates['phone']);
+      if (updates.containsKey('name')) locModifier = locModifier.set('name', updates['name']);
+      if (updates.containsKey('phone')) locModifier = locModifier.set('phone', updates['phone']);
+      if (updates.containsKey('email')) locModifier = locModifier.set('email', updates['email']);
 
-      await updateOne(
-        'user_locations', 
-        where.eq('identifier', email), 
-        dataModifier,
-        upsert: true,
-        useAuth: false
-      );
+      await updateOne('user_locations', 
+        where.eq('identifier', identifier), 
+        locModifier, upsert: true);
     }
 
     return true;
@@ -266,25 +183,23 @@ class MongoService {
 
   Future<List<Map<String, dynamic>>> getNearbyUsers(double lat, double lon, double radiusKm) async {
     return executeWithRetry(() async {
-      debugPrint('[MongoService] Fetching nearby users from DATA DB within ${radiusKm}km at [$lat, $lon]');
       final twentyFourHoursAgo = DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
       
-      // Use explicit $nearSphere with GeoJSON for maximum reliability
       final selector = {
         'location': {
-          '\$nearSphere': {
-            '\$geometry': {
+          '$nearSphere': {
+            '$geometry': {
               'type': 'Point',
               'coordinates': [lon, lat]
             },
-            '\$maxDistance': radiusKm * 1000 // meters
+            '$maxDistance': radiusKm * 1000
           }
         },
-        'lastSeen': {'\$gt': twentyFourHoursAgo}
+        'lastSeen': {'$gt': twentyFourHoursAgo}
       };
 
-      return await find('user_locations', where.raw(selector), useAuth: false);
-    }, useAuth: false);
+      return await find('user_locations', where.raw(selector));
+    });
   }
 
   // ─── SOS Methods ─────────────────────────────────────────────────────────
@@ -295,10 +210,8 @@ class MongoService {
 
   Future<bool> updateSOSStatus(String sosId, String status) async {
     try {
-      final result = await updateOne('sos_history', where.eq('_id', ObjectId.parse(sosId)), modify.set('status', status));
-      return result;
+      return await updateOne('sos_history', where.eq('_id', ObjectId.parse(sosId)), modify.set('status', status));
     } catch (e) {
-      // Fallback if ID is not a valid ObjectId (legacy)
       return updateOne('sos_history', where.eq('id', sosId), modify.set('status', status));
     }
   }
@@ -311,111 +224,26 @@ class MongoService {
       where.eq('user_email', email).and(where.eq('phone', contactData['phone'])),
       modify.set('name', contactData['name'])
             .set('relationship', contactData['relationship'] ?? 'Guardian')
-            .set('user_email', email),
+            .set('user_email', email)
+            .set('user_phone', contactData['user_phone'] ?? ''),
       upsert: true,
-      useAuth: true,
     );
   }
 
-  Future<List<Map<String, dynamic>>> getContacts(String identifier) => find('emergency_contacts', where.eq('user_email', identifier), useAuth: true);
-
-  Future<List<Map<String, dynamic>>> getContactsForUser({String? email, String? phone}) async {
-    List<Map<String, dynamic>> allContacts = [];
-    Set<String> seenIds = {};
-
-    if (email != null && email.isNotEmpty) {
-      final byEmail = await getContacts(email);
-      for (var c in byEmail) {
-        final id = c['_id']?.toString() ?? c['id']?.toString();
-        if (id != null && !seenIds.contains(id)) {
-          allContacts.add(c);
-          seenIds.add(id);
-        }
-      }
-    }
-
-    if (phone != null && phone.isNotEmpty) {
-      final byPhone = await find('emergency_contacts', where.eq('phone', phone), useAuth: true);
-      for (var c in byPhone) {
-        final id = c['_id']?.toString() ?? c['id']?.toString();
-        if (id != null && !seenIds.contains(id)) {
-          allContacts.add(c);
-          seenIds.add(id);
-        }
-      }
-    }
-    return allContacts;
+  Future<List<Map<String, dynamic>>> getContacts(String identifier) {
+    return find('emergency_contacts', where.eq('user_email', identifier).or(where.eq('user_phone', identifier)));
   }
 
-  Future<List<Map<String, dynamic>>> getContactsByEmail(String email) => getContacts(email);
-
-  Future<bool> updateContact(String contactId, Map<String, dynamic> updates) async {
-    var modifier = modify;
-    for (var entry in updates.entries) {
-      modifier = modifier.set(entry.key, entry.value);
-    }
-    try {
-      return updateOne('emergency_contacts', where.eq('_id', ObjectId.parse(contactId)), modifier, useAuth: true);
-    } catch (e) {
-      return updateOne('emergency_contacts', where.eq('id', contactId), modifier, useAuth: true);
-    }
+  Future<List<Map<String, dynamic>>> getContactsForUser({String? email, String? phone}) async {
+    return find('emergency_contacts', where.eq('user_email', email).or(where.eq('user_phone', phone)));
   }
 
   Future<bool> deleteContact(String contactId) async {
     try {
-      final col = getCollection('emergency_contacts', useAuth: true);
-      final result = await col.deleteOne(where.eq('_id', ObjectId.parse(contactId)));
+      final result = await getCollection('emergency_contacts').deleteOne(where.eq('_id', ObjectId.parse(contactId)));
       return result.isSuccess;
     } catch (e) {
-      final col = getCollection('emergency_contacts', useAuth: true);
-      final result = await col.deleteOne(where.eq('id', contactId));
-      return result.isSuccess;
-    }
-  }
-
-  /// Delete a contact by matching user_email + phone number
-  Future<bool> deleteContactByPhone(String userEmail, String phone) async {
-    try {
-      final col = getCollection('emergency_contacts', useAuth: true);
-      final result = await col.deleteOne(
-        where.eq('user_email', userEmail).and(where.eq('phone', phone)),
-      );
-      debugPrint('[MongoService] deleteContactByPhone($userEmail, $phone): ${result.isSuccess}');
-      return result.isSuccess;
-    } catch (e) {
-      debugPrint('[MongoService] deleteContactByPhone error: $e');
-      return false;
-    }
-  }
-
-
-
-  // ─── Alert Methods ───────────────────────────────────────────────────────
-
-  Future<bool> createAlert(Map<String, dynamic> alertData) => insertOne('alerts', alertData, useAuth: false);
-
-  Future<List<Map<String, dynamic>>> getAlerts(String email) => find('alerts', where.eq('user_email', email), useAuth: false);
-
-  Future<bool> updateAlert(String alertId, Map<String, dynamic> updates) async {
-    var modifier = modify;
-    for (var entry in updates.entries) {
-      modifier = modifier.set(entry.key, entry.value);
-    }
-    try {
-      return updateOne('alerts', where.eq('_id', ObjectId.parse(alertId)), modifier, useAuth: false);
-    } catch (e) {
-      return updateOne('alerts', where.eq('id', alertId), modifier, useAuth: false);
-    }
-  }
-
-  Future<bool> deleteAlert(String alertId) async {
-    try {
-      final col = getCollection('alerts', useAuth: false);
-      final result = await col.deleteOne(where.eq('_id', ObjectId.parse(alertId)));
-      return result.isSuccess;
-    } catch (e) {
-      final col = getCollection('alerts', useAuth: false);
-      final result = await col.deleteOne(where.eq('id', alertId));
+      final result = await getCollection('emergency_contacts').deleteOne(where.eq('id', contactId));
       return result.isSuccess;
     }
   }
@@ -423,7 +251,6 @@ class MongoService {
   // ─── Community Methods ───────────────────────────────────────────────────
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
-    if (!isConnected) await connect();
     final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
     final lon = (reportData['lon'] ?? reportData['longitude'] as num).toDouble();
     reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
@@ -432,30 +259,26 @@ class MongoService {
   }
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {
-    if (!isConnected) await connect();
     try {
       final selector = {
         'location': {
-          '\$nearSphere': {
-            '\$geometry': {
+          '$nearSphere': {
+            '$geometry': {
               'type': 'Point',
               'coordinates': [lon, lat]
             },
-            '\$maxDistance': radiusKm * 1000 // meters
+            '$maxDistance': radiusKm * 1000
           }
         }
       };
       return await find('community_reports', where.raw(selector));
     } catch (e) {
-      debugPrint('[MongoService] Geo-query for reports failed: $e. Falling back to latest.');
       return find('community_reports', where.sortBy('timestamp', descending: true).limit(50));
     }
   }
 
   Future<void> disconnect() async {
-    await _dataDb?.close();
-    await _authDb?.close();
-    _dataConnected = false;
-    _authConnected = false;
+    await _db?.close();
+    _isConnected = false;
   }
 }

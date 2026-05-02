@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'storage_service.dart';
 
 class ApiService {
-  static const String _backendUrl = 'https://sheildai1-o.onrender.com';
+  static const String _backendUrl = 'https://sheildai-flutter.onrender.com';
   static const String _mlApiUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/api';
   static const Duration _timeout = Duration(seconds: 15);
   
