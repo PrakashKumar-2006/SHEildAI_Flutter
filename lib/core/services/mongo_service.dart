@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import '../../../../core/constants/app_constants.dart';
 
 class MongoService {
   Db? _db;
@@ -19,8 +18,28 @@ class MongoService {
     if (isConnected) return;
 
     try {
-      final uri = dotenv.env['MONGO_URI'] ?? '';
+      String uri = dotenv.env['MONGO_URI'] ?? '';
+      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'sheild_ai_flutter';
+      
       if (uri.isEmpty) throw Exception('MONGO_URI is empty in .env');
+
+      // Inject DB Name and authSource if missing (Atlas requirement)
+      if (uri.startsWith('mongodb')) {
+        final queryIndex = uri.indexOf('?');
+        String basePart = queryIndex > -1 ? uri.substring(0, queryIndex) : uri;
+        String queryPart = queryIndex > -1 ? uri.substring(queryIndex) : '';
+
+        if (!basePart.contains('.mongodb.net/')) {
+          basePart = basePart.replaceFirst('.mongodb.net', '.mongodb.net/$dbName');
+        }
+        
+        uri = basePart + queryPart;
+
+        if (!uri.contains('authSource=')) {
+          final sep = uri.contains('?') ? '&' : '?';
+          uri = '$uri${sep}authSource=admin';
+        }
+      }
 
       final masked = uri.replaceFirst(RegExp(r':.*@'), ':****@');
       debugPrint('[MongoService] Connecting to Unified Atlas: $masked');
@@ -30,7 +49,7 @@ class MongoService {
       _isConnected = true;
       
       await _ensureIndexes();
-      debugPrint('[MongoService] SUCCESS: Unified Database Connected');
+      debugPrint('[MongoService] SUCCESS: Unified Database Connected (${_db!.databaseName})');
     } catch (e) {
       _isConnected = false;
       debugPrint('[MongoService] FAILED: Connection error: $e');
@@ -120,11 +139,8 @@ class MongoService {
   // ─── Domain-Specific Methods ───────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> getUserByEmail(String identifier) async {
-    // Try email first
     final byEmail = await findOne('users', where.eq('email', identifier));
     if (byEmail != null) return byEmail;
-    
-    // Try phone second
     return await findOne('users', where.eq('phone', identifier));
   }
 
@@ -135,20 +151,15 @@ class MongoService {
   }
 
   Future<bool> updateUser(String identifier, Map<String, dynamic> updates) async {
-    // 1. Update Profile in Unified DB
     var modifier = modify;
     bool hasProfileUpdates = false;
-    
     Map<String, dynamic>? locationPoint;
     
     for (var entry in updates.entries) {
       if (entry.key == 'location' && entry.value is Map && entry.value.containsKey('latitude')) {
         final lat = (entry.value['latitude'] as num).toDouble();
         final lon = (entry.value['longitude'] as num).toDouble();
-        locationPoint = {
-          'type': 'Point',
-          'coordinates': [lon, lat]
-        };
+        locationPoint = {'type': 'Point', 'coordinates': [lon, lat]};
       } else {
         modifier = modifier.set(entry.key, entry.value);
         hasProfileUpdates = true;
@@ -156,13 +167,9 @@ class MongoService {
     }
 
     if (hasProfileUpdates) {
-      // Try to find by email or phone for the update selector
-      await updateOne('users', 
-        where.eq('email', identifier).or(where.eq('phone', identifier)), 
-        modifier, upsert: true);
+      await updateOne('users', where.eq('email', identifier).or(where.eq('phone', identifier)), modifier, upsert: true);
     }
 
-    // 2. Sync Location (for geospatial SOS alerts)
     if (locationPoint != null) {
       var locModifier = modify
           .set('location', locationPoint)
@@ -173,36 +180,28 @@ class MongoService {
       if (updates.containsKey('phone')) locModifier = locModifier.set('phone', updates['phone']);
       if (updates.containsKey('email')) locModifier = locModifier.set('email', updates['email']);
 
-      await updateOne('user_locations', 
-        where.eq('identifier', identifier), 
-        locModifier, upsert: true);
+      await updateOne('user_locations', where.eq('identifier', identifier), locModifier, upsert: true);
     }
-
     return true;
   }
 
   Future<List<Map<String, dynamic>>> getNearbyUsers(double lat, double lon, double radiusKm) async {
     return executeWithRetry(() async {
       final twentyFourHoursAgo = DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
-      
       final selector = {
         'location': {
-          '$nearSphere': {
-            '$geometry': {
-              'type': 'Point',
-              'coordinates': [lon, lat]
-            },
-            '$maxDistance': radiusKm * 1000
+          '\$nearSphere': {
+            '\$geometry': {'type': 'Point', 'coordinates': [lon, lat]},
+            '\$maxDistance': radiusKm * 1000
           }
         },
-        'lastSeen': {'$gt': twentyFourHoursAgo}
+        'lastSeen': {'\$gt': twentyFourHoursAgo}
       };
-
       return await find('user_locations', where.raw(selector));
     });
   }
 
-  // ─── SOS Methods ─────────────────────────────────────────────────────────
+  // ─── SOS & Community Methods ──────────────────────────────────────────────
 
   Future<bool> createSOS(Map<String, dynamic> sosData) => insertOne('sos_history', sosData);
 
@@ -216,8 +215,6 @@ class MongoService {
     }
   }
 
-  // ─── Contact Methods ─────────────────────────────────────────────────────
-
   Future<bool> addContact(String email, Map<String, dynamic> contactData) async {
     return updateOne(
       'emergency_contacts',
@@ -230,25 +227,7 @@ class MongoService {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getContacts(String identifier) {
-    return find('emergency_contacts', where.eq('user_email', identifier).or(where.eq('user_phone', identifier)));
-  }
-
-  Future<List<Map<String, dynamic>>> getContactsForUser({String? email, String? phone}) async {
-    return find('emergency_contacts', where.eq('user_email', email).or(where.eq('user_phone', phone)));
-  }
-
-  Future<bool> deleteContact(String contactId) async {
-    try {
-      final result = await getCollection('emergency_contacts').deleteOne(where.eq('_id', ObjectId.parse(contactId)));
-      return result.isSuccess;
-    } catch (e) {
-      final result = await getCollection('emergency_contacts').deleteOne(where.eq('id', contactId));
-      return result.isSuccess;
-    }
-  }
-
-  // ─── Community Methods ───────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getContacts(String identifier) => find('emergency_contacts', where.eq('user_email', identifier).or(where.eq('user_phone', identifier)));
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
     final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
@@ -262,12 +241,9 @@ class MongoService {
     try {
       final selector = {
         'location': {
-          '$nearSphere': {
-            '$geometry': {
-              'type': 'Point',
-              'coordinates': [lon, lat]
-            },
-            '$maxDistance': radiusKm * 1000
+          '\$nearSphere': {
+            '\$geometry': {'type': 'Point', 'coordinates': [lon, lat]},
+            '\$maxDistance': radiusKm * 1000
           }
         }
       };

@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI || process.env.MONGO_DB_AUTH_CONNECTION_STRING;
-    const dbName = process.env.MONGO_DB_NAME || 'sheildai';
+    const mongoUri = process.env.MONGO_URI;
+    const dbName = process.env.MONGO_DB_NAME || 'sheild_ai_flutter';
 
     if (!mongoUri) {
       throw new Error('MONGO_URI is not defined in environment variables');
@@ -16,11 +16,16 @@ const connectDB = async () => {
       let basePart = queryIndex > -1 ? injected.substring(0, queryIndex) : injected;
       let queryPart = queryIndex > -1 ? injected.substring(queryIndex) : '';
 
+      // Inject Database Name if missing
       if (!basePart.includes('.mongodb.net/')) {
         basePart = basePart.replace('.mongodb.net', `.mongodb.net/${dbName}`);
-      } else if (basePart.endsWith('.mongodb.net/')) {
-        basePart += dbName;
+      } else {
+        // Handle cases where it might end in / or have a different DB name
+        const lastSlash = basePart.lastIndexOf('/');
+        const hostPart = basePart.substring(0, lastSlash);
+        basePart = `${hostPart}/${dbName}`;
       }
+      
       injected = basePart + queryPart;
 
       if (!injected.includes('authSource=')) {
@@ -40,9 +45,8 @@ const connectDB = async () => {
     await mongoose.connect(injected, options);
     console.log(`[DB] SUCCESS: Unified MongoDB Connected to ${mongoose.connection.host}`);
     
-    // Set up global connection reference for models to use
-    module.exports.authConnection = mongoose.connection;
-    module.exports.dataConnection = mongoose.connection;
+    // Explicitly set the database for the connection
+    console.log(`[DB] Active Database: ${mongoose.connection.name}`);
 
   } catch (error) {
     console.error(`[DB] Connection Critical Error: ${error.message}`);
@@ -51,8 +55,5 @@ const connectDB = async () => {
 };
 
 module.exports = {
-  connectDB,
-  // These will be initialized after connectDB runs
-  authConnection: null,
-  dataConnection: null
+  connectDB
 };
