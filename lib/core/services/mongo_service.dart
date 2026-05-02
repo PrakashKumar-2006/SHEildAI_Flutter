@@ -13,6 +13,10 @@ class MongoService {
   MongoService._internal();
 
   bool get isConnected => _isConnected && _db != null && _db!.state == State.OPEN;
+  
+  // Backward compatibility getters
+  bool get isAuthConnected => isConnected;
+  bool get isDataConnected => isConnected;
 
   Future<void> connect() async {
     if (isConnected) return;
@@ -81,7 +85,7 @@ class MongoService {
     }
   }
 
-  Future<T> executeWithRetry<T>(Future<T> Function() operation) async {
+  Future<T> executeWithRetry<T>(Future<T> Function() operation, {bool useAuth = false}) async {
     int attempts = 0;
     while (attempts < _maxRetries) {
       try {
@@ -103,34 +107,34 @@ class MongoService {
     throw Exception('Operation failed after retries');
   }
 
-  DbCollection getCollection(String collectionName) {
+  DbCollection getCollection(String collectionName, {bool useAuth = false}) {
     if (!isConnected) throw Exception('Database not connected');
     return _db!.collection(collectionName);
   }
 
   // ─── CRUD Operations ──────────────────────────────────────────────────────
 
-  Future<bool> insertOne(String collection, Map<String, dynamic> document) async {
+  Future<bool> insertOne(String collection, Map<String, dynamic> document, {bool useAuth = false}) async {
     return executeWithRetry(() async {
       final result = await getCollection(collection).insertOne(document);
       return result.isSuccess;
     });
   }
 
-  Future<bool> updateOne(String collection, SelectorBuilder selector, ModifierBuilder update, {bool upsert = false}) async {
+  Future<bool> updateOne(String collection, SelectorBuilder selector, ModifierBuilder update, {bool upsert = false, bool useAuth = false}) async {
     return executeWithRetry(() async {
       final result = await getCollection(collection).updateOne(selector, update, upsert: upsert);
       return result.isSuccess;
     });
   }
 
-  Future<Map<String, dynamic>?> findOne(String collection, SelectorBuilder selector) async {
+  Future<Map<String, dynamic>?> findOne(String collection, SelectorBuilder selector, {bool useAuth = false}) async {
     return executeWithRetry(() async {
       return await getCollection(collection).findOne(selector);
     });
   }
 
-  Future<List<Map<String, dynamic>>> find(String collection, SelectorBuilder selector) async {
+  Future<List<Map<String, dynamic>>> find(String collection, SelectorBuilder selector, {bool useAuth = false}) async {
     return executeWithRetry(() async {
       return await getCollection(collection).find(selector).toList();
     });
@@ -228,6 +232,74 @@ class MongoService {
   }
 
   Future<List<Map<String, dynamic>>> getContacts(String identifier) => find('emergency_contacts', where.eq('user_email', identifier).or(where.eq('user_phone', identifier)));
+
+  // Backward compatibility methods for Contacts
+  Future<List<Map<String, dynamic>>> getContactsForUser({String? email, String? phone}) {
+    return find('emergency_contacts', where.eq('user_email', email).or(where.eq('user_phone', phone)));
+  }
+
+  Future<List<Map<String, dynamic>>> getContactsByEmail(String email) => getContacts(email);
+
+  Future<bool> updateContact(String contactId, Map<String, dynamic> updates) async {
+    var modifier = modify;
+    for (var entry in updates.entries) {
+      modifier = modifier.set(entry.key, entry.value);
+    }
+    try {
+      return updateOne('emergency_contacts', where.eq('_id', ObjectId.parse(contactId)), modifier);
+    } catch (e) {
+      return updateOne('emergency_contacts', where.eq('id', contactId), modifier);
+    }
+  }
+
+  Future<bool> deleteContact(String contactId) async {
+    try {
+      final col = getCollection('emergency_contacts');
+      final result = await col.deleteOne(where.eq('_id', ObjectId.parse(contactId)));
+      return result.isSuccess;
+    } catch (e) {
+      final col = getCollection('emergency_contacts');
+      final result = await col.deleteOne(where.eq('id', contactId));
+      return result.isSuccess;
+    }
+  }
+
+  Future<bool> deleteContactByPhone(String userEmail, String phone) async {
+    final col = getCollection('emergency_contacts');
+    final result = await col.deleteOne(where.eq('user_email', userEmail).and(where.eq('phone', phone)));
+    return result.isSuccess;
+  }
+
+  // Backward compatibility methods for Alerts
+  Future<bool> createAlert(Map<String, dynamic> alertData) => insertOne('alerts', alertData);
+  
+  Future<List<Map<String, dynamic>>> getAlerts(String email) => find('alerts', where.eq('user_email', email));
+
+  Future<bool> updateAlert(String alertId, Map<String, dynamic> updates) async {
+    var modifier = modify;
+    for (var entry in updates.entries) {
+      modifier = modifier.set(entry.key, entry.value);
+    }
+    try {
+      return updateOne('alerts', where.eq('_id', ObjectId.parse(alertId)), modifier);
+    } catch (e) {
+      return updateOne('alerts', where.eq('id', alertId), modifier);
+    }
+  }
+
+  Future<bool> deleteAlert(String alertId) async {
+    try {
+      final col = getCollection('alerts');
+      final result = await col.deleteOne(where.eq('_id', ObjectId.parse(alertId)));
+      return result.isSuccess;
+    } catch (e) {
+      final col = getCollection('alerts');
+      final result = await col.deleteOne(where.eq('id', alertId));
+      return result.isSuccess;
+    }
+  }
+
+  // ─── Community Methods ───────────────────────────────────────────────────
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
     final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
