@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { authConnection } = require('../config/db');
 
 const contactSchema = new mongoose.Schema({
   user_phone: {
@@ -27,4 +28,4 @@ const contactSchema = new mongoose.Schema({
 // Ensure a user doesn't have the same contact multiple times
 contactSchema.index({ user_phone: 1, phone: 1 }, { unique: true });
 
-module.exports = mongoose.model('Contact', contactSchema);
+module.exports = authConnection.model('Contact', contactSchema);
