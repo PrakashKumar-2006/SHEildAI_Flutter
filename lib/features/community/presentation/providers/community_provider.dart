@@ -125,7 +125,12 @@ class CommunityProvider extends ChangeNotifier {
           notifyListeners();
         },
         (reports) {
-          _reports = reports;
+          // Filter: Only show reports from the last 2 hours to keep feed fresh
+          final now = DateTime.now();
+          _reports = reports.where((r) {
+            return now.difference(r.timestamp).inHours < 2;
+          }).toList();
+          
           _isLoading = false;
           notifyListeners();
         },

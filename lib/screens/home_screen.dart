@@ -41,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Circle(
           circleId: CircleId(zone.id),
           center: LatLng(zone.center.latitude, zone.center.longitude),
-          radius: zone.radius * 1000, // Match logical radius in meters
+          radius: zone.radius * 1000,
           fillColor: color.withOpacity(0.3),
           strokeColor: color,
           strokeWidth: 2,
@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _updateCircles(safety);
     
-    // Add markers from community reports
+    // Add markers - ONLY user position as requested. Community reports are hidden.
     final Set<Marker> markers = {
       Marker(
         markerId: const MarkerId('current_pos'),
@@ -74,24 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     };
     
-    for (var report in community.reports) {
-      markers.add(
-        Marker(
-          markerId: MarkerId(report.id),
-          position: LatLng(report.latitude, report.longitude),
-          infoWindow: InfoWindow(title: report.incidentType, snippet: report.description),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            report.severity > 7 ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange
-          ),
-        ),
-      );
-    }
-
-    // Animate map to actual user location when it first becomes available
     if (_mapController != null && safety.latitude != null && safety.longitude != null) {
       final targetLat = safety.latitude!;
       final targetLon = safety.longitude!;
-      // Only animate if we're still on the default Indore position or far away
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLng(LatLng(targetLat, targetLon)),
@@ -106,32 +91,24 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Column(
               children: [
-                // Header
                 _buildHeader(theme, lang, context),
-                // Content
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
                       children: [
                         const SizedBox(height: 8),
-                        // Safety Score Circle
                         _buildSafetyScoreCard(riskLabel, riskScore, riskColor, isDark, theme, lang, safety),
                         const CrowdRiskIndicator(),
                         const SizedBox(height: 20),
-                        // Safety Insights
                         _buildSafetyInsightsCard(theme, isDark, safety),
                         const SizedBox(height: 20),
-                        // Risk Alerts (New Dynamic Field)
                         if (alerts.isNotEmpty) _buildRiskAlertsList(theme, alerts, isDark),
                         const SizedBox(height: 14),
-                        // Search Bar → Routes
                         _buildSearchCard(theme, lang, context),
                         const SizedBox(height: 14),
-                        // Voice Detection Toggle
                         _buildVoiceCard(theme, lang, safety, isDark),
                         const SizedBox(height: 14),
-                        // Map
                         _buildMapCard(theme, safety, markers),
                         const SizedBox(height: 40),
                       ],
@@ -236,7 +213,6 @@ class _HomeScreenState extends State<HomeScreen> {
       bool isDark, ThemeProvider theme, LanguageProvider lang, SafetyProvider safety) {
     return Column(
       children: [
-        // Triple circle
         Container(
           width: 170,
           height: 170,
@@ -312,7 +288,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        // Status badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
@@ -405,7 +380,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 10),
         
-        // 3-Hour Forecast
         if (safety.forecast == null)
           Container(
             padding: const EdgeInsets.all(16),
@@ -466,7 +440,6 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
         ],
 
-        // Best Travel Time
         if (travelTime != null && (travelTime['safest_hours'] as List?)?.isNotEmpty == true) ...[
           Container(
             padding: const EdgeInsets.all(16),
@@ -509,8 +482,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 12),
         ],
-
-        // Feature access enabled for testing
       ],
     );
   }
@@ -557,10 +528,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            // Navigate to routes by pushing named route
-            Navigator.of(context).pushNamed('/routes');
-          },
+          onTap: () => Navigator.of(context).pushNamed('/routes'),
           borderRadius: BorderRadius.circular(14),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
