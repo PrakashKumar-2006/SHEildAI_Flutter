@@ -1,20 +1,59 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/repositories/community_repository_impl.dart';
 import '../../domain/models/community_report_model.dart';
+import '../../../../core/services/socket_service.dart';
 
 class CommunityProvider extends ChangeNotifier {
   final CommunityRepositoryImpl _communityRepository;
+  final SocketService _socketService;
 
   List<CommunityReportModel> _reports = [];
   bool _isLoading = false;
   String? _errorMessage;
+  StreamSubscription? _socketSub;
 
-  CommunityProvider({required CommunityRepositoryImpl communityRepository})
-      : _communityRepository = communityRepository;
+  CommunityProvider({
+    required CommunityRepositoryImpl communityRepository,
+    required SocketService socketService,
+  })  : _communityRepository = communityRepository,
+        _socketService = socketService {
+    _listenToSocket();
+  }
 
   List<CommunityReportModel> get reports => _reports;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  void _listenToSocket() {
+    _socketSub?.cancel();
+    _socketSub = _socketService.messageStream.listen((data) {
+      if (data['event'] == 'new_community_report') {
+        _handleRealtimeReport(data);
+      }
+    });
+  }
+
+  void _handleRealtimeReport(Map<String, dynamic> data) {
+    try {
+      final report = CommunityReportModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        latitude: (data['latitude'] as num).toDouble(),
+        longitude: (data['longitude'] as num).toDouble(),
+        incidentType: data['incidentType'] ?? 'Unknown',
+        description: data['description'] ?? '',
+        severity: (data['severity'] as num?)?.toInt() ?? 1,
+        anonymous: true, // Real-time reports from socket are forced anonymous
+        timestamp: DateTime.now(),
+      );
+
+      _reports.insert(0, report);
+      if (_reports.length > 100) _reports.removeLast();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[CommunityProvider] Error handling realtime report: $e');
+    }
+  }
 
   Future<bool> submitReport({
     required String phone,
@@ -48,7 +87,8 @@ class CommunityProvider extends ChangeNotifier {
           return false;
         },
         (report) {
-          _reports.insert(0, report);
+          // Local addition (the socket listener will also pick up its own but we can filter or let it be)
+          // To avoid duplicates, we can check if ID exists or just rely on socket for others
           _isLoading = false;
           notifyListeners();
           return true;
@@ -97,8 +137,9 @@ class CommunityProvider extends ChangeNotifier {
     }
   }
 
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
+  @override
+  void dispose() {
+    _socketSub?.cancel();
+    super.dispose();
   }
 }

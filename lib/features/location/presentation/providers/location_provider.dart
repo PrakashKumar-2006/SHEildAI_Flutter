@@ -6,6 +6,7 @@ import '../../domain/models/location_model.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/api_service.dart';
 import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/socket_service.dart';
 
 class LocationProvider extends ChangeNotifier {
   final LocationRepositoryImpl _locationRepository;
@@ -27,7 +28,6 @@ class LocationProvider extends ChangeNotifier {
   })  : _locationRepository = locationRepository,
         _locationService = locationService,
         _storageService = storageService {
-    // Auto-start on creation
     _bootLocation();
     _startHeartbeat();
   }
@@ -37,25 +37,19 @@ class LocationProvider extends ChangeNotifier {
   bool get isTracking => _isTracking;
   String? get errorMessage => _errorMessage;
 
-  /// Called automatically at app boot.
-  /// 1. Immediately tries to get a fast position (last known or GPS race)
-  /// 2. Starts a continuous stream for live updates
   Future<void> _bootLocation() async {
-    debugPrint('[LocationProvider] Booting location...');
     _isLoading = true;
     notifyListeners();
 
-    // Step 1: get a quick fix
     try {
       final perm = await _locationService.requestPermission();
       if (!perm) {
-        _errorMessage = 'Location permission denied. Please grant it in settings.';
+        _errorMessage = 'Location permission denied.';
         _isLoading = false;
         notifyListeners();
         return;
       }
 
-      // Fire off immediate fix (doesn't block stream start)
       _locationService.getCurrentPosition().then((position) {
         _currentLocation = LocationModel(
           latitude: position.latitude,
@@ -64,19 +58,12 @@ class LocationProvider extends ChangeNotifier {
           timestamp: position.timestamp,
         );
         _isLoading = false;
-        debugPrint('[LocationProvider] Got initial fix: ${position.latitude}, ${position.longitude}');
-        notifyListeners();
-      }).catchError((e) {
-        debugPrint('[LocationProvider] Initial fix failed: $e');
-        _isLoading = false;
-        _errorMessage = 'Could not get GPS fix. Ensure GPS is enabled.';
         notifyListeners();
       });
     } catch (e) {
       debugPrint('[LocationProvider] Permission error: $e');
     }
 
-    // Step 2: start continuous stream for live updates
     _startStream();
   }
 
@@ -96,11 +83,9 @@ class LocationProvider extends ChangeNotifier {
         );
         _isLoading = false;
         _errorMessage = null;
-        debugPrint('[LocationProvider] Stream update: ${position.latitude}, ${position.longitude}');
         notifyListeners();
       },
       onError: (e) {
-        debugPrint('[LocationProvider] Stream error: $e');
         _errorMessage = e.toString();
         notifyListeners();
       },
@@ -118,8 +103,7 @@ class LocationProvider extends ChangeNotifier {
     if (_currentLocation == null) return;
     
     final now = DateTime.now();
-    // Only sync if moved or 1 minute passed since last sync
-    if (_lastSyncTime != null && now.difference(_lastSyncTime!).inSeconds < 60) {
+    if (_lastSyncTime != null && now.difference(_lastSyncTime!).inSeconds < 30) {
        return;
     }
 
@@ -130,12 +114,10 @@ class LocationProvider extends ChangeNotifier {
 
     if (identifier.isEmpty) return;
 
-    debugPrint('[LocationProvider] Heartbeat sync for $identifier');
-    
-    // 1. Sync with Render Backend (for real-time & cross-platform)
+    // 1. Sync with Render Backend
     ApiService.syncUserLocation(identifier, _currentLocation!.latitude, _currentLocation!.longitude, name);
     
-    // 2. Sync with MongoDB Atlas (for geospatial queries like finding nearby users)
+    // 2. Sync with MongoDB Atlas
     MongoService().updateUser(identifier, {
       'name': name,
       'phone': phone,
@@ -144,6 +126,9 @@ class LocationProvider extends ChangeNotifier {
         'longitude': _currentLocation!.longitude,
       }
     });
+
+    // 3. Sync with Real-time Socket (for Sentinel Alerts)
+    SocketService().emitLocationUpdate(_currentLocation!.latitude, _currentLocation!.longitude);
 
     _lastSyncTime = now;
   }
@@ -176,14 +161,11 @@ class LocationProvider extends ChangeNotifier {
 
   Future<void> startTracking({bool background = false}) async {
     if (_isTracking && !background) return;
-
     _locationService.stopLocationUpdates();
     _streamSubscription?.cancel();
     _isTracking = false;
-
     _locationService.startLocationUpdates(background: background);
     _isTracking = true;
-
     _streamSubscription = _locationService.positionStream.listen(
       (position) {
         _currentLocation = LocationModel(
@@ -194,9 +176,6 @@ class LocationProvider extends ChangeNotifier {
         );
         _isLoading = false;
         notifyListeners();
-      },
-      onError: (e) {
-        debugPrint('[LocationProvider] Tracking error: $e');
       },
     );
     notifyListeners();
@@ -209,22 +188,10 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> hasPermission() async =>
-      await _locationService.hasPermission();
-
-  Future<bool> requestPermission() async =>
-      await _locationService.requestPermission();
-
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
-  }
-
   @override
   void dispose() {
     _streamSubscription?.cancel();
     _heartbeatTimer?.cancel();
-    _locationRepository.dispose();
     super.dispose();
   }
 }
