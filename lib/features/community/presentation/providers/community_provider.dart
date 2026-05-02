@@ -38,12 +38,12 @@ class CommunityProvider extends ChangeNotifier {
     try {
       final report = CommunityReportModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        latitude: (data['latitude'] as num).toDouble(),
-        longitude: (data['longitude'] as num).toDouble(),
-        incidentType: data['incidentType'] ?? 'Unknown',
+        latitude: (data['latitude'] ?? data['lat'] as num).toDouble(),
+        longitude: (data['longitude'] ?? data['lon'] as num).toDouble(),
+        incidentType: data['incidentType'] ?? data['type'] ?? 'Unknown',
         description: data['description'] ?? '',
-        severity: (data['severity'] as num?)?.toInt() ?? 1,
-        anonymous: true, // Real-time reports from socket are forced anonymous
+        severity: (data['severity'] as num?)?.toInt() ?? 5,
+        anonymous: true,
         timestamp: DateTime.now(),
       );
 
@@ -125,10 +125,10 @@ class CommunityProvider extends ChangeNotifier {
           notifyListeners();
         },
         (reports) {
-          // Filter: Only show reports from the last 2 hours to keep feed fresh
+          // Filter: Only show reports from the last 24 hours to keep feed relevant but visible
           final now = DateTime.now();
           _reports = reports.where((r) {
-            return now.difference(r.timestamp).inHours < 2;
+            return now.difference(r.timestamp).inHours < 24;
           }).toList();
           
           _isLoading = false;

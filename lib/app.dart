@@ -167,7 +167,7 @@ class App extends StatelessWidget {
           create: (context) => CommunityProvider(
             communityRepository: context.read<CommunityRepositoryImpl>(),
             socketService: context.read<SocketService>(),
-          )..loadNearbyReports(latitude: 22.7196, longitude: 75.8577),
+          ),
           update: (_, socket, provider) => provider ?? CommunityProvider(
             communityRepository: CommunityRepositoryImpl(),
             socketService: socket,
