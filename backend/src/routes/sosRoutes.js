@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { createSOS, getSOSHistory, updateSOSStatus } = require('../controllers/sosController');
-const { protect } = require('../middleware/auth');
+const { triggerSOS, updateStatus } = require('../controllers/sosController');
+// Note: Middleware protection is optional for public SOS triggers but recommended
+// const { protect } = require('../middleware/auth');
 
-router.post('/', protect, createSOS);
-router.get('/history', protect, getSOSHistory);
-router.put('/:id/status', protect, updateSOSStatus);
+router.post('/trigger', triggerSOS);
+router.put('/:sosId/status', updateStatus);
 
 module.exports = router;
