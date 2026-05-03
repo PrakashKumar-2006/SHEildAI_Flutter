@@ -97,6 +97,35 @@ class NotificationService {
     await _notificationsPlugin.cancelAll();
   }
 
+  Future<void> showZoneEntryAlert({
+    required String zoneName,
+    required String message,
+  }) async {
+    await showNotification(
+      id: 200,
+      title: '🚨 ZONE ENTRY ALERT',
+      body: message,
+      payload: 'zone_alert',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'zone_alert_channel',
+          'Zone Alerts',
+          channelDescription: 'High-priority alerts for risky zones',
+          importance: Importance.max,
+          priority: Priority.high,
+          fullScreenIntent: true,
+          enableVibration: true,
+          playSound: true,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+    );
+  }
+
   Future<void> showCommunitySOSNotification({
     required String name,
     required double distanceMeters,

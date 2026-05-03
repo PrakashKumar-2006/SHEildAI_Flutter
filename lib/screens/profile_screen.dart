@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../core/app_theme.dart';
 import '../features/auth/presentation/providers/auth_provider.dart';
 import 'personal_info_screen.dart';
 import 'sos_contacts_screen.dart';
 import 'language_screen.dart';
 import 'notifications_settings_screen.dart';
 import 'paywall_screen.dart';
-import '../core/services/storage_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -130,10 +128,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           icon: Icons.shield_rounded,
                           iconBg: const Color(0xFFE4F8F4),
                           iconColor: const Color(0xFF009688),
-                          label: 'System Permissions',
-                          onTap: () {
-                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Manage Permissions')));
-                          },
+                          label: lang.t('system_permissions'),
+                          onTap: () => Navigator.pushNamed(context, '/system_permissions'),
                           theme: theme,
                         ),
                       ],
