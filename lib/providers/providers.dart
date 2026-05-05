@@ -102,6 +102,7 @@ class SafetyProvider extends ChangeNotifier {
   final List<AlertItem> _alerts = [];
   String _readableAddress = 'Scanning location...';
   Timer? _durationTimer;
+  StreamSubscription<Map<String, dynamic>>? _messageSubscription;
   DateTime? _lastMLUpdate;
   
   final Battery _battery = Battery();
@@ -164,6 +165,11 @@ class SafetyProvider extends ChangeNotifier {
     return mlScore > zoneScore ? mlScore : zoneScore;
   }
 
+  // Exposed factors for UI breakdown
+  int get mlRiskScore => (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
+  int get zoneRiskScore => (_zoneService?.currentZone?.riskScore ?? 0).toInt();
+  String get currentZoneName => _zoneService?.currentZone?.name ?? 'Outside Zone';
+
   String get riskColor {
     if (!(_zoneService?.isDataAvailable ?? false)) return '#94A3B8'; // Slate/Grey for N/A
     
@@ -219,8 +225,6 @@ class SafetyProvider extends ChangeNotifier {
 
   void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community) {
     // Re-subscribe only when the SOSProvider instance actually changes.
-    // ProxyProvider may rebuild SafetyProvider with the same instance, so
-    // we guard against redundant remove+add to keep the listener list clean.
     if (_sosProvider != sos) {
       _sosProvider?.removeListener(_onSOSStateChanged);
       _sosProvider = sos;
@@ -232,8 +236,38 @@ class SafetyProvider extends ChangeNotifier {
     _zoneService = zone;
     _voiceProvider = voice;
     _communityProvider = community;
-
+    _syncCommunityReports();
     _syncWithLocation();
+  }
+
+  void _syncCommunityReports() {
+    if (_communityProvider == null || _communityProvider!.reports.isEmpty) return;
+
+    bool changed = false;
+    for (var report in _communityProvider!.reports) {
+      final alertId = 'report_${report.id}';
+      // Check if this report already exists in our alerts list
+      if (!_alerts.any((a) => a.id == alertId)) {
+        _alerts.add(AlertItem(
+          id: alertId,
+          type: 'REPORT',
+          title: report.incidentType,
+          body: report.description,
+          timestamp: report.timestamp,
+          riskLevel: report.severity > 7 ? 'HIGH' : report.severity > 4 ? 'MEDIUM' : 'LOW',
+          latitude: report.latitude,
+          longitude: report.longitude,
+        ));
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      // Sort alerts by timestamp descending to keep newest at top
+      _alerts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      // No need to call notifyListeners here as we are inside the update() 
+      // which is called by ProxyProvider, which will notify its listeners anyway.
+    }
   }
 
   void _syncWithLocation() {
@@ -301,10 +335,10 @@ class SafetyProvider extends ChangeNotifier {
   }
 
   void _listenToSocket() {
-    SocketService().messageStream.listen((msg) {
+    _messageSubscription = SocketService().messageStream.listen((data) {
+      final event = data['event'];
+      debugPrint('[SafetyProvider] Received socket event: $event');
       try {
-        final event = msg['event'];
-        final data = msg; // In the new SocketService, msg contains all payload data + event name
         
         if (event == 'sos_broadcast') {
           final double victimLat = (data['latitude'] as num).toDouble();
@@ -313,10 +347,23 @@ class SafetyProvider extends ChangeNotifier {
           final String sosId = data['sosId'] ?? DateTime.now().millisecondsSinceEpoch.toString();
           
           if (latitude != null && longitude != null) {
-            // Calculate distance using OSRMService's Haversine formula
             final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
             if (distanceMeters <= 5000.0) { // 5km radius
               _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
+            }
+          }
+        } else if (event == 'community_report') {
+          // Handle real-time community report from another user
+          final double reportLat = (data['latitude'] as num).toDouble();
+          final double reportLng = (data['longitude'] as num).toDouble();
+          final String type = data['incidentType'] ?? 'Alert';
+          final String desc = data['description'] ?? '';
+          final int sev = (data['severity'] as num?)?.toInt() ?? 5;
+          
+          if (latitude != null && longitude != null) {
+            final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, reportLat, reportLng);
+            if (distanceMeters <= 5000.0) { // 5km radius
+              _addIncomingCommunityReport(type, desc, reportLat, reportLng, sev, distanceMeters);
             }
           }
         }
@@ -346,6 +393,23 @@ class SafetyProvider extends ChangeNotifier {
       name: name,
       distanceMeters: distance,
     );
+    
+    notifyListeners();
+  }
+
+  void _addIncomingCommunityReport(String type, String desc, double lat, double lng, int severity, double distance) {
+    final reportId = 'comm_report_${DateTime.now().millisecondsSinceEpoch}';
+    
+    _alerts.insert(0, AlertItem(
+      id: reportId,
+      type: 'REPORT',
+      title: 'Community Alert: $type',
+      body: '$desc (${(distance / 1000).toStringAsFixed(1)}km away)',
+      timestamp: DateTime.now(),
+      riskLevel: severity > 7 ? 'HIGH' : severity > 4 ? 'MEDIUM' : 'LOW',
+      latitude: lat,
+      longitude: lng,
+    ));
     
     notifyListeners();
   }
@@ -615,7 +679,10 @@ class SafetyProvider extends ChangeNotifier {
   
   Future<bool> submitCommunityReport(String type, String desc, int severity) async {
     try {
-      if (latitude == null || longitude == null) return false;
+      if (latitude == null || longitude == null) {
+        debugPrint('[Safety] Community report failed: Location is null');
+        return false;
+      }
       
       final success = await _communityProvider?.submitReport(
         phone: _userProfile.phone,
@@ -627,20 +694,12 @@ class SafetyProvider extends ChangeNotifier {
       );
       
       if (success == true) {
-        _alerts.insert(0, AlertItem(
-          id: DateTime.now().millisecondsSinceEpoch.toString(), 
-          type: 'REPORT', 
-          title: type, 
-          body: desc, 
-          timestamp: DateTime.now(), 
-          riskLevel: severity > 7 ? 'HIGH' : severity > 4 ? 'MEDIUM' : 'LOW'
-        ));
         notifyListeners();
         return true;
       }
       return false;
     } catch (e) {
-      debugPrint('[Safety] Community report error: $e');
+      debugPrint('[Safety] Community report exception: $e');
       return false;
     }
   }

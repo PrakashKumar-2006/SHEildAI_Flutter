@@ -12,7 +12,16 @@ import '../../../../core/models/zone_model.dart';
 import 'dart:ui' as ui;
 
 class RoutesScreen extends StatefulWidget {
-  const RoutesScreen({super.key});
+  final double? initialDestLat;
+  final double? initialDestLon;
+  final String? initialDestName;
+
+  const RoutesScreen({
+    super.key,
+    this.initialDestLat,
+    this.initialDestLon,
+    this.initialDestName,
+  });
 
   @override
   State<RoutesScreen> createState() => _RoutesScreenState();
@@ -28,6 +37,34 @@ class _RoutesScreenState extends State<RoutesScreen> {
   void initState() {
     super.initState();
     _createDangerIcon();
+    
+    // Auto-search if initial coordinates provided
+    if (widget.initialDestLat != null && widget.initialDestLon != null) {
+      _destinationController.text = widget.initialDestName ?? 'Alert Location';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _triggerDirectSearch();
+      });
+    }
+  }
+
+  void _triggerDirectSearch() async {
+    final routesProvider = context.read<RoutesProvider>();
+    final loc = context.read<LocationProvider>().currentLocation;
+    if (loc == null) return;
+
+    await routesProvider.calculateRoutesFromCoords(
+      loc.latitude, 
+      loc.longitude, 
+      widget.initialDestLat!, 
+      widget.initialDestLon!,
+      hour: DateTime.now().hour,
+      month: DateTime.now().month,
+      zones: context.read<ZoneService>().zones,
+    );
+
+    if (routesProvider.destination != null && _mapController != null) {
+      _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(routesProvider.destination!.latitude, routesProvider.destination!.longitude)));
+    }
   }
 
   Future<void> _createDangerIcon() async {
@@ -361,12 +398,6 @@ class _RoutesScreenState extends State<RoutesScreen> {
               icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
               infoWindow: const InfoWindow(title: 'Destination'),
             ),
-          Marker(
-            markerId: const MarkerId('origin'),
-            position: LatLng(currentLat, currentLng),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-            infoWindow: const InfoWindow(title: 'Your Location'),
-          ),
           // Add risk markers for the selected route
           ..._buildRiskMarkers(routesProvider.selectedRoute, zones),
         },

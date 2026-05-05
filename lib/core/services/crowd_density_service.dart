@@ -175,10 +175,17 @@ class CrowdDensityService {
       return _calculateRiskScore(elements, lat, lon);
     } catch (e) {
       debugPrint('[CrowdDensity] All OSM servers failed: $e');
-      // Graceful degradation — return a neutral "data limited" result
-      return const CrowdDensityResult(
-        riskScore: 18,
-        densityLevel: 'Safe (Data Limited)',
+      // Graceful degradation: align with the core philosophy that 'unknown/isolated = risky'.
+      final timeMultiplier = _timeRiskMultiplier();
+      final double fallbackRisk = min(100.0, 50.0 * timeMultiplier); // Same as Isolated logic
+      final hour = _localHour();
+      final level = (hour > 20 || hour < 5.0) 
+          ? 'Isolated (Offline Data)' 
+          : 'Quiet Area (Offline Data)';
+
+      return CrowdDensityResult(
+        riskScore: fallbackRisk,
+        densityLevel: level,
         poiCount: 0,
         detectedPlaces: [],
         errorMessage: 'OSM unavailable',

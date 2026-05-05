@@ -64,15 +64,48 @@ class RoutesProvider extends ChangeNotifier {
         return false;
       }
 
-      _destination = destCoords;
+      return calculateRoutesFromCoords(
+        originLat, 
+        originLon, 
+        destCoords.latitude, 
+        destCoords.longitude,
+        hour: hour,
+        month: month,
+        isWeekend: isWeekend,
+        zones: zones,
+      );
+    } catch (e) {
+      _errorMessage = 'Error calculating routes: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> calculateRoutesFromCoords(
+    double originLat,
+    double originLon,
+    double destLat,
+    double destLon, {
+    int hour = 0,
+    int month = 1,
+    int isWeekend = 0,
+    List<ZoneModel>? zones,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      _destination = LatLng(destLat, destLon);
 
       // Step 2: Get routes from OSRM
       final routes = await OSRMService.getRoutes(
         originLat,
         originLon,
-        destCoords.latitude,
-        destCoords.longitude,
-        alternatives: 4, // Increased to 4
+        destLat,
+        destLon,
+        alternatives: 4,
       );
 
       if (routes.isEmpty) {
@@ -92,8 +125,8 @@ class RoutesProvider extends ChangeNotifier {
         final mlResult = await _mlService.getSafeRouteV2(
           originLat: originLat,
           originLon: originLon,
-          destLat: destCoords.latitude,
-          destLon: destCoords.longitude,
+          destLat: destLat,
+          destLon: destLon,
           hour: hour,
           month: month,
           isWeekend: isWeekend,
@@ -106,7 +139,6 @@ class RoutesProvider extends ChangeNotifier {
           
           List<OSRMRoute> rankedRoutes = [];
           for (var item in rankedIndices) {
-            // ranked_routes might be list of indices or list of maps with index
             int idx = -1;
             if (item is int) {
               idx = item;
@@ -115,7 +147,6 @@ class RoutesProvider extends ChangeNotifier {
 
             if (idx >= 0 && idx < routes.length) {
               final route = routes[idx];
-              // Attach risk score to the route if available
               if (riskScores != null && riskScores.containsKey(idx.toString())) {
                 route.riskScore = (riskScores[idx.toString()] as num).toDouble();
               }
@@ -124,8 +155,6 @@ class RoutesProvider extends ChangeNotifier {
           }
           
           if (rankedRoutes.isNotEmpty) {
-            // Priority 1: Risk Score (Lowest first) - Always suggest the safest path first
-            // Priority 2: Distance (only if risk scores are identical)
             rankedRoutes.sort((a, b) {
               int riskCmp = a.riskScore.compareTo(b.riskScore);
               if (riskCmp != 0) return riskCmp;
@@ -143,7 +172,7 @@ class RoutesProvider extends ChangeNotifier {
         _routes = routes;
       }
 
-      // Fallback: If ML failed or all routes have 0 risk, use local zones to calculate risk
+      // Fallback: If ML failed or all routes have 0 risk, use local zones
       if (zones != null && zones.isNotEmpty && _routes.every((r) => r.riskScore == 0)) {
         debugPrint('[Routes] Using local zones for fallback risk calculation');
         for (final route in _routes) {
@@ -163,7 +192,6 @@ class RoutesProvider extends ChangeNotifier {
           route.riskScore = pointsChecked > 0 ? totalRisk / pointsChecked : 0;
         }
         
-        // Re-sort after fallback calculation
         _routes.sort((a, b) {
           int riskCmp = a.riskScore.compareTo(b.riskScore);
           if (riskCmp != 0) return riskCmp;

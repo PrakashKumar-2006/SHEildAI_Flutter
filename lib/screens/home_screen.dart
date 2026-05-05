@@ -65,27 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _updateCircles(safety);
     
-    // Add markers from community reports
-    final Set<Marker> markers = {
-      Marker(
-        markerId: const MarkerId('current_pos'),
-        position: LatLng(safety.latitude ?? 22.7196, safety.longitude ?? 75.8577),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-      ),
-    };
-    
-    for (var report in community.reports) {
-      markers.add(
-        Marker(
-          markerId: MarkerId(report.id),
-          position: LatLng(report.latitude, report.longitude),
-          infoWindow: InfoWindow(title: report.incidentType, snippet: report.description),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            report.severity > 7 ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange
-          ),
-        ),
-      );
-    }
+    final Set<Marker> markers = {};
 
     // Animate map to actual user location when it first becomes available
     if (_mapController != null && safety.latitude != null && safety.longitude != null) {
@@ -237,9 +217,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         // Triple circle
-        Container(
-          width: 170,
-          height: 170,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _showRiskBreakdown(context, safety, theme, riskColor, isDark),
+          child: Container(
+            width: 170,
+            height: 170,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: riskColor.withOpacity(0.1),
@@ -310,6 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
+        ),
         ),
         const SizedBox(height: 16),
         // Status badge
@@ -678,6 +662,177 @@ class _HomeScreenState extends State<HomeScreen> {
         circles: _circles,
         markers: markers,
       ),
+    );
+  }
+
+  void _showRiskBreakdown(BuildContext context, SafetyProvider safety, ThemeProvider theme, Color riskColor, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.textSecondary.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Icon(Icons.analytics_rounded, color: riskColor, size: 24),
+                  const SizedBox(width: 10),
+                  Text(
+                    "Risk Calculation Factors",
+                    style: TextStyle(color: theme.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Here is how your current safety score is calculated:",
+                style: TextStyle(color: theme.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 24),
+              
+              // Factor 1: ML Score
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.memory_rounded, color: Colors.blue, size: 20),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("AI Predicted Crime Risk", style: TextStyle(color: theme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 4),
+                          Text("Based on historical data, time, and weather.", style: TextStyle(color: theme.textSecondary, fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                    Text("${safety.mlRiskScore}%", style: TextStyle(color: theme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              
+              // Factor 2: Zone Score
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.map_rounded, color: Colors.orange, size: 20),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Zone Danger Level", style: TextStyle(color: theme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 4),
+                          Text("Current Zone: ${safety.currentZoneName}", style: TextStyle(color: theme.textSecondary, fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                    Text("${safety.zoneRiskScore}%", style: TextStyle(color: theme.textPrimary, fontSize: 18, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+              
+              if (safety.riskAlerts.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Text(
+                  "ACTIVE ALERTS",
+                  style: TextStyle(
+                    color: theme.textSecondary.withOpacity(0.7),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...safety.riskAlerts.map((alert) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.red.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFC62828)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(alert, style: const TextStyle(color: Color(0xFFC62828), fontSize: 12, fontWeight: FontWeight.w600))),
+                    ],
+                  ),
+                )),
+              ],
+              
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF0F2FF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, size: 14, color: isDark ? const Color(0xFF818CF8) : const Color(0xFF5C6BC0)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "The main risk score is the maximum of the AI Prediction and the Zone Danger Level.",
+                        style: TextStyle(color: isDark ? const Color(0xFF818CF8) : const Color(0xFF5C6BC0), fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

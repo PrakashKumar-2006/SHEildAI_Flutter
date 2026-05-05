@@ -30,17 +30,19 @@ class MongoService {
     }
 
     try {
-      final connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING'];
-      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'sheildai';
+      var connectionString = dotenv.env['MONGO_DB_CONNECTION_STRING']?.trim() ?? '';
+      final dbName = (dotenv.env['MONGO_DB_NAME'] ?? 'sheildai').trim();
       
-      if (connectionString == null || connectionString.isEmpty) {
+      if (connectionString.isEmpty) {
         throw Exception('MongoDB connection string missing in .env');
       }
 
+      // If the string already contains the DB name and parameters, use it as is
+      // Otherwise, we need to inject the DB name correctly.
       String finalUri = connectionString;
       
-      // Inject database name if missing to ensure we target the correct DB
       if (!finalUri.contains('/$dbName')) {
+        // Find the spot to inject the DB name (before '?' or at the end)
         if (finalUri.contains('?')) {
           finalUri = finalUri.replaceFirst('?', '$dbName?');
         } else {
@@ -48,7 +50,14 @@ class MongoService {
         }
       }
 
-      debugPrint('[MongoService] Connecting to Atlas (DB: $dbName)...');
+      // Atlas/mongo_dart Fix: Ensure authSource=admin for Atlas srv connections
+      if (finalUri.startsWith('mongodb+srv') && !finalUri.contains('authSource')) {
+        finalUri += finalUri.contains('?') ? '&authSource=admin' : '?authSource=admin';
+      }
+
+      // Sanitize for logging (mask password)
+      final logUri = finalUri.replaceFirst(RegExp(r':([^@]+)@'), ':****@');
+      debugPrint('[MongoService] Connecting with URI: $logUri');
       
       // Close old instance if it exists
       if (_db != null) {
@@ -56,7 +65,7 @@ class MongoService {
       }
 
       _db = await Db.create(finalUri);
-      await _db!.open().timeout(const Duration(seconds: 10));
+      await _db!.open().timeout(const Duration(seconds: 15));
       
       // Verify connection with a light command
       await _db!.getBuildInfo();
@@ -309,11 +318,27 @@ class MongoService {
   // ─── Community Methods ───────────────────────────────────────────────────
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
-    final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
-    final lon = (reportData['lon'] ?? reportData['longitude'] as num).toDouble();
-    reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
-    reportData['timestamp'] = DateTime.now().toIso8601String();
-    return insertOne('community_reports', reportData);
+    try {
+      final latValue = reportData['lat'] ?? reportData['latitude'];
+      final lonValue = reportData['lon'] ?? reportData['longitude'];
+      
+      if (latValue == null || lonValue == null) {
+        debugPrint('[MongoService] Error: lat/lon missing in reportData');
+        return false;
+      }
+
+      final lat = (latValue as num).toDouble();
+      final lon = (lonValue as num).toDouble();
+      
+      reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
+      reportData['timestamp'] = DateTime.now().toIso8601String();
+      
+      debugPrint('[MongoService] Submitting report to community_reports collection');
+      return await insertOne('community_reports', reportData);
+    } catch (e) {
+      debugPrint('[MongoService] submitCommunityReport exception: $e');
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {

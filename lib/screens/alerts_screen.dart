@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/providers.dart';
 import '../widgets/notification_bell_popup.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../features/routes/presentation/screens/routes_screen.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -52,7 +53,17 @@ class _AlertsScreenState extends State<AlertsScreen> {
         setState(() => _showReportModal = false);
         _descController.clear();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Report shared anonymously with community.')),
+          const SnackBar(
+            content: Text('Report shared anonymously with community.'),
+            backgroundColor: Color(0xFF2E7D32),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to submit report. Please check your connection and location.'),
+            backgroundColor: Color(0xFFC62828),
+          ),
         );
       }
     }
@@ -278,7 +289,26 @@ class _AlertsScreenState extends State<AlertsScreen> {
         : isSOS ? Icons.campaign_rounded
         : isReport ? Icons.remove_red_eye_rounded : Icons.warning_rounded;
 
-    return Container(
+    return GestureDetector(
+      onTap: () {
+        if (alert.latitude != null && alert.longitude != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RoutesScreen(
+                initialDestLat: alert.latitude,
+                initialDestLon: alert.longitude,
+                initialDestName: alert.title,
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location data not available for this alert.')),
+          );
+        }
+      },
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -333,14 +363,17 @@ class _AlertsScreenState extends State<AlertsScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () async {
-                    final url = Uri.parse('google.navigation:q=${alert.latitude},${alert.longitude}');
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(url);
-                    } else {
-                      final webUrl = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${alert.latitude},${alert.longitude}');
-                      await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-                    }
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RoutesScreen(
+                          initialDestLat: alert.latitude,
+                          initialDestLon: alert.longitude,
+                          initialDestName: 'Victim Location',
+                        ),
+                      ),
+                    );
                   },
                   icon: const Icon(Icons.navigation_rounded, size: 18, color: Colors.white),
                   label: const Text('Navigate to Victim', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
@@ -353,6 +386,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
             ),
         ],
       ),
+    ),
     );
   }
 
@@ -364,14 +398,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            GestureDetector(
-              onTap: () {}, // prevent tap-through
-              child: Container(
-                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-                decoration: BoxDecoration(
-                  color: theme.surface,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                ),
+            Flexible(
+              child: GestureDetector(
+                onTap: () {}, // prevent tap-through
+                child: Container(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+                  decoration: BoxDecoration(
+                    color: theme.surface,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -502,6 +537,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                     ),
                   ],
                 ),
+              ),
               ),
             ),
           ],
