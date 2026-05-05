@@ -357,28 +357,26 @@ class _AlertsScreenState extends State<AlertsScreen> {
               ),
             ],
           ),
-          if (alert.type == 'COMMUNITY_SOS' && alert.latitude != null && alert.longitude != null)
+          if ((alert.type == 'COMMUNITY_SOS' || alert.type == 'REPORT') && alert.latitude != null && alert.longitude != null)
             Padding(
               padding: const EdgeInsets.only(top: 12, left: 52),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => RoutesScreen(
-                          initialDestLat: alert.latitude,
-                          initialDestLon: alert.longitude,
-                          initialDestName: 'Victim Location',
-                        ),
-                      ),
-                    );
+                    Navigator.pushNamed(context, '/routes', arguments: {
+                      'destLat': alert.latitude,
+                      'destLon': alert.longitude,
+                      'isSentinelTask': true,
+                    });
                   },
-                  icon: const Icon(Icons.navigation_rounded, size: 18, color: Colors.white),
-                  label: const Text('Navigate to Victim', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                  icon: Icon(isSOS ? Icons.navigation_rounded : Icons.map_rounded, size: 18, color: Colors.white),
+                  label: Text(
+                    isSOS ? 'Navigate to Victim' : 'View on Map',
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFC62828),
+                    backgroundColor: accentColor,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),

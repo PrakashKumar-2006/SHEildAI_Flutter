@@ -141,6 +141,12 @@ class AppStrings {
       'sos_conf_desc': 'Get a push when your guardians acknowledge your SOS.',
       'safety_check_in': 'Safety Check-In',
       'safety_check_desc': 'Periodic check to confirm you are safe.',
+      // System Permissions
+      'system_permissions': 'System Permissions',
+      'manage_permissions_desc': 'Manage app permissions to ensure all safety features are functional.',
+      'granted': 'Granted',
+      'denied': 'Denied',
+      'tap_to_grant': 'Tap to grant',
       // Safety Check Modal
       'safety_check': 'Safety Check',
       'safety_check_msg': 'Are you safe? Please confirm or trigger SOS if you need help.',

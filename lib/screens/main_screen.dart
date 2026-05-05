@@ -9,6 +9,7 @@ import 'sos_screen.dart';
 import 'alerts_screen.dart';
 import 'profile_screen.dart';
 import '../core/providers/location_permission_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -74,6 +75,9 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
     final theme = context.watch<ThemeProvider>();
     final lang = context.watch<LanguageProvider>();
     final safety = context.watch<SafetyProvider>();
+    
+    // Check for critical alerts to show pop-up
+    _checkPendingSOS(safety, theme);
 
     return Scaffold(
       extendBody: true,
@@ -83,6 +87,104 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       ),
       bottomNavigationBar: _buildBottomNav(theme, lang, safety),
     );
+  }
+
+  void _checkPendingSOS(SafetyProvider safety, ThemeProvider theme) {
+    if (safety.pendingSOSAlert != null) {
+      final alert = safety.pendingSOSAlert!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showSOSDialog(alert, safety, theme);
+      });
+    }
+  }
+
+  void _showSOSDialog(AlertItem alert, SafetyProvider safety, ThemeProvider theme) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: theme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Color(0xFFC62828), size: 30),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'SENTINEL ALERT',
+                style: TextStyle(color: theme.textPrimary, fontWeight: FontWeight.w900, letterSpacing: 1),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              alert.title,
+              style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              alert.body,
+              style: TextStyle(color: theme.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.danger.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.location_on_rounded, color: Color(0xFFC62828), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Victim is within 5km of you. Your help could save a life.',
+                      style: TextStyle(color: theme.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              safety.clearPendingSOS();
+              Navigator.pop(context);
+            },
+            child: Text('IGNORE', style: TextStyle(color: theme.textSecondary, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              safety.clearPendingSOS();
+              Navigator.pop(context);
+              if (alert.latitude != null && alert.longitude != null) {
+                final url = Uri.parse('google.navigation:q=${alert.latitude},${alert.longitude}');
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url);
+                } else {
+                  final webUrl = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${alert.latitude},${alert.longitude}');
+                  await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+                }
+              }
+            },
+            icon: const Icon(Icons.navigation_rounded, color: Colors.white, size: 18),
+            label: const Text('NAVIGATE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFC62828),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    ).then((_) => safety.clearPendingSOS());
   }
 
   Widget _buildBottomNav(ThemeProvider theme, LanguageProvider lang, SafetyProvider safety) {

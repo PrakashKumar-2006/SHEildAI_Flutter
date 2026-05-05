@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'storage_service.dart';
 
 class ApiService {
-  static const String _backendUrl = 'https://sheildai1-o.onrender.com';
+  static const String _backendUrl = 'https://sheildai-flutter.onrender.com';
   static const String _mlApiUrl = 'https://prakashkumarbiswal-sheildai-ml.hf.space/api';
   static const Duration _timeout = Duration(seconds: 15);
   
@@ -209,7 +209,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>?> fetchNearbyCommunityReports(double lat, double lon, double radiusKm) async {
     try {
       final response = await http
-          .get(Uri.parse('$_backendUrl/api/community/nearby?lat=$lat&lon=$lon&radius=$radiusKm'))
+          .get(Uri.parse('$_backendUrl/api/community-reports?lat=$lat&lon=$lon&radius=$radiusKm'))
           .timeout(_timeout);
 
       if (response.statusCode == 200) {
@@ -220,6 +220,31 @@ class ApiService {
     } catch (e) {
       debugPrint('[ApiService] Error fetching nearby reports: $e');
       return null;
+    }
+  }
+
+  static Future<bool> submitCommunityReport(Map<String, dynamic> report, {int retryCount = 0}) async {
+    try {
+      final userId = report['phone'];
+      final token = await getAuthToken(userId);
+      if (token == null) return false;
+
+      final response = await _fetchWithTimeout(
+        '$_backendUrl/api/community-reports',
+        {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        jsonEncode(report),
+      );
+      
+      return response.statusCode == 200 || response.statusCode == 201;
+    } catch (e) {
+      if (retryCount < 3) {
+        await Future.delayed(const Duration(seconds: 3));
+        return submitCommunityReport(report, retryCount: retryCount + 1);
+      }
+      return false;
     }
   }
 }

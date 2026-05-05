@@ -109,6 +109,7 @@ class SOSProvider extends ChangeNotifier {
       case SOSEventName.recordingStarted:
       case SOSEventName.videoStarted:
         _cancelBufferTimer();
+        _startDurationTimer();
 
       case SOSEventName.sessionEnded:
         _cancelBufferTimer();
@@ -364,10 +365,11 @@ class SOSProvider extends ChangeNotifier {
 
   void _startDurationTimer() {
     _durationTimer?.cancel();
+    _sessionDuration = '00:00'; // Reset for new session
     final startTime = DateTime.now();
 
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_activeSOS == null) {
+      if (!isNativeSOSActive && _activeSOS == null) {
         timer.cancel();
         return;
       }

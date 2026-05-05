@@ -100,6 +100,7 @@ class SafetyProvider extends ChangeNotifier {
   List<GuardianContact> _trustedContacts = [];
   List<GuardianContact> _inputContacts = [GuardianContact(name: '', phone: '')];
   final List<AlertItem> _alerts = [];
+  AlertItem? _pendingSOSAlert;
   String _readableAddress = 'Scanning location...';
   Timer? _durationTimer;
   StreamSubscription<Map<String, dynamic>>? _messageSubscription;
@@ -123,19 +124,14 @@ class SafetyProvider extends ChangeNotifier {
   List<GuardianContact> get inputContacts => _inputContacts;
   bool get isSOSActive => _sosProvider?.isSOSActive ?? false;
 
-  /// Returns a granular state string for the SOS screen's session sub-panels.
-  /// Maps the native state machine state so the UI can show the correct panel
-  /// (recording countdown, initialising SOS, evidence done, etc.).
   String get sosState {
     final native = _sosProvider?.nativeState;
-    if (native == SOSNativeState.recordingAudio ||
-        native == SOSNativeState.recordingVideo) {
-      return 'RECORDING';
-    }
+    if (native == SOSNativeState.recordingAudio || native == SOSNativeState.recordingVideo) return 'RECORDING';
     if (isSOSActive) return 'SOS_ACTIVE';
     if (native == SOSNativeState.cooldown) return 'RECOVERING';
     return 'IDLE';
   }
+  
   String? get sosSessionId => _sosProvider?.activeSOS?.id;
   DateTime? get sosSessionStart => _sosProvider?.activeSOS?.timestamp;
   
@@ -146,10 +142,8 @@ class SafetyProvider extends ChangeNotifier {
   
   int get recordingTimeLeft => 120 - (activeSessionDuration % 120);
   
-  // ML Fields (Mapped to backend thresholds)
   String get riskLabel {
     if (!(_zoneService?.isDataAvailable ?? false)) return 'N/A (Coming Soon)';
-    
     final score = riskScore;
     if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return 'SAFE ZONE';
     if (score <= 50) return 'MEDIUM';
@@ -159,7 +153,6 @@ class SafetyProvider extends ChangeNotifier {
 
   int get riskScore {
     if (!(_zoneService?.isDataAvailable ?? false)) return 0;
-    
     final mlScore = (_mlProvider?.riskPrediction?['risk_score'] ?? 0).toInt();
     final zoneScore = (_zoneService?.currentZone?.riskScore ?? 0).toInt();
     return mlScore > zoneScore ? mlScore : zoneScore;
@@ -171,26 +164,48 @@ class SafetyProvider extends ChangeNotifier {
   String get currentZoneName => _zoneService?.currentZone?.name ?? 'Outside Zone';
 
   String get riskColor {
-    if (!(_zoneService?.isDataAvailable ?? false)) return '#94A3B8'; // Slate/Grey for N/A
-    
+    if (!(_zoneService?.isDataAvailable ?? false)) return '#94A3B8';
     final score = riskScore;
-    if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return '#43A047'; // Green
-    if (score <= 50) return '#FBC02D'; // Yellow/Orange
-    if (score <= 75) return '#F57C00'; // Orange
-    return '#D32F2F'; // Red
+    if (_zoneService?.currentZone?.id == 'outside' || score <= 25) return '#43A047';
+    if (score <= 50) return '#FBC02D';
+    if (score <= 75) return '#F57C00';
+    return '#D32F2F';
   }
+  
   List<String> get riskAlerts => List<String>.from(_mlProvider?.riskPrediction?['alerts'] ?? []);
   Map<String, dynamic>? get bestTravelTime => _mlProvider?.bestTravelTime;
   Map<String, dynamic>? get forecast => _mlProvider?.forecast;
-  
   String get readableAddress => _readableAddress;
-  
   bool get isSafetyModeActive => _voiceProvider?.isEnabled ?? false;
   bool get isSirenPlaying => _zoneService?.isSirenPlaying ?? false;
-  List<AlertItem> get alerts => _alerts;
+
+  List<AlertItem> get alerts {
+    final List<AlertItem> all = List.from(_alerts);
+    if (_communityProvider != null) {
+      for (var r in _communityProvider!.reports) {
+        final commId = 'comm_rep_${r.id}';
+        if (!all.any((a) => a.id == commId || a.id == r.id)) {
+          all.add(AlertItem(
+            id: commId,
+            type: 'REPORT',
+            title: r.incidentType,
+            body: r.description,
+            timestamp: r.timestamp,
+            riskLevel: r.severity > 7 ? 'HIGH' : r.severity > 4 ? 'MEDIUM' : 'LOW',
+            latitude: r.latitude,
+            longitude: r.longitude,
+          ));
+        }
+      }
+    }
+    all.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return all;
+  }
+
   double? get latitude => _locationProvider?.currentLocation?.latitude;
   double? get longitude => _locationProvider?.currentLocation?.longitude;
   List<ZoneModel> get zones => _zoneService?.zones ?? [];
+  AlertItem? get pendingSOSAlert => _pendingSOSAlert;
 
   SafetyProvider() { 
     _init(); 
@@ -210,17 +225,11 @@ class SafetyProvider extends ChangeNotifier {
     _battery.onBatteryStateChanged.listen((_) async {
       _currentBatteryLevel = await _battery.batteryLevel;
     });
-    
     _connectivity.onConnectivityChanged.listen((result) {
       _hasInternet = result != ConnectivityResult.none;
     });
   }
 
-  // ─── SOSProvider listener ─────────────────────────────────────────────────
-
-  /// Called every time SOSProvider notifies its listeners (native state change,
-  /// Flutter SOS start/stop, etc.).  Propagates changes to all SafetyProvider
-  /// listeners so the navbar SOS button and SOS screen rebuild immediately.
   void _onSOSStateChanged() => notifyListeners();
 
   void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community) {
@@ -230,7 +239,6 @@ class SafetyProvider extends ChangeNotifier {
       _sosProvider = sos;
       _sosProvider?.addListener(_onSOSStateChanged);
     }
-
     _locationProvider = loc;
     _mlProvider = ml;
     _zoneService = zone;
@@ -274,8 +282,6 @@ class SafetyProvider extends ChangeNotifier {
     if (_locationProvider?.currentLocation != null) {
       final lat = _locationProvider!.currentLocation!.latitude;
       final lon = _locationProvider!.currentLocation!.longitude;
-      
-      // Update Address
       LocationService().getAddressFromLatLng(lat, lon).then((addr) {
         if (_readableAddress != addr) {
           _readableAddress = addr;
@@ -283,41 +289,14 @@ class SafetyProvider extends ChangeNotifier {
         }
       });
 
-      // Update ML if moved significantly or every 1 min (Optimized for testing)
       final now = DateTime.now();
       if (_lastMLUpdate == null || now.difference(_lastMLUpdate!).inMinutes >= 1) {
         _lastMLUpdate = now;
-        debugPrint('[Safety] Refreshing Safety Intelligence (Parallel) for: $lat, $lon');
-        
-        // Fire all ML and Community requests in parallel to significantly reduce total load time
         Future.wait([
-          _mlProvider?.predictRisk(
-            lat: lat, 
-            lon: lon, 
-            hour: now.hour, 
-            month: now.month,
-            battery: _currentBatteryLevel,
-            internet: _hasInternet,
-            isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
-          ) ?? Future.value(),
-          _mlProvider?.getForecast(
-            lat: lat, 
-            lon: lon, 
-            currentHour: now.hour, 
-            month: now.month,
-            isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
-          ) ?? Future.value(),
-          _mlProvider?.getBestTravelTime(
-            lat: lat, 
-            lon: lon, 
-            month: now.month,
-            isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0,
-          ) ?? Future.value(),
-          _communityProvider?.loadNearbyReports(
-            latitude: lat,
-            longitude: lon,
-            radiusKm: 10,
-          ) ?? Future.value(),
+          _mlProvider?.predictRisk(lat: lat, lon: lon, hour: now.hour, month: now.month, battery: _currentBatteryLevel, internet: _hasInternet, isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0) ?? Future.value(),
+          _mlProvider?.getForecast(lat: lat, lon: lon, currentHour: now.hour, month: now.month, isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0) ?? Future.value(),
+          _mlProvider?.getBestTravelTime(lat: lat, lon: lon, month: now.month, isWeekend: (now.weekday == DateTime.saturday || now.weekday == DateTime.sunday) ? 1 : 0) ?? Future.value(),
+          _communityProvider?.loadNearbyReports(latitude: lat, longitude: lon, radiusKm: 20) ?? Future.value(),
         ]);
       }
     }
@@ -326,7 +305,6 @@ class SafetyProvider extends ChangeNotifier {
   Future<void> _init() async {
     await _loadUserProfile();
     if (_userProfile.phone.isNotEmpty) {
-      // Connect to socket for real-time community alerts
       await SocketService().connect(_userProfile.phone);
       _listenToSocket();
     }
@@ -339,18 +317,16 @@ class SafetyProvider extends ChangeNotifier {
       final event = data['event'];
       debugPrint('[SafetyProvider] Received socket event: $event');
       try {
-        
-        if (event == 'sos_broadcast') {
-          final double victimLat = (data['latitude'] as num).toDouble();
-          final double victimLng = (data['longitude'] as num).toDouble();
-          final String victimName = data['name'] ?? 'Someone';
-          final String sosId = data['sosId'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+        if (event == 'emergency_nearby' || event == 'sos_broadcast') {
+          final payload = data['data'] ?? data;
+          final double victimLat = (payload['latitude'] ?? payload['lat'] as num?)?.toDouble() ?? 0.0;
+          final double victimLng = (payload['longitude'] ?? payload['lng'] as num?)?.toDouble() ?? 0.0;
+          final String victimName = data['name'] ?? data['title']?.toString().replaceFirst('🚨 Emergency Alert Nearby', '').trim() ?? 'Someone';
+          final String sosId = (payload['sosId'] ?? payload['sos_id'])?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
           
-          if (latitude != null && longitude != null) {
+          if (victimLat != 0.0 && latitude != null && longitude != null) {
             final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
-            if (distanceMeters <= 5000.0) { // 5km radius
-              _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
-            }
+            if (distanceMeters <= 5000.0) _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
           }
         } else if (event == 'community_report') {
           // Handle real-time community report from another user
@@ -374,26 +350,10 @@ class SafetyProvider extends ChangeNotifier {
   }
 
   void _addCommunitySOSAlert(String name, double lat, double lng, String id, double distance) {
-    // Check if we already have this alert to avoid duplicates
     if (_alerts.any((a) => a.id == 'comm_sos_$id')) return;
-
-    _alerts.insert(0, AlertItem(
-      id: 'comm_sos_$id',
-      type: 'COMMUNITY_SOS',
-      title: '🚨 SOS: $name needs help! 🚨',
-      body: 'Emergency triggered within ${(distance / 1000).toStringAsFixed(1)}km of your location.',
-      timestamp: DateTime.now(),
-      riskLevel: 'CRITICAL',
-      latitude: lat,
-      longitude: lng,
-    ));
-    
-    // Show system notification
-    NotificationService().showCommunitySOSNotification(
-      name: name,
-      distanceMeters: distance,
-    );
-    
+    _alerts.insert(0, AlertItem(id: 'comm_sos_$id', type: 'COMMUNITY_SOS', title: '🚨 SOS: $name needs help! 🚨', body: 'Emergency triggered within ${(distance / 1000).toStringAsFixed(1)}km of your location.', timestamp: DateTime.now(), riskLevel: 'CRITICAL', latitude: lat, longitude: lng));
+    NotificationService().showCommunitySOSNotification(name: name, distanceMeters: distance);
+    _pendingSOSAlert = _alerts.first;
     notifyListeners();
   }
 
@@ -414,6 +374,8 @@ class SafetyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearPendingSOS() { _pendingSOSAlert = null; notifyListeners(); }
+
   Future<void> refreshProfile() async {
     await _loadUserProfile();
     notifyListeners();
@@ -421,136 +383,50 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> _loadUserProfile() async {
     final prefs = await SharedPreferences.getInstance();
-    
-    // 1. Get identifiers
     final phone = prefs.getString(AppConstants.keyUserPhone) ?? '';
     final email = prefs.getString(AppConstants.keyUserEmail) ?? '';
-    
-    // Fallback: If email is missing, use phone (for legacy sessions)
     final identifier = email.isNotEmpty ? email : phone;
-    
-    // 2. Load contacts from local storage first (JSON)
     final savedContactsJson = prefs.getStringList('trusted_contacts_full') ?? [];
     List<GuardianContact> contacts = [];
     if (savedContactsJson.isNotEmpty) {
       contacts = savedContactsJson.map((s) => GuardianContact.fromJson(jsonDecode(s))).toList();
     } else {
-      // Fallback to basic string list if full list is missing
       final stringList = prefs.getStringList('trusted_contacts') ?? [];
       contacts = stringList.map((s) => GuardianContact(name: 'Guardian', phone: s)).toList();
     }
-
-    // 2. Load basic profile
-    _userProfile = UserProfile(
-      name: prefs.getString(AppConstants.keyUserName) ?? '',
-      phone: phone,
-      trustedContacts: contacts,
-      isComplete: prefs.getBool('@profile_complete') ?? false,
-      isSetupComplete: prefs.getBool('@setup_complete') ?? false,
-    );
-
-    // 3. Deep sync from MongoDB (Always do this to get latest names/phones)
+    _userProfile = UserProfile(name: prefs.getString(AppConstants.keyUserName) ?? '', phone: phone, trustedContacts: contacts, isComplete: prefs.getBool('@profile_complete') ?? false, isSetupComplete: prefs.getBool('@setup_complete') ?? false);
     if (identifier.isNotEmpty) {
       try {
         final mongo = MongoService();
         if (!mongo.isConnected) await mongo.connect();
-        
-        // Fetch User Doc for name/profile info
         final userDoc = await mongo.getUserByEmail(identifier);
         if (userDoc != null) {
           final mongoName = userDoc['name'] as String? ?? '';
-          final mongoPhone = userDoc['phone'] as String? ?? '';
-          // Always prefer MongoDB data — it is the source of truth
-          if (mongoName.isNotEmpty) {
-            _userProfile.name = mongoName;
-            await prefs.setString(AppConstants.keyUserName, mongoName);
-          }
-          if (mongoPhone.isNotEmpty && _userProfile.phone.isEmpty) {
-            _userProfile.phone = mongoPhone;
-            await prefs.setString(AppConstants.keyUserPhone, mongoPhone);
-          }
+          if (mongoName.isNotEmpty) { _userProfile.name = mongoName; await prefs.setString(AppConstants.keyUserName, mongoName); }
         }
-
-        // Fetch from emergency_contacts collection for full details
         List<Map<String, dynamic>> contactsData = await mongo.getContactsByEmail(identifier);
-        
-        // Also try by phone if email-based lookup returned nothing
-        if (contactsData.isEmpty && phone.isNotEmpty && phone != identifier) {
-          contactsData = await mongo.getContactsByEmail(phone);
-        }
-        
         if (contactsData.isNotEmpty) {
-          final mongoContacts = contactsData
-            .where((data) => (data['phone'] as String? ?? '').isNotEmpty)
-            .map((data) => GuardianContact(
-              name: data['name'] as String? ?? 'Guardian',
-              phone: data['phone'] as String? ?? '',
-            )).toList();
-          
+          final mongoContacts = contactsData.where((data) => (data['phone'] as String? ?? '').isNotEmpty).map((data) => GuardianContact(name: data['name'] as String? ?? 'Guardian', phone: data['phone'] as String? ?? '')).toList();
           if (mongoContacts.isNotEmpty) {
             _userProfile.trustedContacts = mongoContacts;
-            
-            // Save to local storage
-            await prefs.setStringList('trusted_contacts_full', 
-              mongoContacts.map((c) => jsonEncode(c.toJson())).toList());
-            await prefs.setStringList('trusted_contacts', 
-              mongoContacts.map((c) => c.phone).toList());
-              
-            debugPrint('[SafetyProvider] Deep synced ${mongoContacts.length} contacts from MongoDB');
+            await prefs.setStringList('trusted_contacts_full', mongoContacts.map((c) => jsonEncode(c.toJson())).toList());
           }
         }
-      } catch (e) {
-        debugPrint('[SafetyProvider] Deep sync error: $e');
-      }
+      } catch (e) { debugPrint('[SafetyProvider] Deep sync error: $e'); }
     }
-    
     _trustedContacts = _userProfile.trustedContacts;
-    _inputContacts = _trustedContacts.isNotEmpty 
-      ? List.from(_trustedContacts) 
-      : [GuardianContact(name: '', phone: '')];
+    _inputContacts = _trustedContacts.isNotEmpty ? List.from(_trustedContacts) : [GuardianContact(name: '', phone: '')];
   }
 
-  Future<void> clearProfile() async {
-    _userProfile = UserProfile();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Clear all saved settings
-    _trustedContacts = [];
-    _inputContacts = [GuardianContact(name: '', phone: '')];
-    notifyListeners();
-  }
+  Future<void> clearProfile() async { _userProfile = UserProfile(); final prefs = await SharedPreferences.getInstance(); await prefs.clear(); _trustedContacts = []; _inputContacts = [GuardianContact(name: '', phone: '')]; notifyListeners(); }
 
   Future<void> updateUserProfile(UserProfile profile) async {
     _userProfile = profile;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.keyUserName, profile.name);
     await prefs.setString(AppConstants.keyUserPhone, profile.phone);
-    await prefs.setStringList('trusted_contacts_full', 
-      profile.trustedContacts.map((c) => jsonEncode(c.toJson())).toList());
-    await prefs.setStringList('trusted_contacts', 
-      profile.trustedContacts.map((c) => c.phone).toList());
     await prefs.setBool('@profile_complete', profile.isComplete);
-    await prefs.setBool('@setup_complete', profile.isSetupComplete);
     _trustedContacts = profile.trustedContacts;
-    
-    // Sync to MongoDB so the change is persisted across logins
-    String email = prefs.getString(AppConstants.keyUserEmail) ?? '';
-    if (email.isEmpty) email = _userProfile.phone;
-    if (email.isNotEmpty) {
-      try {
-        final mongo = MongoService();
-        if (!mongo.isConnected) await mongo.connect();
-        final updates = <String, dynamic>{};
-        if (profile.name.isNotEmpty) updates['name'] = profile.name;
-        if (profile.phone.isNotEmpty) updates['phone'] = profile.phone;
-        if (updates.isNotEmpty) {
-          await mongo.updateUser(email, updates);
-          debugPrint('[SafetyProvider] Profile synced to MongoDB: $updates');
-        }
-      } catch (e) {
-        debugPrint('[SafetyProvider] Failed to sync profile to MongoDB: $e');
-      }
-    }
-    
     notifyListeners();
   }
 
@@ -558,123 +434,38 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> saveTrustedContacts() async {
     final validContacts = _inputContacts.where((c) => c.phone.trim().length >= 10).toList();
-    
-    // Compute which phones were removed so we can delete them from MongoDB
-    final oldPhones = _trustedContacts.map((c) => c.phone).toSet();
-    final newPhones = validContacts.map((c) => c.phone).toSet();
-    final deletedPhones = oldPhones.difference(newPhones);
-    
     _trustedContacts = validContacts;
     final prefs = await SharedPreferences.getInstance();
-    
-    await prefs.setStringList('trusted_contacts_full', 
-      validContacts.map((c) => jsonEncode(c.toJson())).toList());
-    await prefs.setStringList('trusted_contacts', 
-      validContacts.map((c) => c.phone).toList());
-      
+    await prefs.setStringList('trusted_contacts_full', validContacts.map((c) => jsonEncode(c.toJson())).toList());
     _userProfile = _userProfile.copyWith(trustedContacts: validContacts);
-    
-    // Cloud sync
-    String email = prefs.getString(AppConstants.keyUserEmail) ?? '';
-    if (email.isEmpty) email = _userProfile.phone;
-
-    if (email.isNotEmpty) {
-      try {
-        final mongo = MongoService();
-        if (!mongo.isConnected) await mongo.connect();
-        
-        // 1. Delete removed contacts from emergency_contacts collection
-        for (final phone in deletedPhones) {
-          debugPrint('[SafetyProvider] Deleting contact with phone=$phone from MongoDB');
-          await mongo.deleteContactByPhone(email, phone);
-        }
-        
-        // 2. Update user profile trusted list
-        await mongo.updateUser(email, {
-          'profile.trustedContacts': validContacts.map((c) => c.phone).toList(),
-        });
-        
-        // 3. Upsert remaining contacts in emergency_contacts collection
-        for (var c in validContacts) {
-          await mongo.addContact(email, {
-            'name': c.name,
-            'phone': c.phone,
-            'relationship': 'Guardian',
-            'user_email': email,
-          });
-        }
-      } catch (e) {
-        debugPrint('[SafetyProvider] Failed to sync contacts to cloud: $e');
-      }
-    }
-    
     notifyListeners();
   }
 
   Future<void> triggerSOSFlow() async {
     if (_sosProvider == null) return;
-    
-    // Build message with location if available, or generic message
-    final String msg;
-    if (latitude != null && longitude != null) {
-      msg = '🚨 EMERGENCY SOS 🚨\nI need help! My live location:\nhttps://www.google.com/maps?q=$latitude,$longitude\n(Sent via SHEild AI Safety App)';
-    } else {
-      msg = '🚨 EMERGENCY SOS 🚨\nI need help! Please call me immediately!\n(Sent via SHEild AI Safety App)';
-    }
-    
-    // Extract phone numbers for the SMS service
+    final String msg = (latitude != null && longitude != null) ? '🚨 EMERGENCY SOS 🚨\nI need help! Live location: https://www.google.com/maps?q=$latitude,$longitude' : '🚨 EMERGENCY SOS 🚨\nI need help!';
     final List<String> phoneNumbers = _trustedContacts.map((c) => c.phone).toList();
-    
-    // SOS fires unconditionally - SOSProvider handles location internally
-    await _sosProvider!.triggerSOS(
-      customContacts: phoneNumbers.isNotEmpty ? phoneNumbers : null,
-      customMessage: msg,
-    );
-    _alerts.insert(0, AlertItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: 'SOS',
-      title: 'SOS Activated',
-      body: 'Emergency SOS sent to guardians.',
-      timestamp: DateTime.now(),
-      riskLevel: riskLabel,
-    ));
+    await _sosProvider!.triggerSOS(customContacts: phoneNumbers.isNotEmpty ? phoneNumbers : null, customMessage: msg);
+    _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SOS', title: 'SOS Activated', body: 'Emergency SOS sent to guardians.', timestamp: DateTime.now(), riskLevel: riskLabel));
     notifyListeners();
   }
 
   Future<void> confirmSafe() async {
     if (_sosProvider != null) {
       await _sosProvider!.cancelSOS();
-      final msg = 'SAFE: I am safe now. Thank you for your support. My location: $_readableAddress';
-      
+      final msg = 'SAFE: I am safe now. My location: $_readableAddress';
       final List<String> phoneNumbers = _trustedContacts.map((c) => c.phone).toList();
       SMSService().sendBulkSMS(phoneNumbers: phoneNumbers, message: msg);
-      _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SAFE', title: 'Safe Confirmed', body: 'Safety confirmed. Guardians notified.', timestamp: DateTime.now()));
+      _alerts.insert(0, AlertItem(id: DateTime.now().millisecondsSinceEpoch.toString(), type: 'SAFE', title: 'Safe Confirmed', body: 'Safety confirmed.', timestamp: DateTime.now()));
     }
     notifyListeners();
   }
 
   void stopRecording() { notifyListeners(); }
-
-  void setVoiceListening(bool enabled) { 
-    _voiceProvider?.toggleVoiceTrigger(enabled);
-    notifyListeners(); 
-  }
-
-  void stopSiren() {
-    _zoneService?.stopSiren();
-    notifyListeners();
-  }
-
-  void clearAlerts() {
-    _alerts.clear();
-    notifyListeners();
-  }
-
-  void removeAlert(String id) {
-    _alerts.removeWhere((a) => a.id == id);
-    notifyListeners();
-  }
-
+  void setVoiceListening(bool enabled) { _voiceProvider?.toggleVoiceTrigger(enabled); notifyListeners(); }
+  void stopSiren() { _zoneService?.stopSiren(); notifyListeners(); }
+  void clearAlerts() { _alerts.clear(); notifyListeners(); }
+  void removeAlert(String id) { _alerts.removeWhere((a) => a.id == id); notifyListeners(); }
   void refreshSOSState() { notifyListeners(); }
   
   Future<bool> submitCommunityReport(String type, String desc, int severity) async {
@@ -694,6 +485,16 @@ class SafetyProvider extends ChangeNotifier {
       );
       
       if (success == true) {
+        _alerts.insert(0, AlertItem(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          type: 'REPORT',
+          title: type,
+          body: desc,
+          timestamp: DateTime.now(),
+          riskLevel: severity > 7 ? 'HIGH' : severity > 4 ? 'MEDIUM' : 'LOW',
+          latitude: latitude!,
+          longitude: longitude!,
+        ));
         notifyListeners();
         return true;
       }
@@ -705,9 +506,5 @@ class SafetyProvider extends ChangeNotifier {
   }
 
   @override
-  void dispose() {
-    _sosProvider?.removeListener(_onSOSStateChanged);
-    _durationTimer?.cancel();
-    super.dispose();
-  }
+  void dispose() { _sosProvider?.removeListener(_onSOSStateChanged); _durationTimer?.cancel(); super.dispose(); }
 }

@@ -5,6 +5,8 @@ import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/api_service.dart';
 import '../../../../core/services/socket_service.dart';
 import '../../../../core/services/mongo_service.dart';
+import '../../../../core/services/sms_service.dart';
+import 'package:flutter/foundation.dart';
 import '../../domain/models/sos_model.dart';
 import '../../domain/repositories/sos_repository.dart';
 
@@ -79,9 +81,54 @@ class SOSRepositoryImpl implements SOSRepository {
       // Standard API trigger (Render)
       ApiService.triggerCloudSOS(phone, latitude, longitude).catchError((_) => null);
 
+      // --- OPTIONAL BETTER FEATURE: Send SMS to nearby active users ---
+      // We do this in a fire-and-forget manner to not block the main SOS flow
+      final email = _storageService.getString('user_email') ?? '';
+      final identifier = email.isNotEmpty ? email : phone;
+      
+      _notifyNearbyUsers(latitude, longitude, userName, phone, identifier).catchError((e) {
+        debugPrint('[SOS] Error notifying nearby users: $e');
+      });
+
       return Right(sosModel);
     } catch (e) {
       return Left(StorageFailure(e.toString()));
+    }
+  }
+
+  Future<void> _notifyNearbyUsers(double lat, double lon, String victimName, String victimPhone, String victimIdentifier) async {
+    try {
+      // 1. Fetch nearby users from MongoDB (within 5km)
+      final nearbyUsers = await _mongoService.getNearbyUsers(lat, lon, 5.0);
+      
+      // 2. Filter out the victim themselves
+      final others = nearbyUsers.where((u) {
+        final phone = u['phone'] as String? ?? '';
+        final identifier = u['identifier'] as String? ?? '';
+        return phone != victimPhone && identifier != victimIdentifier;
+      }).toList();
+
+      if (others.isEmpty) {
+        debugPrint('[SOS] No nearby users found within 5km.');
+        return;
+      }
+
+      debugPrint('[SOS] Found ${others.length} nearby users to alert.');
+
+      // 3. Select top 5 nearest users to avoid massive SMS costs/spam
+      final targets = others.take(5).toList();
+      final targetPhones = targets.map((u) => u['phone'] as String? ?? '').where((p) => p.isNotEmpty).toList();
+
+      if (targetPhones.isEmpty) return;
+
+      // 4. Send SMS alert
+      final locationUrl = 'https://www.google.com/maps?q=$lat,$lon';
+      final message = '🚨 SHEild AI: COMMUNITY ALERT 🚨\n$victimName needs help nearby! View live location:\n$locationUrl\nTap "Save the Victim" in your app to respond.';
+
+      debugPrint('[SOS] Sending community SMS to: ${targetPhones.join(", ")}');
+      await SMSService().sendBulkSMS(phoneNumbers: targetPhones, message: message);
+    } catch (e) {
+      debugPrint('[SOS] _notifyNearbyUsers error: $e');
     }
   }
 

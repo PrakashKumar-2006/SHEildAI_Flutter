@@ -38,16 +38,32 @@ class _RoutesScreenState extends State<RoutesScreen> {
     super.initState();
     _createDangerIcon();
     
-    // Auto-search if initial coordinates provided
-    if (widget.initialDestLat != null && widget.initialDestLon != null) {
-      _destinationController.text = widget.initialDestName ?? 'Alert Location';
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _triggerDirectSearch();
-      });
+    // Auto-search if initial coordinates provided via constructor or arguments
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.initialDestLat != null && widget.initialDestLon != null) {
+        _destinationController.text = widget.initialDestName ?? 'Alert Location';
+        _triggerDirectSearch(widget.initialDestLat!, widget.initialDestLon!);
+      } else {
+        _checkArguments();
+      }
+    });
+  }
+
+  void _checkArguments() {
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    if (args != null && args['isSentinelTask'] == true) {
+      final lat = args['destLat'] as double;
+      final lon = args['destLon'] as double;
+      _handleSentinelNavigation(lat, lon);
     }
   }
 
-  void _triggerDirectSearch() async {
+  void _handleSentinelNavigation(double lat, double lon) async {
+    _destinationController.text = "${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}";
+    _triggerDirectSearch(lat, lon);
+  }
+
+  void _triggerDirectSearch(double lat, double lon) async {
     final routesProvider = context.read<RoutesProvider>();
     final loc = context.read<LocationProvider>().currentLocation;
     if (loc == null) return;
@@ -55,15 +71,17 @@ class _RoutesScreenState extends State<RoutesScreen> {
     await routesProvider.calculateRoutesFromCoords(
       loc.latitude, 
       loc.longitude, 
-      widget.initialDestLat!, 
-      widget.initialDestLon!,
+      lat, 
+      lon,
       hour: DateTime.now().hour,
       month: DateTime.now().month,
       zones: context.read<ZoneService>().zones,
     );
-
     if (routesProvider.destination != null && _mapController != null) {
-      _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(routesProvider.destination!.latitude, routesProvider.destination!.longitude)));
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(
+        LatLng(routesProvider.destination!.latitude, routesProvider.destination!.longitude), 
+        16.0
+      ));
     }
   }
 
@@ -114,9 +132,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             _buildHeader(context),
-            // Page Title
             Container(
               padding: const EdgeInsets.only(left: 20, right: 20, bottom: 12),
               child: Row(
@@ -132,18 +148,14 @@ class _RoutesScreenState extends State<RoutesScreen> {
                 ],
               ),
             ),
-            // Content
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    // Route Input Card
                     _buildRouteInputCard(context, routesProvider),
                     const SizedBox(height: 14),
-                    // Map Card with Routes
                     _buildMapCard(context, locationProvider, routesProvider, zoneService),
                     const SizedBox(height: 14),
-                    // Error Message
                     if (routesProvider.errorMessage != null)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -152,7 +164,6 @@ class _RoutesScreenState extends State<RoutesScreen> {
                           style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 13),
                         ),
                       ),
-                    // Routes Section
                     _buildRoutesSection(context, routesProvider),
                     const SizedBox(height: 20),
                   ],
@@ -224,16 +235,11 @@ class _RoutesScreenState extends State<RoutesScreen> {
         color: _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 2)),
         ],
       ),
       child: Column(
         children: [
-          // Current Location Row
           Row(
             children: [
               Container(
@@ -243,11 +249,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                   color: const Color(0xFF1976D2).withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Ionicons.location,
-                  color: Color(0xFF1976D2),
-                  size: 18,
-                ),
+                child: const Icon(Ionicons.location, color: Color(0xFF1976D2), size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -263,7 +265,6 @@ class _RoutesScreenState extends State<RoutesScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          // Destination Input Row
           Row(
             children: [
               Container(
@@ -273,11 +274,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                   color: const Color(0xFFdc2626).withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Ionicons.navigate,
-                  color: Color(0xFFdc2626),
-                  size: 18,
-                ),
+                child: const Icon(Ionicons.navigate, color: Color(0xFFdc2626), size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -303,10 +300,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                 const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF0D1B6E),
-                  ),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0D1B6E)),
                 )
               else
                 GestureDetector(
@@ -319,11 +313,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                     ),
                     child: const Text(
                       'Search',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
                     ),
                   ),
                 ),
@@ -367,7 +357,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
         gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
           Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
         },
-        circles: const {}, // Removed circular zones for a cleaner, more professional look as requested
+        circles: const {},
         polylines: routes.asMap().entries.map((entry) {
           final index = entry.key;
           final route = entry.value;
@@ -398,7 +388,12 @@ class _RoutesScreenState extends State<RoutesScreen> {
               icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
               infoWindow: const InfoWindow(title: 'Destination'),
             ),
-          // Add risk markers for the selected route
+          Marker(
+            markerId: const MarkerId('origin'),
+            position: LatLng(currentLat, currentLng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: const InfoWindow(title: 'Your Location'),
+          ),
           ..._buildRiskMarkers(routesProvider.selectedRoute, zones),
         },
       ),
@@ -454,29 +449,18 @@ class _RoutesScreenState extends State<RoutesScreen> {
 
   List<Marker> _buildRiskMarkers(OSRMRoute? route, List<ZoneModel> zones) {
     if (route == null) return [];
-    
     final markers = <Marker>[];
     final points = route.points;
     final Set<String> zonesAffected = {};
-    
-    // Check which zones the route passes through
-    for (int i = 0; i < points.length; i += 5) { // Sampling for efficiency
+    for (int i = 0; i < points.length; i += 5) {
       final point = points[i];
       for (final zone in zones) {
-        if (zone.riskScore > 25) { // Show markers for all non-safe zones
-          final distance = OSRMService.calculateDistance(
-            point.latitude, point.longitude, 
-            zone.center.latitude, zone.center.longitude
-          );
-          
-          if (distance < (zone.radius * 1000)) {
-            zonesAffected.add(zone.id);
-          }
+        if (zone.riskScore > 25) {
+          final distance = OSRMService.calculateDistance(point.latitude, point.longitude, zone.center.latitude, zone.center.longitude);
+          if (distance < (zone.radius * 1000)) zonesAffected.add(zone.id);
         }
       }
     }
-
-    // Add one triangular marker at the center of each affected zone
     for (final zoneId in zonesAffected) {
       final zone = zones.firstWhere((z) => z.id == zoneId);
       markers.add(
@@ -488,10 +472,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
             zone.riskScore > 50 ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueYellow
           ),
           anchor: const Offset(0.5, 0.5),
-          infoWindow: InfoWindow(
-            title: 'Danger Zone: ${zone.name}', 
-            snippet: 'Risk Score: ${zone.riskScore}%'
-          ),
+          infoWindow: InfoWindow(title: 'Danger Zone: ${zone.name}', snippet: 'Risk Score: ${zone.riskScore}%'),
         ),
       );
     }
@@ -501,18 +482,15 @@ class _RoutesScreenState extends State<RoutesScreen> {
   void _searchRoutes() async {
     final dest = _destinationController.text.trim();
     if (dest.isEmpty) return;
-    
     final routesProvider = context.read<RoutesProvider>();
     final loc = context.read<LocationProvider>().currentLocation;
     if (loc == null) return;
-    
     await routesProvider.searchAndCalculateRoutes(
       loc.latitude, loc.longitude, dest,
       hour: DateTime.now().hour,
       month: DateTime.now().month,
       zones: context.read<ZoneService>().zones,
     );
-    
     if (routesProvider.destination != null && _mapController != null) {
       _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(routesProvider.destination!.latitude, routesProvider.destination!.longitude)));
     }

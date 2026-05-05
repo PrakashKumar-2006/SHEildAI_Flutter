@@ -45,9 +45,9 @@ app.*.map.json
 /android/app/release
 
 # Environment variables - contains sensitive credentials
-.env
-.env*
-.env.example
+# .env
+# .env*
+# .env.example
 
 # Android build and caches
 /android/.gradle/
@@ -65,3 +65,7 @@ app.*.map.json
 /ios/.external_build_artifacts
 /ios/Podfile.lock
 /ios/Pods/
+
+# Memory dumps
+*.hprof
+
