@@ -98,8 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         const SizedBox(height: 8),
                         _buildSafetyScoreCard(riskLabel, riskScore, riskColor, isDark, theme, lang, safety),
-                        const CrowdRiskIndicator(),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 10),
                         _buildSafetyInsightsCard(theme, isDark, safety),
                         const SizedBox(height: 20),
                         if (alerts.isNotEmpty) _buildRiskAlertsList(theme, alerts, isDark),
@@ -695,6 +694,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 "Here is how your current safety score is calculated:",
                 style: TextStyle(color: theme.textSecondary, fontSize: 13),
               ),
+              const SizedBox(height: 24),
+              const CrowdRiskIndicator(),
               const SizedBox(height: 24),
               
               // Factor 1: ML Score
