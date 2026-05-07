@@ -22,6 +22,8 @@ class BackgroundMonitorService {
   Future<void> initialize() async {
     await _initializeNotifications();
     await _initializeBackgroundService();
+    // Ensure service is started on initialization
+    await startService();
   }
 
   Future<void> _initializeNotifications() async {
@@ -56,20 +58,21 @@ class BackgroundMonitorService {
     service.configure(
       androidConfiguration: AndroidConfiguration(
         onStart: onStart,
-        autoStart: false,
+        autoStart: true, // Changed from false for persistence
         isForegroundMode: true,
         notificationChannelId: _channelId,
-        initialNotificationTitle: 'SHEild AI',
-        initialNotificationContent: 'Monitoring your safety...',
+        initialNotificationTitle: 'SHEild AI SafeGuard',
+        initialNotificationContent: 'Active Protection Enabled',
         foregroundServiceNotificationId: 888,
       ),
       iosConfiguration: IosConfiguration(
-        autoStart: false,
+        autoStart: true, // Changed from false
         onForeground: onStart,
         onBackground: onIosBackground,
       ),
     );
   }
+
 
   Future<void> startService() async {
     final service = FlutterBackgroundService();
@@ -115,30 +118,41 @@ class BackgroundMonitorService {
     });
 
     // Use Geolocator for background location
+    final Set<String> triggeredZones = {};
+    
     Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 10,
       ),
     ).listen((position) {
-      _checkBackgroundZones(position, backgroundZones, notifications);
+      _checkBackgroundZones(position, backgroundZones, notifications, triggeredZones);
       
       if (service is AndroidServiceInstance) {
         service.setForegroundNotificationInfo(
-          title: 'SHEild AI',
-          content: 'Safety monitoring active - ${DateTime.now().toString().substring(11, 19)}',
+          title: 'SHEild AI SafeGuard',
+          content: 'Active Protection: Monitoring Location',
         );
       }
     });
   }
 
-  static void _checkBackgroundZones(Position position, List<dynamic> zones, FlutterLocalNotificationsPlugin notifications) {
+
+  static void _checkBackgroundZones(
+    Position position, 
+    List<dynamic> zones, 
+    FlutterLocalNotificationsPlugin notifications,
+    Set<String> triggeredZones,
+  ) {
+    bool foundAnyZone = false;
+    
     for (var zone in zones) {
       final double zoneLat = (zone['lat'] as num).toDouble();
       final double zoneLon = (zone['lon'] as num).toDouble();
       final double baseScore = (zone['base_score'] ?? 0.0).toDouble();
+      final String zoneName = zone['name'] ?? 'Unknown Zone';
+      final String zoneId = '${zoneLat}_${zoneLon}';
       
-      // Basic distance calculation (Haversine or simple)
       final double distance = Geolocator.distanceBetween(
         position.latitude,
         position.longitude,
@@ -148,14 +162,24 @@ class BackgroundMonitorService {
 
       // Trigger if within 500m (zone radius) + 50m (proximity)
       if (distance <= 550 && baseScore > 25) {
-        _showHighPriorityNotification(
-          notifications,
-          '🚨 ZONE ENTRY ALERT',
-          'You are entering ${zone['name']}. Stay alert or send SOS if needed.',
-        );
+        foundAnyZone = true;
+        if (!triggeredZones.contains(zoneId)) {
+          _showHighPriorityNotification(
+            notifications,
+            '🚨 ZONE ALERT: $zoneName',
+            'You are in a risky area. Stay alert or tap for safety options.',
+          );
+          triggeredZones.add(zoneId);
+        }
+      } else {
+        // Remove from triggered set if we move away from the zone (hysteresis)
+        if (distance > 700) {
+          triggeredZones.remove(zoneId);
+        }
       }
     }
   }
+
 
   static Future<void> _showHighPriorityNotification(
     FlutterLocalNotificationsPlugin notifications,

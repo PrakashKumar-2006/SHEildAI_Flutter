@@ -290,6 +290,7 @@ class AppBootstrap extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () {
+              zoneService.stopSiren();
               zoneService.resetAlert();
               Navigator.pop(context);
             },
@@ -297,6 +298,7 @@ class AppBootstrap extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
+              zoneService.stopSiren();
               zoneService.resetAlert();
               Navigator.pop(context);
               context.read<SafetyProvider>().triggerSOSFlow();
@@ -309,6 +311,7 @@ class AppBootstrap extends StatelessWidget {
             child: const Text('SEND SOS', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
+
       ),
     );
   }

@@ -49,12 +49,18 @@ class NotificationService {
             'sheild_ai_channel',
             'SHEild AI Notifications',
             channelDescription: 'Emergency and safety notifications',
-            importance: Importance.high,
+            importance: Importance.max,
             priority: Priority.high,
             showWhen: true,
             icon: '@mipmap/ic_launcher',
+            category: AndroidNotificationCategory.alarm,
+            visibility: NotificationVisibility.public,
           ),
-          iOS: const DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
         );
 
     await _notificationsPlugin.show(
@@ -103,7 +109,7 @@ class NotificationService {
   }) async {
     await showNotification(
       id: 200,
-      title: '🚨 ZONE ENTRY ALERT',
+      title: '🚨 ZONE ENTRY ALERT: $zoneName',
       body: message,
       payload: 'zone_alert',
       notificationDetails: NotificationDetails(
@@ -116,11 +122,16 @@ class NotificationService {
           fullScreenIntent: true,
           enableVibration: true,
           playSound: true,
+          category: AndroidNotificationCategory.alarm,
+          visibility: NotificationVisibility.public,
+          ongoing: true,
+          autoCancel: false,
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
+          interruptionLevel: InterruptionLevel.critical,
         ),
       ),
     );
@@ -146,10 +157,19 @@ class NotificationService {
           fullScreenIntent: true,
           enableVibration: true,
           playSound: true,
+          category: AndroidNotificationCategory.event,
+          visibility: NotificationVisibility.public,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
         ),
       ),
     );
   }
+
 
   Future<void> cancelSOSNotifications() async {
     await cancelNotification(1);
