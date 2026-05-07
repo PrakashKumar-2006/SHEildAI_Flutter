@@ -87,8 +87,14 @@ class AuthProvider extends ChangeNotifier {
       
       debugPrint('[AuthProvider] Syncing user data for: $email');
       
-      // 1. Fetch User Document
-      final userDoc = await mongoService.getUserByEmail(email);
+      // 1. Fetch User Document with a timeout to prevent hanging
+      final userDoc = await mongoService.getUserByEmail(email).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          debugPrint('[AuthProvider] Sync timed out for user doc');
+          return null;
+        },
+      );
       if (userDoc != null) {
         final name = userDoc['name'] as String? ?? '';
         final phone = userDoc['phone'] as String? ?? '';
@@ -104,7 +110,10 @@ class AuthProvider extends ChangeNotifier {
         Set<String> seenPhones = {};
         
         // Fetch from emergency_contacts collection (has full name+phone)
-        final contactsFromColl = await mongoService.getContactsByEmail(email);
+        final contactsFromColl = await mongoService.getContactsByEmail(email).timeout(
+          const Duration(seconds: 8),
+          onTimeout: () => [],
+        );
         for (var c in contactsFromColl) {
           final p = c['phone'] as String?;
           final n = c['name'] as String? ?? 'Guardian';
@@ -117,7 +126,10 @@ class AuthProvider extends ChangeNotifier {
         
         // Also try from phone identifier if we have one
         if (phone.isNotEmpty) {
-          final contactsByPhone = await mongoService.getContacts(phone);
+          final contactsByPhone = await mongoService.getContacts(phone).timeout(
+            const Duration(seconds: 8),
+            onTimeout: () => [],
+          );
           for (var c in contactsByPhone) {
             final p = c['phone'] as String?;
             final n = c['name'] as String? ?? 'Guardian';

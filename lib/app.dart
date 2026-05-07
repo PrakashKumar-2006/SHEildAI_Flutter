@@ -431,22 +431,8 @@ class AppBootstrap extends StatelessWidget {
       return const LoginScreen();
     }
 
-    if (auth.isSyncing) {
-      return const Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Restoring your profile...'),
-            ],
-          ),
-        ),
-      );
-    }
-
     final storage = context.read<StorageService>();
+
     final isSetupComplete = storage.getBool('@setup_complete') ?? false;
     final hasContacts = storage.getTrustedContacts().isNotEmpty;
 
