@@ -1,24 +1,19 @@
 """
-SHEild AI — FastAPI ML Risk Engine v4.0
+SHEild AI — FastAPI ML Risk Engine v5.0
 ========================================
-Trained on 8,888 records | 38 features | 56 police stations | 2020-2023
-Accuracy: 95.73% | CV F1: 0.955 ± 0.0045
+Trained on 15,136 records | 38 features | 104 police stations (Bhopal + Indore) | 2020-2024
+Accuracy: 96.57% | CV F1: 0.9568 ± 0.0044
 
 Run : uvicorn main:app --reload --host 0.0.0.0 --port 8000
 Docs: http://localhost:8000/docs
 
-v4.0 Changes (from v3.1)
+v5.0 Changes (from v4.0)
 --------------------------
-- Updated metrics: 8,888 records | 56 stations | 95.73% accuracy | CV F1 0.955
-- 4-zone risk system: SAFE(0-25) / MEDIUM(26-62) / HIGH(63-75) / CRITICAL(76-100)
-- Night Multiplier: automatic +2% score boost when hour ≥ 21 or < 6
-- /api/best-travel-time  — scan 24h window, return safest hour to travel
-- /api/forecast          — 3-hour ahead risk forecast for current location
-- /api/community-alert   — POST community incident report (validation + storage)
-- /api/safe-route-v2     — React Native optimised route ranker (matches RoutesScreen.tsx)
-- Pydantic v2 compatible (@field_validator + @classmethod throughout)
-- Null-safe zone feature parsing everywhere
-- Comprehensive per-endpoint error handling
+- Expanded dataset: 15,136 records (added 6,248 Indore records)
+- Support for 104 police stations (56 Bhopal + 48 Indore)
+- Accuracy improved to 96.57% | CV F1 0.9568
+- Updated model bundle: sheild_risk_model_v5.pkl (125MB)
+- Improved 4-zone risk system consistency
 """
 
 import os
@@ -44,8 +39,8 @@ import joblib
 # ─────────────────────────────────────────────────────────────────────────────
 
 DATASET_PATH = "SHEild_AI_Improved_Dataset.xlsx"
-MODEL_PATH = "models/sheild_risk_model.pkl"
-VERSION = "4.0.0"
+MODEL_PATH = "sheild_risk_model.pkl"
+VERSION = "5.0.0"
 
 # 4-zone risk thresholds (updated from v3.1's 3-zone)
 RISK_THRESHOLDS = {
@@ -346,7 +341,7 @@ def load_everything():
         f"   CV F1         : {m.get('cv_f1_mean', 0):.3f} ± {m.get('cv_f1_std', 0):.4f}"
     )
     print(f"   Training recs : {m.get('training_records', '?'):,}")
-    print(f"   Stations      : {m.get('total_stations', 56)}")
+    print(f"   Stations      : {m.get('total_stations', 104)} ({m.get('bhopal_stations', 56)} Bhopal, {m.get('indore_stations', 48)} Indore)")
     print(f"   Features      : {len(FEATURES)}")
 
     # ── Dataset lookups ───────────────────────────────────────────────────────
@@ -427,14 +422,14 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="SHEild AI — ML Risk Engine API v4.0",
+    title="SHEild AI — ML Risk Engine API v5.0",
     description="""
-## 🛡️ SHEild AI — Women Safety ML Risk Prediction System, Bhopal
+## 🛡️ SHEild AI — Women Safety ML Risk Prediction System, Bhopal & Indore
 
 **Model**: Random Forest (n=400) + Gradient Boosting (n=250) — Soft Voting Ensemble  
-**Dataset**: 8,888 incidents | 56 stations | 4 years (2020–2023)  
-**Accuracy**: 95.73% | **CV F1**: 0.955 ± 0.0045 | **38 Features**  
-**Critical-class Recall**: 98.35% | Critical→Medium errors: 0
+**Dataset**: 15,136 incidents | 104 stations | 4 years (2020–2024)  
+**Accuracy**: 96.57% | **CV F1**: 0.9568 ± 0.0044 | **38 Features**  
+**Critical-class Recall**: 97.87% | Critical→Medium errors: 0
 
 ---
 

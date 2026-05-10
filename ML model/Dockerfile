@@ -13,8 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all resources including the .pkl payload
 COPY . .
 
-# Expose API port
-EXPOSE 8000
+# Expose API port (Hugging Face Spaces require 7860)
+EXPOSE 7860
 
-# Start Uvicorn engine (1 worker limits RAM usage to under 512MB for free tiers)
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# Start Uvicorn engine
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 7860 --workers 1"]
