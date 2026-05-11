@@ -235,9 +235,13 @@ class AppBootstrap extends StatelessWidget {
     final zoneService = context.watch<ZoneService>();
 
     // Listen for zone alerts to show popup
-    if (zoneService.alertTriggered) {
+    if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showZoneAlertPopup(context, zoneService);
+        // Double check after frame to avoid race conditions
+        if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
+          zoneService.setAlertPopupShowing(true);
+          _showZoneAlertPopup(context, zoneService);
+        }
       });
     }
 
@@ -252,8 +256,12 @@ class AppBootstrap extends StatelessWidget {
   }
 
   void _showZoneAlertPopup(BuildContext context, ZoneService zoneService) {
-    final zone = zoneService.currentZone ?? zoneService.nearestZone;
-    if (zone == null) return;
+    // Use the specific zone that triggered the alert, or fallback to current/nearest
+    final zone = zoneService.triggeredZone ?? zoneService.currentZone ?? zoneService.nearestZone;
+    if (zone == null) {
+      zoneService.setAlertPopupShowing(false);
+      return;
+    }
 
     showDialog(
       context: context,

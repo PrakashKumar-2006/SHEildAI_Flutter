@@ -166,13 +166,15 @@ class RoutesProvider extends ChangeNotifier {
     int hour, int month, int isWeekend, List<ZoneModel>? zones,
     List<OSRMRoute> originalRoutes,
   ) async {
-    // Evaluate routes with ML model for risk scoring
-    final routesForML = originalRoutes.map((r) => r.points.map((p) => {
-      'lat': p.latitude,
-      'lon': p.longitude,
-    }).toList()).toList();
-
+    bool mlSuccess = false;
+    
     try {
+      // Evaluate routes with ML model for risk scoring
+      final routesForML = originalRoutes.map((r) => r.points.map((p) => {
+        'lat': p.latitude,
+        'lon': p.longitude,
+      }).toList()).toList();
+
       final mlResult = await _mlService.getSafeRouteV2(
         originLat: originLat,
         originLon: originLon,
@@ -184,47 +186,64 @@ class RoutesProvider extends ChangeNotifier {
         routes: routesForML,
       );
 
-      if (mlResult.containsKey('ranked_routes')) {
-        final List<dynamic> rankedIndices = mlResult['ranked_routes'];
-        final Map<String, dynamic>? riskScores = mlResult['risk_scores'];
+      if (mlResult.containsKey('risk_scores')) {
+        final Map<String, dynamic> riskScores = mlResult['risk_scores'];
+        double totalRiskSum = 0;
         
-        List<OSRMRoute> rankedRoutes = [];
-        for (var item in rankedIndices) {
-          int idx = -1;
-          if (item is int) {
-            idx = item;
-          } else if (item is Map) idx = item['index'] ?? -1;
-          else idx = int.tryParse(item.toString()) ?? -1;
-
-          if (idx >= 0 && idx < originalRoutes.length) {
-            final route = originalRoutes[idx];
-            if (riskScores != null && riskScores.containsKey(idx.toString())) {
-              route.riskScore = (riskScores[idx.toString()] as num).toDouble();
-            }
-            rankedRoutes.add(route);
+        for (int i = 0; i < originalRoutes.length; i++) {
+          if (riskScores.containsKey(i.toString())) {
+            double score = (riskScores[i.toString()] as num).toDouble();
+            originalRoutes[i].riskScore = score;
+            totalRiskSum += score;
           }
         }
         
+        // If we got some non-zero risk scores, consider it a success
+        if (totalRiskSum > 0) {
+          mlSuccess = true;
+        }
+      }
+      
+      // If we have ranked_routes from API, we can use that order as a baseline
+      if (mlResult.containsKey('ranked_routes')) {
+        final List<dynamic> rankedIndices = mlResult['ranked_routes'];
+        List<OSRMRoute> rankedRoutes = [];
+        for (var item in rankedIndices) {
+          int idx = -1;
+          if (item is int) idx = item;
+          else if (item is Map) idx = item['index'] ?? -1;
+          else idx = int.tryParse(item.toString()) ?? -1;
+
+          if (idx >= 0 && idx < originalRoutes.length) {
+            rankedRoutes.add(originalRoutes[idx]);
+          }
+        }
         if (rankedRoutes.isNotEmpty) {
-          rankedRoutes.sort((a, b) {
-            int riskCmp = a.riskScore.compareTo(b.riskScore);
-            if (riskCmp != 0) return riskCmp;
-            return a.distance.compareTo(b.distance);
-          });
           _routes = rankedRoutes;
         }
       }
     } catch (e) {
       debugPrint('[Routes] ML evaluation error in background: $e');
-      // Fallback: use local zones if ML fails
-      if (zones != null && zones.isNotEmpty) {
-        _applyLocalZoneSafety(zones);
-      }
     }
 
-    // Final sorting and selection update
+    // Fallback: use local zones if ML fails OR if ML returned all zeros (which is unlikely in real world)
+    if (!mlSuccess && zones != null && zones.isNotEmpty) {
+      _applyLocalZoneSafety(zones);
+    }
+
+    // Final sorting: Safest first, then shortest
+    _routes.sort((a, b) {
+      // Sort by risk score (ascending - lower is safer)
+      int riskCmp = a.riskScore.compareTo(b.riskScore);
+      if (riskCmp != 0) return riskCmp;
+      // If risk is same, prefer shorter route
+      return a.distance.compareTo(b.distance);
+    });
+
+    // Reset selection to the now-first (safest) route
     _selectedRouteIndex = 0;
     _selectedRoute = _routes.isNotEmpty ? _routes.first : null;
+    notifyListeners();
   }
 
   void _applyLocalZoneSafety(List<ZoneModel> zones) {

@@ -22,6 +22,8 @@ class ZoneService extends ChangeNotifier {
   bool _isSirenPlaying = false;
   String? _lastTriggeredZoneId;
   bool _isInsideAlertShown = false;
+  ZoneModel? _triggeredZone;
+  bool _isAlertPopupShowing = false;
   
   StreamSubscription? _locationSubscription;
   Timer? _alertCooldownTimer;
@@ -35,6 +37,8 @@ class ZoneService extends ChangeNotifier {
   bool get isDataAvailable => _isDataAvailable;
   bool get alertTriggered => _alertTriggered;
   bool get isSirenPlaying => _isSirenPlaying;
+  ZoneModel? get triggeredZone => _triggeredZone;
+  bool get isAlertPopupShowing => _isAlertPopupShowing;
 
   void initialize() {
     _loadZones();
@@ -206,6 +210,7 @@ class ZoneService extends ChangeNotifier {
   }
 
   void _triggerZoneAlert(ZoneModel zone) {
+    _triggeredZone = zone;
     _alertTriggered = true;
     _notificationService.showZoneEntryAlert(
       zoneName: zone.name,
@@ -217,6 +222,13 @@ class ZoneService extends ChangeNotifier {
 
   void resetAlert() {
     _alertTriggered = false;
+    _triggeredZone = null;
+    _isAlertPopupShowing = false;
+    notifyListeners();
+  }
+
+  void setAlertPopupShowing(bool showing) {
+    _isAlertPopupShowing = showing;
     notifyListeners();
   }
 
