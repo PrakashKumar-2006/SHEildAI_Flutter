@@ -55,10 +55,15 @@ class SocketService {
     _socket!.onError((data) => debugPrint('[SocketService] Socket Error: $data'));
 
     _socket!.onAny((event, data) {
-      if (data is Map<String, dynamic>) {
-        final wrappedData = Map<String, dynamic>.from(data);
-        wrappedData['event'] = event;
-        _messageController.add(wrappedData);
+      if (data is Map) {
+        try {
+          // Convert to Map<String, dynamic> safely
+          final wrappedData = Map<String, dynamic>.from(data);
+          wrappedData['event'] = event;
+          _messageController.add(wrappedData);
+        } catch (_) {
+          _messageController.add({'event': event, 'data': data});
+        }
       } else {
          _messageController.add({'event': event, 'data': data});
       }

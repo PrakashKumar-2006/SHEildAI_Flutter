@@ -146,39 +146,53 @@ class CrowdDensityService {
   void dispose() => _client.close();
 
   // ─────────────────────────────────────────
-  //  OSM FETCH  (races all servers, first wins)
+  //  OSM FETCH  (races all servers, first SUCCESS wins)
   // ─────────────────────────────────────────
   Future<CrowdDensityResult> _fetchOsmResult(double lat, double lon) async {
     final query = _buildQuery(lat, lon);
 
-    // Race all mirrors – fastest non-error response wins
+    // Race all mirrors – fastest SUCCESSFUL response wins
+    final completer = Completer<http.Response>();
+    int failedCount = 0;
+    
+    for (final url in _servers) {
+      _client.post(
+        Uri.parse(url),
+        headers: {'User-Agent': 'SHEildAI-SafetyApp/1.2'},
+        body: {'data': query},
+      ).timeout(Duration(seconds: _Cfg.osmTimeoutSec)).then((res) {
+        if (res.statusCode == 200 && !completer.isCompleted) {
+          completer.complete(res);
+        } else {
+          throw Exception('Status ${res.statusCode}');
+        }
+      }).catchError((e) {
+        failedCount++;
+        if (failedCount == _servers.length && !completer.isCompleted) {
+          completer.completeError(Exception('All OSM mirrors failed'));
+        }
+      });
+    }
+
     try {
-      final response = await Future.any(
-        _servers.map(
-          (url) => _client
-              .post(
-                Uri.parse(url),
-                headers: {'User-Agent': 'SHEildAI-SafetyApp/1.2'},
-                body: {'data': query},
-              )
-              .timeout(Duration(seconds: _Cfg.osmTimeoutSec))
-              .then((res) {
-                if (res.statusCode != 200) {
-                  throw Exception('HTTP ${res.statusCode} from $url');
-                }
-                return res;
-              }),
-        ),
-      );
+      final response = await completer.future;
       final data     = json.decode(response.body) as Map<String, dynamic>;
       final elements = (data['elements'] as List?) ?? [];
       return _calculateRiskScore(elements, lat, lon);
     } catch (e) {
       debugPrint('[CrowdDensity] All OSM servers failed: $e');
-      // Graceful degradation — return a neutral "data limited" result
-      return const CrowdDensityResult(
-        riskScore: 18,
-        densityLevel: 'Safe (Data Limited)',
+      // Graceful degradation: align with the core philosophy that 'unknown/isolated = risky'.
+      final timeMultiplier = _timeRiskMultiplier();
+      final double fallbackRisk = (50.0 * timeMultiplier).clamp(0.0, 100.0);
+      
+      final hour = _localHour();
+      final level = (hour > 20 || hour < 5.0) 
+          ? 'Isolated (Offline Mode)' 
+          : 'Quiet Area (Offline Mode)';
+
+      return CrowdDensityResult(
+        riskScore: fallbackRisk,
+        densityLevel: level,
         poiCount: 0,
         detectedPlaces: [],
         errorMessage: 'OSM unavailable',
@@ -218,7 +232,7 @@ class CrowdDensityService {
     if (community.penalty <= 0) return osm;
 
     final newScore =
-        min(_Cfg.maxRiskScore, osm.riskScore + community.penalty);
+        (osm.riskScore + community.penalty).clamp(0.0, _Cfg.maxRiskScore);
 
     final newLevel = community.penalty > _Cfg.communityHighThresh
         ? 'High Risk (Community Alerts)'
@@ -254,7 +268,7 @@ class CrowdDensityService {
       final distMetres =
           _haversineKm(userLat, userLon, eLat, eLon) * 1000;
       // Linear decay: full weight at 0m, zero at scanRadius
-      final decay = max(0.1, 1.0 - (distMetres / _Cfg.scanRadius));
+      final decay = (1.0 - (distMetres / _Cfg.scanRadius)).clamp(0.1, 1.0);
 
       final name = (tags['name']     as String?) ??
                    (tags['amenity']  as String?) ??
@@ -285,21 +299,35 @@ class CrowdDensityService {
     if (hasPoliceNearby) {
       riskScore = _Cfg.policeOverrideRisk;
       level     = 'Very Safe (Police Nearby)';
-    } else if (safetyScore >= _Cfg.safetyHighThreshold) {
-      riskScore = min(_Cfg.maxRiskScore,
-          _Cfg.baseRiskLow * timeMultiplier);
-      level     = 'Active Area';
-    } else if (safetyScore >= _Cfg.safetyMidThreshold) {
-      riskScore = min(_Cfg.maxRiskScore,
-          _Cfg.baseRiskMid * timeMultiplier);
-      level     = 'Moderate Activity';
     } else {
-      riskScore = min(_Cfg.maxRiskScore,
-          _Cfg.baseRiskHigh * timeMultiplier);
-      final hour = _localHour();
-      level = (hour > 20 || hour < _Cfg.nightEndHour)
-          ? 'Isolated (High Risk)'
-          : 'Quiet Area';
+      // SMOOTH INTERPOLATION to avoid the 15% -> 50% jumps
+      // Logic:
+      // Safety Score >= 40 (Active) -> 15% base risk
+      // Safety Score == 15 (Moderate) -> 30% base risk
+      // Safety Score <= 0 (Isolated) -> 50% base risk
+      
+      double baseRisk;
+      if (safetyScore >= _Cfg.safetyHighThreshold) {
+        // Linear improvement for very active areas: 40 (15%) -> 80 (10%)
+        final t = ((safetyScore - 40) / 40).clamp(0.0, 1.0);
+        baseRisk = 15.0 - (t * 5.0);
+        level = 'Active Area';
+      } else if (safetyScore >= _Cfg.safetyMidThreshold) {
+        // Interpolate between Mid (30%) and High (15%)
+        final t = ((safetyScore - 15) / (40 - 15)).clamp(0.0, 1.0);
+        baseRisk = 30.0 - (t * (30.0 - 15.0));
+        level = 'Moderate Activity';
+      } else {
+        // Interpolate between Isolated (50%) and Mid (30%)
+        final t = (safetyScore / 15.0).clamp(0.0, 1.0);
+        baseRisk = 50.0 - (t * (50.0 - 30.0));
+        final hour = _localHour();
+        level = (hour > 20 || hour < _Cfg.nightEndHour)
+            ? 'Isolated (High Risk)'
+            : 'Quiet Area';
+      }
+      
+      riskScore = (baseRisk * timeMultiplier).clamp(0.0, _Cfg.maxRiskScore);
     }
 
     // Cap display list so the UI is not flooded

@@ -22,34 +22,40 @@ class MongoService {
     if (isConnected) return;
 
     try {
-      String uri = dotenv.env['MONGO_URI'] ?? '';
-      final dbName = dotenv.env['MONGO_DB_NAME'] ?? 'sheild_ai_flutter';
+      var connectionString = (dotenv.env['MONGO_DB_CONNECTION_STRING'] ?? dotenv.env['MONGO_URI'] ?? '').trim();
+      final dbName = (dotenv.env['MONGO_DB_NAME'] ?? 'sheildai').trim();
       
-      if (uri.isEmpty) throw Exception('MONGO_URI is empty in .env');
+      if (connectionString.isEmpty) {
+        throw Exception('MongoDB connection string missing in .env (check MONGO_DB_CONNECTION_STRING or MONGO_URI)');
+      }
 
-      // Inject DB Name and authSource if missing (Atlas requirement)
-      if (uri.startsWith('mongodb')) {
-        final queryIndex = uri.indexOf('?');
-        String basePart = queryIndex > -1 ? uri.substring(0, queryIndex) : uri;
-        String queryPart = queryIndex > -1 ? uri.substring(queryIndex) : '';
-
-        if (!basePart.contains('.mongodb.net/')) {
-          basePart = basePart.replaceFirst('.mongodb.net', '.mongodb.net/$dbName');
-        }
-        
-        uri = basePart + queryPart;
-
-        if (!uri.contains('authSource=')) {
-          final sep = uri.contains('?') ? '&' : '?';
-          uri = '$uri${sep}authSource=admin';
+      String finalUri = connectionString;
+      
+      if (!finalUri.contains('/$dbName')) {
+        // Find the spot to inject the DB name (before '?' or at the end)
+        if (finalUri.contains('?')) {
+          finalUri = finalUri.replaceFirst('?', '$dbName?');
+        } else {
+          finalUri = finalUri.endsWith('/') ? '$finalUri$dbName' : '$finalUri/$dbName';
         }
       }
 
-      final masked = uri.replaceFirst(RegExp(r':.*@'), ':****@');
-      debugPrint('[MongoService] Connecting to Unified Atlas: $masked');
+      // Atlas requirement: Ensure authSource=admin
+      if (finalUri.startsWith('mongodb') && !finalUri.contains('authSource')) {
+        finalUri += finalUri.contains('?') ? '&authSource=admin' : '?authSource=admin';
+      }
 
-      _db = await Db.create(uri);
-      await _db!.open();
+      final logUri = finalUri.replaceFirst(RegExp(r':([^@]+)@'), ':****@');
+      debugPrint('[MongoService] Connecting with URI: $logUri');
+      
+      if (_db != null) {
+        try { await _db!.close(); } catch (_) {}
+      }
+
+      _db = await Db.create(finalUri);
+      await _db!.open().timeout(const Duration(seconds: 15));
+      await _db!.getBuildInfo();
+
       _isConnected = true;
       
       await _ensureIndexes();
@@ -116,7 +122,13 @@ class MongoService {
 
   Future<bool> insertOne(String collection, Map<String, dynamic> document, {bool useAuth = false}) async {
     return executeWithRetry(() async {
+      debugPrint('[MongoService] Inserting into $collection: ${document.keys.toList()}');
       final result = await getCollection(collection).insertOne(document);
+      if (result.isSuccess) {
+        debugPrint('[MongoService] SUCCESS: Inserted into $collection.');
+      } else {
+        debugPrint('[MongoService] FAILED: Insert into $collection failed. Error: ${result.errmsg}');
+      }
       return result.isSuccess;
     });
   }
@@ -207,15 +219,33 @@ class MongoService {
 
   // ─── SOS & Community Methods ──────────────────────────────────────────────
 
-  Future<bool> createSOS(Map<String, dynamic> sosData) => insertOne('sos_history', sosData);
+  Future<bool> createSOS(Map<String, dynamic> sosData) async {
+    // Ensure GeoJSON location for better querying
+    if (sosData.containsKey('latitude') && sosData.containsKey('longitude')) {
+      final lat = (sosData['latitude'] as num).toDouble();
+      final lon = (sosData['longitude'] as num).toDouble();
+      sosData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
+    }
+    if (!sosData.containsKey('timestamp')) {
+      sosData['timestamp'] = DateTime.now().toIso8601String();
+    }
+    return insertOne('sos_history', sosData);
+  }
 
   Future<List<Map<String, dynamic>>> getUserSOSHistory(String phone) => find('sos_history', where.eq('user_phone', phone));
 
   Future<bool> updateSOSStatus(String sosId, String status) async {
     try {
-      return await updateOne('sos_history', where.eq('_id', ObjectId.parse(sosId)), modify.set('status', status));
+      // Try by MongoDB ObjectId first
+      if (sosId.length == 24) {
+        final result = await updateOne('sos_history', where.eq('_id', ObjectId.parse(sosId)), modify.set('status', status));
+        if (result) return true;
+      }
+      // Fallback to custom sos_id field
+      return updateOne('sos_history', where.eq('sos_id', sosId), modify.set('status', status));
     } catch (e) {
-      return updateOne('sos_history', where.eq('id', sosId), modify.set('status', status));
+      debugPrint('[MongoService] updateSOSStatus error: $e');
+      return updateOne('sos_history', where.eq('id', sosId).or(where.eq('sos_id', sosId)), modify.set('status', status));
     }
   }
 
@@ -302,11 +332,38 @@ class MongoService {
   // ─── Community Methods ───────────────────────────────────────────────────
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
-    final lat = (reportData['lat'] ?? reportData['latitude'] as num).toDouble();
-    final lon = (reportData['lon'] ?? reportData['longitude'] as num).toDouble();
-    reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
-    reportData['timestamp'] = DateTime.now().toIso8601String();
-    return insertOne('community_reports', reportData);
+    try {
+      final latValue = reportData['latitude'] ?? reportData['lat'];
+      final lonValue = reportData['longitude'] ?? reportData['lon'];
+      
+      if (latValue == null || lonValue == null) {
+        debugPrint('[MongoService] Error: lat/lon missing in reportData');
+        return false;
+      }
+
+      final lat = (latValue as num).toDouble();
+      final lon = (lonValue as num).toDouble();
+      
+      // Ensure both are present for compatibility with all backends
+      reportData['latitude'] = lat;
+      reportData['longitude'] = lon;
+      reportData['lat'] = lat;
+      reportData['lon'] = lon;
+      
+      reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
+      reportData['timestamp'] = DateTime.now().toIso8601String();
+      
+      if (!reportData.containsKey('id')) {
+        reportData['id'] = DateTime.now().millisecondsSinceEpoch.toString();
+      }
+      
+      debugPrint('[MongoService] Submitting report to community_reports collection');
+      final success = await insertOne('community_reports', reportData);
+      return success;
+    } catch (e) {
+      debugPrint('[MongoService] submitCommunityReport exception: $e');
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getNearbyReports(double lat, double lon, double radiusKm) async {

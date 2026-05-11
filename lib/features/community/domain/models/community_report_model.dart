@@ -22,10 +22,25 @@ class CommunityReportModel {
   });
 
   factory CommunityReportModel.fromJson(Map<String, dynamic> json) {
+    double? lat;
+    double? lon;
+
+    if (json['lat'] != null) lat = (json['lat'] as num).toDouble();
+    else if (json['latitude'] != null) lat = (json['latitude'] as num).toDouble();
+    else if (json['location'] != null && json['location']['coordinates'] != null) {
+      lat = (json['location']['coordinates'][1] as num).toDouble();
+    }
+
+    if (json['lon'] != null) lon = (json['lon'] as num).toDouble();
+    else if (json['longitude'] != null) lon = (json['longitude'] as num).toDouble();
+    else if (json['location'] != null && json['location']['coordinates'] != null) {
+      lon = (json['location']['coordinates'][0] as num).toDouble();
+    }
+
     return CommunityReportModel(
       id: (json['_id'] ?? json['report_id'] ?? json['id'] ?? '').toString(),
-      latitude: (json['lat'] ?? json['latitude'] as num).toDouble(),
-      longitude: (json['lon'] ?? json['longitude'] as num).toDouble(),
+      latitude: lat ?? 0.0,
+      longitude: lon ?? 0.0,
       incidentType: (json['incident_type'] ?? json['incidentType'] ?? 'Other').toString(),
       description: (json['description'] ?? '').toString(),
       severity: (json['severity'] ?? 5) as int,

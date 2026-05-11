@@ -192,7 +192,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>?> fetchHotspots() async {
     try {
       final response = await http
-          .get(Uri.parse('$_backendUrl/api/zones/hotspots'))
+          .get(Uri.parse('$_mlApiUrl/hotspots'))
           .timeout(_timeout);
 
       if (response.statusCode == 200) {

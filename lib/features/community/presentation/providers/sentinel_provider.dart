@@ -26,15 +26,15 @@ class SentinelAlert {
 
   factory SentinelAlert.fromJson(Map<String, dynamic> json) {
     return SentinelAlert(
-      sosId: json['sosId'] ?? '',
-      userId: json['userId'] ?? '',
-      name: json['name'] ?? 'Someone',
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      message: json['message'] ?? 'Emergency SOS!',
-      distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
+      sosId: json['sosId']?.toString() ?? '',
+      userId: json['userId']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Someone',
+      latitude: double.tryParse(json['latitude']?.toString() ?? '0') ?? 0.0,
+      longitude: double.tryParse(json['longitude']?.toString() ?? '0') ?? 0.0,
+      message: json['message']?.toString() ?? 'Emergency SOS!',
+      distance: double.tryParse(json['distance']?.toString() ?? '0') ?? 0.0,
       timestamp: json['timestamp'] != null 
-          ? DateTime.parse(json['timestamp']) 
+          ? DateTime.tryParse(json['timestamp'].toString()) ?? DateTime.now() 
           : DateTime.now(),
     );
   }
@@ -62,7 +62,8 @@ class SentinelProvider extends ChangeNotifier {
       final event = data['event'];
       
       if (event == 'sentinel_alert') {
-        _handleSentinelAlert(data);
+        final payload = data['data'] ?? data;
+        _handleSentinelAlert(payload);
       } else if (event == 'community_feed_update' || event == 'new_community_report') {
         _handleFeedUpdate(data);
       }
@@ -78,9 +79,9 @@ class SentinelProvider extends ChangeNotifier {
       _pendingPopup = alert;
       
       // Also trigger a system notification for background awareness
-      NotificationService().showSOSNotification(
-        message: '🚨 SENTINEL ALERT: ${alert.name} needs help nearby!',
-        location: '${alert.distance.toStringAsFixed(2)}km away',
+      NotificationService().showCommunitySOSNotification(
+        name: alert.name,
+        distanceMeters: alert.distance * 1000,
       );
       
       notifyListeners();

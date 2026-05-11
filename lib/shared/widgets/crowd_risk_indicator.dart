@@ -78,7 +78,7 @@ class _CrowdRiskIndicatorState extends State<CrowdRiskIndicator> {
 
     if (_result == null) {
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: const EdgeInsets.symmetric(vertical: 8),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: theme.surface,
@@ -102,7 +102,7 @@ class _CrowdRiskIndicatorState extends State<CrowdRiskIndicator> {
 
     if (_result!.densityLevel == 'API Error') {
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        margin: const EdgeInsets.symmetric(vertical: 8),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: theme.isDarkMode ? const Color(0xFF2D1B1B) : const Color(0xFFFFF1F1),
@@ -149,7 +149,7 @@ class _CrowdRiskIndicatorState extends State<CrowdRiskIndicator> {
         : (isWarning ? const Color(0xFFFBC02D) : const Color(0xFFD32F2F));
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,

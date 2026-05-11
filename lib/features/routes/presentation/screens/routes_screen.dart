@@ -12,7 +12,16 @@ import '../../../../core/models/zone_model.dart';
 import 'dart:ui' as ui;
 
 class RoutesScreen extends StatefulWidget {
-  const RoutesScreen({super.key});
+  final double? initialDestLat;
+  final double? initialDestLon;
+  final String? initialDestName;
+
+  const RoutesScreen({
+    super.key,
+    this.initialDestLat,
+    this.initialDestLon,
+    this.initialDestName,
+  });
 
   @override
   State<RoutesScreen> createState() => _RoutesScreenState();
@@ -29,9 +38,14 @@ class _RoutesScreenState extends State<RoutesScreen> {
     super.initState();
     _createDangerIcon();
     
-    // Check for Sentinel navigation arguments on mount
+    // Auto-search if initial coordinates provided via constructor or arguments
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkArguments();
+      if (widget.initialDestLat != null && widget.initialDestLon != null) {
+        _destinationController.text = widget.initialDestName ?? 'Alert Location';
+        _triggerDirectSearch(widget.initialDestLat!, widget.initialDestLon!);
+      } else {
+        _checkArguments();
+      }
     });
   }
 
@@ -45,23 +59,29 @@ class _RoutesScreenState extends State<RoutesScreen> {
   }
 
   void _handleSentinelNavigation(double lat, double lon) async {
-    // Populate coordinates into destination field
     _destinationController.text = "${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}";
-    
+    _triggerDirectSearch(lat, lon);
+  }
+
+  void _triggerDirectSearch(double lat, double lon) async {
     final routesProvider = context.read<RoutesProvider>();
     final loc = context.read<LocationProvider>().currentLocation;
     if (loc == null) return;
-    
-    // Fast loading search for the victim's location
-    await routesProvider.searchAndCalculateRoutes(
-      loc.latitude, loc.longitude, "${lat},${lon}",
+
+    await routesProvider.calculateRoutesFromCoords(
+      loc.latitude, 
+      loc.longitude, 
+      lat, 
+      lon,
       hour: DateTime.now().hour,
       month: DateTime.now().month,
       zones: context.read<ZoneService>().zones,
     );
-    
     if (routesProvider.destination != null && _mapController != null) {
-      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lon), 16));
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(
+        LatLng(routesProvider.destination!.latitude, routesProvider.destination!.longitude), 
+        16.0
+      ));
     }
   }
 
@@ -276,33 +296,86 @@ class _RoutesScreenState extends State<RoutesScreen> {
                   onSubmitted: (_) => _searchRoutes(),
                 ),
               ),
-              if (routesProvider.isLoading)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0D1B6E)),
+              if (routesProvider.isLoading || routesProvider.isEvaluatingSafety)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1B6E).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0D1B6E)),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Processing...',
+                        style: TextStyle(
+                          color: const Color(0xFF0D1B6E),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 )
               else
                 GestureDetector(
                   onTap: _searchRoutes,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0D1B6E),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
                       'Search',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
                     ),
                   ),
                 ),
             ],
           ),
+          if (routesProvider.loadingStep.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _isDarkMode ? const Color(0xFF0F172A).withOpacity(0.5) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    routesProvider.isEvaluatingSafety ? Ionicons.shield_checkmark : Ionicons.sync_outline,
+                    size: 14,
+                    color: const Color(0xFF0D1B6E),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      routesProvider.loadingStep,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: _isDarkMode ? Colors.white70 : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
+
 
   Widget _buildMapCard(BuildContext context, LocationProvider locationProvider, 
       RoutesProvider routesProvider, ZoneService zoneService) {
@@ -385,47 +458,111 @@ class _RoutesScreenState extends State<RoutesScreen> {
     if (routes.isEmpty) return const SizedBox();
     
     return Column(
-      children: routes.asMap().entries.map((entry) {
-        final index = entry.key;
-        final route = entry.value;
-        final isSelected = index == routesProvider.selectedRouteIndex;
-        
-        return GestureDetector(
-          onTap: () => routesProvider.selectRoute(index),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF0D1B6E).withOpacity(0.05) : _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isSelected ? const Color(0xFF0D1B6E) : Colors.transparent),
-            ),
-            child: Row(
-              children: [
-                const Icon(Ionicons.trail_sign_outline),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(index == 0 ? 'Safest Route' : 'Alternative Route ${index + 1}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text('${route.formattedDistance} • ${route.formattedDuration} • Risk: ${route.riskScore.toStringAsFixed(1)}%', 
-                        style: TextStyle(
-                          fontSize: 12, 
-                          color: route.riskScore > 75 ? Colors.red : (route.riskScore > 50 ? Colors.orange : Colors.grey)
-                        )
-                      ),
-                    ],
-                  ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                'Available Routes',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: _isDarkMode ? Colors.white : const Color(0xFF0D1B6E),
                 ),
-                if (isSelected) const Icon(Icons.check_circle, color: Color(0xFF0D1B6E)),
-              ],
-            ),
+              ),
+              const Spacer(),
+              if (routesProvider.isEvaluatingSafety)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0D1B6E)),
+                ),
+            ],
           ),
-        );
-      }).toList(),
+        ),
+        ...routes.asMap().entries.map((entry) {
+          final index = entry.key;
+          final route = entry.value;
+          final isSelected = index == routesProvider.selectedRouteIndex;
+          
+          String routeLabel = 'Route ${index + 1}';
+          if (!routesProvider.isEvaluatingSafety && index == 0) {
+            routeLabel = 'Safest Route';
+          }
+
+          return GestureDetector(
+            onTap: () => routesProvider.selectRoute(index),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF0D1B6E).withOpacity(0.05) : _isDarkMode ? const Color(0xFF1E293B) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: isSelected ? const Color(0xFF0D1B6E) : Colors.transparent),
+                boxShadow: [
+                  if (!isSelected) BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 2)),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFF0D1B6E).withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      index == 0 ? Ionicons.shield_checkmark : Ionicons.trail_sign_outline,
+                      size: 18,
+                      color: isSelected ? const Color(0xFF0D1B6E) : Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(routeLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text('${route.formattedDistance} • ${route.formattedDuration}', 
+                              style: TextStyle(fontSize: 12, color: _isDarkMode ? Colors.white60 : Colors.grey[600])
+                            ),
+                            const SizedBox(width: 8),
+                            if (routesProvider.isEvaluatingSafety)
+                              Text('• Evaluating Safety...', style: TextStyle(fontSize: 11, color: const Color(0xFF0D1B6E), fontWeight: FontWeight.w600))
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: (route.riskScore > 75 ? Colors.red : (route.riskScore > 50 ? Colors.orange : Colors.green)).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text('Risk: ${route.riskScore.toStringAsFixed(1)}%', 
+                                  style: TextStyle(
+                                    fontSize: 11, 
+                                    fontWeight: FontWeight.bold,
+                                    color: route.riskScore > 75 ? Colors.red : (route.riskScore > 50 ? Colors.orange : Colors.green)
+                                  )
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isSelected) const Icon(Icons.check_circle, color: Color(0xFF0D1B6E)),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
+
 
   List<Marker> _buildRiskMarkers(OSRMRoute? route, List<ZoneModel> zones) {
     if (route == null) return [];

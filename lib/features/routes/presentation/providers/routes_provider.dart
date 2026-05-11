@@ -12,6 +12,8 @@ class RoutesProvider extends ChangeNotifier {
   LatLng? _destination;
   String _destinationName = '';
   bool _isLoading = false;
+  bool _isEvaluatingSafety = false;
+  String _loadingStep = '';
   String? _errorMessage;
   int _selectedRouteIndex = 0;
 
@@ -20,6 +22,8 @@ class RoutesProvider extends ChangeNotifier {
   LatLng? get destination => _destination;
   String get destinationName => _destinationName;
   bool get isLoading => _isLoading;
+  bool get isEvaluatingSafety => _isEvaluatingSafety;
+  String get loadingStep => _loadingStep;
   String? get errorMessage => _errorMessage;
   int get selectedRouteIndex => _selectedRouteIndex;
 
@@ -46,6 +50,8 @@ class RoutesProvider extends ChangeNotifier {
     List<ZoneModel>? zones,
   }) async {
     _isLoading = true;
+    _isEvaluatingSafety = false;
+    _loadingStep = 'Locating destination...';
     _errorMessage = null;
     notifyListeners();
 
@@ -60,128 +66,210 @@ class RoutesProvider extends ChangeNotifier {
       if (destCoords == null) {
         _errorMessage = 'Could not find destination. Please try a different search term.';
         _isLoading = false;
+        _loadingStep = '';
         notifyListeners();
         return false;
       }
 
-      _destination = destCoords;
+      return calculateRoutesFromCoords(
+        originLat, 
+        originLon, 
+        destCoords.latitude, 
+        destCoords.longitude,
+        hour: hour,
+        month: month,
+        isWeekend: isWeekend,
+        zones: zones,
+      );
+    } catch (e) {
+      _errorMessage = 'Error calculating routes: $e';
+      _isLoading = false;
+      _loadingStep = '';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> calculateRoutesFromCoords(
+    double originLat,
+    double originLon,
+    double destLat,
+    double destLon, {
+    int hour = 0,
+    int month = 1,
+    int isWeekend = 0,
+    List<ZoneModel>? zones,
+  }) async {
+    _isLoading = true;
+    _isEvaluatingSafety = false;
+    _loadingStep = 'Generating route alternatives...';
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      _destination = LatLng(destLat, destLon);
 
       // Step 2: Get routes from OSRM
       final routes = await OSRMService.getRoutes(
         originLat,
         originLon,
-        destCoords.latitude,
-        destCoords.longitude,
-        alternatives: 4, // Increased to 4
+        destLat,
+        destLon,
+        alternatives: 4,
       );
 
       if (routes.isEmpty) {
         _errorMessage = 'Could not find any routes to this destination.';
         _isLoading = false;
+        _loadingStep = '';
         notifyListeners();
         return false;
       }
 
-      // Step 3: Evaluate routes with ML model for risk scoring
-      final routesForML = routes.map((r) => r.points.map((p) => {
-        'lat': p.latitude,
-        'lon': p.longitude,
-      }).toList()).toList();
-
-      try {
-        final mlResult = await _mlService.getSafeRouteV2(
-          originLat: originLat,
-          originLon: originLon,
-          destLat: destCoords.latitude,
-          destLon: destCoords.longitude,
-          hour: hour,
-          month: month,
-          isWeekend: isWeekend,
-          routes: routesForML,
-        );
-
-        if (mlResult.containsKey('ranked_routes')) {
-          final List<dynamic> rankedIndices = mlResult['ranked_routes'];
-          final Map<String, dynamic>? riskScores = mlResult['risk_scores'];
-          
-          List<OSRMRoute> rankedRoutes = [];
-          for (var item in rankedIndices) {
-            // ranked_routes might be list of indices or list of maps with index
-            int idx = -1;
-            if (item is int) {
-              idx = item;
-            } else if (item is Map) idx = item['index'] ?? -1;
-            else idx = int.tryParse(item.toString()) ?? -1;
-
-            if (idx >= 0 && idx < routes.length) {
-              final route = routes[idx];
-              // Attach risk score to the route if available
-              if (riskScores != null && riskScores.containsKey(idx.toString())) {
-                route.riskScore = (riskScores[idx.toString()] as num).toDouble();
-              }
-              rankedRoutes.add(route);
-            }
-          }
-          
-          if (rankedRoutes.isNotEmpty) {
-            // Priority 1: Risk Score (Lowest first) - Always suggest the safest path first
-            // Priority 2: Distance (only if risk scores are identical)
-            rankedRoutes.sort((a, b) {
-              int riskCmp = a.riskScore.compareTo(b.riskScore);
-              if (riskCmp != 0) return riskCmp;
-              return a.distance.compareTo(b.distance);
-            });
-            _routes = rankedRoutes;
-          } else {
-            _routes = routes;
-          }
-        } else {
-          _routes = routes;
-        }
-      } catch (e) {
-        debugPrint('[Routes] ML evaluation error: $e');
-        _routes = routes;
-      }
-
-      // Fallback: If ML failed or all routes have 0 risk, use local zones to calculate risk
-      if (zones != null && zones.isNotEmpty && _routes.every((r) => r.riskScore == 0)) {
-        debugPrint('[Routes] Using local zones for fallback risk calculation');
-        for (final route in _routes) {
-          double totalRisk = 0;
-          int pointsChecked = 0;
-          for (int i = 0; i < route.points.length; i += 10) {
-            pointsChecked++;
-            final point = route.points[i];
-            for (final zone in zones) {
-              final dist = OSRMService.calculateDistance(point.latitude, point.longitude, zone.center.latitude, zone.center.longitude);
-              if (dist < (zone.radius * 1000)) {
-                totalRisk += zone.riskScore;
-                break; 
-              }
-            }
-          }
-          route.riskScore = pointsChecked > 0 ? totalRisk / pointsChecked : 0;
-        }
-        
-        // Re-sort after fallback calculation
-        _routes.sort((a, b) {
-          int riskCmp = a.riskScore.compareTo(b.riskScore);
-          if (riskCmp != 0) return riskCmp;
-          return a.distance.compareTo(b.distance);
-        });
-      }
-
+      // Phase 1: Show initial routes immediately
+      _routes = List.from(routes);
       _selectedRouteIndex = 0;
       _selectedRoute = _routes.isNotEmpty ? _routes.first : null;
-      _isLoading = false;
+      _isLoading = false; // Primary loading done
+      _isEvaluatingSafety = true;
+      _loadingStep = 'Analyzing safety scores (ML models)...';
       notifyListeners();
+
+      // Phase 2: Async Safety Analysis
+      _performSafetyAnalysis(
+        originLat, originLon, destLat, destLon, 
+        hour, month, isWeekend, zones, routes
+      ).then((_) {
+        _isEvaluatingSafety = false;
+        _loadingStep = 'Safety analysis complete!';
+        notifyListeners();
+      }).catchError((e) {
+        debugPrint('[Routes] Safety analysis background error: $e');
+        _isEvaluatingSafety = false;
+        _loadingStep = 'Safety analysis failed, using fallback.';
+        notifyListeners();
+      });
+
       return true;
     } catch (e) {
       _errorMessage = 'Error calculating routes: $e';
       _isLoading = false;
+      _isEvaluatingSafety = false;
+      _loadingStep = '';
       notifyListeners();
       return false;
     }
+  }
+
+  Future<void> _performSafetyAnalysis(
+    double originLat, double originLon, double destLat, double destLon,
+    int hour, int month, int isWeekend, List<ZoneModel>? zones,
+    List<OSRMRoute> originalRoutes,
+  ) async {
+    bool mlSuccess = false;
+    
+    try {
+      // Evaluate routes with ML model for risk scoring
+      final routesForML = originalRoutes.map((r) => r.points.map((p) => {
+        'lat': p.latitude,
+        'lon': p.longitude,
+      }).toList()).toList();
+
+      final mlResult = await _mlService.getSafeRouteV2(
+        originLat: originLat,
+        originLon: originLon,
+        destLat: destLat,
+        destLon: destLon,
+        hour: hour,
+        month: month,
+        isWeekend: isWeekend,
+        routes: routesForML,
+      );
+
+      if (mlResult.containsKey('risk_scores')) {
+        final Map<String, dynamic> riskScores = mlResult['risk_scores'];
+        double totalRiskSum = 0;
+        
+        for (int i = 0; i < originalRoutes.length; i++) {
+          if (riskScores.containsKey(i.toString())) {
+            double score = (riskScores[i.toString()] as num).toDouble();
+            originalRoutes[i].riskScore = score;
+            totalRiskSum += score;
+          }
+        }
+        
+        // If we got some non-zero risk scores, consider it a success
+        if (totalRiskSum > 0) {
+          mlSuccess = true;
+        }
+      }
+      
+      // If we have ranked_routes from API, we can use that order as a baseline
+      if (mlResult.containsKey('ranked_routes')) {
+        final List<dynamic> rankedIndices = mlResult['ranked_routes'];
+        List<OSRMRoute> rankedRoutes = [];
+        for (var item in rankedIndices) {
+          int idx = -1;
+          if (item is int) idx = item;
+          else if (item is Map) idx = item['index'] ?? -1;
+          else idx = int.tryParse(item.toString()) ?? -1;
+
+          if (idx >= 0 && idx < originalRoutes.length) {
+            rankedRoutes.add(originalRoutes[idx]);
+          }
+        }
+        if (rankedRoutes.isNotEmpty) {
+          _routes = rankedRoutes;
+        }
+      }
+    } catch (e) {
+      debugPrint('[Routes] ML evaluation error in background: $e');
+    }
+
+    // Fallback: use local zones if ML fails OR if ML returned all zeros (which is unlikely in real world)
+    if (!mlSuccess && zones != null && zones.isNotEmpty) {
+      _applyLocalZoneSafety(zones);
+    }
+
+    // Final sorting: Safest first, then shortest
+    _routes.sort((a, b) {
+      // Sort by risk score (ascending - lower is safer)
+      int riskCmp = a.riskScore.compareTo(b.riskScore);
+      if (riskCmp != 0) return riskCmp;
+      // If risk is same, prefer shorter route
+      return a.distance.compareTo(b.distance);
+    });
+
+    // Reset selection to the now-first (safest) route
+    _selectedRouteIndex = 0;
+    _selectedRoute = _routes.isNotEmpty ? _routes.first : null;
+    notifyListeners();
+  }
+
+  void _applyLocalZoneSafety(List<ZoneModel> zones) {
+    debugPrint('[Routes] Applying local zone safety fallback');
+    for (final route in _routes) {
+      double totalRisk = 0;
+      int pointsChecked = 0;
+      for (int i = 0; i < route.points.length; i += 10) {
+        pointsChecked++;
+        final point = route.points[i];
+        for (final zone in zones) {
+          final dist = OSRMService.calculateDistance(point.latitude, point.longitude, zone.center.latitude, zone.center.longitude);
+          if (dist < (zone.radius * 1000)) {
+            totalRisk += zone.riskScore;
+            break; 
+          }
+        }
+      }
+      route.riskScore = pointsChecked > 0 ? totalRisk / pointsChecked : 0;
+    }
+    
+    _routes.sort((a, b) {
+      int riskCmp = a.riskScore.compareTo(b.riskScore);
+      if (riskCmp != 0) return riskCmp;
+      return a.distance.compareTo(b.distance);
+    });
   }
 
   void clearRoutes() {
@@ -191,6 +279,8 @@ class RoutesProvider extends ChangeNotifier {
     _destinationName = '';
     _selectedRouteIndex = 0;
     _errorMessage = null;
+    _loadingStep = '';
+    _isEvaluatingSafety = false;
     notifyListeners();
   }
 
@@ -199,3 +289,4 @@ class RoutesProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
+

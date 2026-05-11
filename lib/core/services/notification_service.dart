@@ -31,6 +31,39 @@ class NotificationService {
     );
 
     await _notificationsPlugin.initialize(initializationSettings);
+
+    // Create high-priority channels explicitly for Android
+    final androidPlugin = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    
+    if (androidPlugin != null) {
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'emergency_channel',
+        'Emergency Alerts',
+        description: 'High-priority alerts for nearby emergencies',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        showBadge: true,
+      ));
+
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'zone_alert_channel',
+        'Zone Alerts',
+        description: 'High-priority alerts for risky zones',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ));
+
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'sheild_ai_channel',
+        'General Notifications',
+        description: 'Safety and status notifications',
+        importance: Importance.high,
+      ));
+    }
+
     _initialized = true;
   }
 
@@ -49,12 +82,20 @@ class NotificationService {
             'sheild_ai_channel',
             'SHEild AI Notifications',
             channelDescription: 'Emergency and safety notifications',
-            importance: Importance.high,
-            priority: Priority.high,
+            importance: Importance.max,
+            priority: Priority.max,
             showWhen: true,
             icon: '@mipmap/ic_launcher',
+            ticker: 'Safety Alert',
+            category: AndroidNotificationCategory.alarm,
+            visibility: NotificationVisibility.public,
           ),
-          iOS: const DarwinNotificationDetails(),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.active,
+          ),
         );
 
     await _notificationsPlugin.show(
@@ -75,6 +116,26 @@ class NotificationService {
       title: '🚨 SOS ACTIVATED',
       body: message,
       payload: 'sos',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'emergency_channel',
+          'Emergency Alerts',
+          importance: Importance.max,
+          priority: Priority.max,
+          fullScreenIntent: true,
+          ticker: 'SOS ACTIVE',
+          category: AndroidNotificationCategory.alarm,
+          visibility: NotificationVisibility.public,
+          ongoing: true,
+          autoCancel: false,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.critical,
+        ),
+      ),
     );
   }
 
@@ -97,6 +158,40 @@ class NotificationService {
     await _notificationsPlugin.cancelAll();
   }
 
+  Future<void> showZoneEntryAlert({
+    required String zoneName,
+    required String message,
+  }) async {
+    await showNotification(
+      id: 200,
+      title: '🚨 ZONE ENTRY ALERT: $zoneName',
+      body: message,
+      payload: 'zone_alert',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'zone_alert_channel',
+          'Zone Alerts',
+          importance: Importance.max,
+          priority: Priority.max,
+          fullScreenIntent: true,
+          enableVibration: true,
+          playSound: true,
+          ticker: 'Zone Alert',
+          category: AndroidNotificationCategory.alarm,
+          visibility: NotificationVisibility.public,
+          ongoing: true,
+          autoCancel: false,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.critical,
+        ),
+      ),
+    );
+  }
+
   Future<void> showCommunitySOSNotification({
     required String name,
     required double distanceMeters,
@@ -111,16 +206,25 @@ class NotificationService {
         android: AndroidNotificationDetails(
           'emergency_channel',
           'Emergency Alerts',
-          channelDescription: 'High-priority alerts for nearby emergencies',
           importance: Importance.max,
-          priority: Priority.high,
+          priority: Priority.max,
           fullScreenIntent: true,
           enableVibration: true,
           playSound: true,
+          ticker: 'Sentinel Alert',
+          category: AndroidNotificationCategory.event,
+          visibility: NotificationVisibility.public,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
         ),
       ),
     );
   }
+
 
   Future<void> cancelSOSNotifications() async {
     await cancelNotification(1);

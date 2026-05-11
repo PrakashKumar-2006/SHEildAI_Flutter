@@ -10,6 +10,7 @@ import 'core/services/background_monitor_service.dart';
 import 'core/services/mongo_service.dart';
 import 'core/services/socket_service.dart';
 import 'core/services/zone_service.dart';
+import 'core/models/zone_model.dart';
 import 'features/home/presentation/providers/home_provider.dart';
 import 'features/location/data/repositories/location_repository_impl.dart';
 import 'features/location/presentation/providers/location_provider.dart';
@@ -40,7 +41,9 @@ import 'screens/sos_screen.dart';
 import 'screens/alerts_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/setup_permissions_screen.dart';
+import 'screens/system_permissions_screen.dart';
 import 'providers/providers.dart';
+import 'providers/permission_provider.dart';
 import 'shared/widgets/location_blocking_overlay.dart';
 import 'core/app_theme.dart' as new_theme;
 
@@ -179,6 +182,7 @@ class App extends StatelessWidget {
         ),
 
         // ─── New UI Providers (Bridged) ──────────────────────────────────────
+        ChangeNotifierProvider<PermissionProvider>(create: (_) => PermissionProvider()),
         ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
         ChangeNotifierProvider<LanguageProvider>(create: (_) => LanguageProvider()),
         ChangeNotifierProxyProvider6<SOSProvider, LocationProvider, MLProvider, ZoneService, VoiceProvider, CommunityProvider, SafetyProvider>(
@@ -211,6 +215,7 @@ class App extends StatelessWidget {
               '/routes': (context) => RoutesScreen(),
               '/alerts': (context) => AlertsScreen(),
               '/profile': (context) => ProfileScreen(),
+              '/system_permissions': (context) => const SystemPermissionsScreen(),
             },
           );
         },
@@ -227,6 +232,18 @@ class AppBootstrap extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final safety = context.watch<SafetyProvider>();
     final sentinel = context.watch<SentinelProvider>();
+    final zoneService = context.watch<ZoneService>();
+
+    // Listen for zone alerts to show popup
+    if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Double check after frame to avoid race conditions
+        if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
+          zoneService.setAlertPopupShowing(true);
+          _showZoneAlertPopup(context, zoneService);
+        }
+      });
+    }
 
     return Stack(
       children: [
@@ -235,6 +252,75 @@ class AppBootstrap extends StatelessWidget {
         if (sentinel.pendingPopup != null)
           _buildSentinelPopup(context, sentinel),
       ],
+    );
+  }
+
+  void _showZoneAlertPopup(BuildContext context, ZoneService zoneService) {
+    // Use the specific zone that triggered the alert, or fallback to current/nearest
+    final zone = zoneService.triggeredZone ?? zoneService.currentZone ?? zoneService.nearestZone;
+    if (zone == null) {
+      zoneService.setAlertPopupShowing(false);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Icon(
+              zone.zoneType == ZoneType.critical ? Icons.dangerous_rounded : Icons.warning_rounded,
+              color: zone.zoneType == ZoneType.critical ? Colors.red : Colors.orange,
+            ),
+            const SizedBox(width: 8),
+            const Text('ZONE ALERT', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You are entering/inside ${zone.name} (${zone.zoneLabel}).',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            Text(zone.alertMessage),
+            const SizedBox(height: 16),
+            const Text(
+              'Stay alert or send SOS if you feel unsafe.',
+              style: TextStyle(fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              zoneService.stopSiren();
+              zoneService.resetAlert();
+              Navigator.pop(context);
+            },
+            child: const Text('DISMISS', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              zoneService.stopSiren();
+              zoneService.resetAlert();
+              Navigator.pop(context);
+              context.read<SafetyProvider>().triggerSOSFlow();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('SEND SOS', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+
+      ),
     );
   }
 
@@ -353,22 +439,8 @@ class AppBootstrap extends StatelessWidget {
       return const LoginScreen();
     }
 
-    if (auth.isSyncing) {
-      return const Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Restoring your profile...'),
-            ],
-          ),
-        ),
-      );
-    }
-
     final storage = context.read<StorageService>();
+
     final isSetupComplete = storage.getBool('@setup_complete') ?? false;
     final hasContacts = storage.getTrustedContacts().isNotEmpty;
 

@@ -3,6 +3,7 @@ import '../../../../core/error/failures.dart';
 import '../../../../core/services/mongo_service.dart';
 import '../../../../core/services/socket_service.dart';
 import '../../../../core/services/api_service.dart';
+import '../../../../core/services/storage_service.dart';
 import '../../domain/models/community_report_model.dart';
 import '../../domain/repositories/community_repository.dart';
 
@@ -24,8 +25,8 @@ class CommunityRepositoryImpl implements CommunityRepository {
     try {
       final reportData = {
         'phone': phone,
-        'lat': latitude,
-        'lon': longitude,
+        'latitude': latitude,
+        'longitude': longitude,
         'incident_type': incidentType,
         'description': description,
         'severity': severity,
@@ -52,12 +53,15 @@ class CommunityRepositoryImpl implements CommunityRepository {
         );
         
         // Broadcast to other users via Socket for real-time visibility
+        // Ensure anonymity in the broadcast
         SocketService().emitCommunityReport({
           'latitude': latitude,
           'longitude': longitude,
           'incidentType': incidentType,
           'description': description,
           'severity': severity,
+          'anonymous': anonymous,
+          'reporterName': anonymous ? 'Anonymous' : (StorageService().getString('user_name') ?? 'Community Member'),
           'timestamp': DateTime.now().toIso8601String(),
         });
 

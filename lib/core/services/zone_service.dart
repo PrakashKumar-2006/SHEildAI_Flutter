@@ -20,6 +20,10 @@ class ZoneService extends ChangeNotifier {
   bool _isDataAvailable = true;
   bool _alertTriggered = false;
   bool _isSirenPlaying = false;
+  String? _lastTriggeredZoneId;
+  bool _isInsideAlertShown = false;
+  ZoneModel? _triggeredZone;
+  bool _isAlertPopupShowing = false;
   
   StreamSubscription? _locationSubscription;
   Timer? _alertCooldownTimer;
@@ -33,6 +37,8 @@ class ZoneService extends ChangeNotifier {
   bool get isDataAvailable => _isDataAvailable;
   bool get alertTriggered => _alertTriggered;
   bool get isSirenPlaying => _isSirenPlaying;
+  ZoneModel? get triggeredZone => _triggeredZone;
+  bool get isAlertPopupShowing => _isAlertPopupShowing;
 
   void initialize() {
     _loadZones();
@@ -159,15 +165,22 @@ class ZoneService extends ChangeNotifier {
     
     if (insideZone != null) { 
       _currentZone = insideZone; 
+      // If we are inside a risky zone and haven't shown the alert yet (startup case), show it.
+      if (insideZone.requiresAlert && !_isInsideAlertShown) {
+        _isInsideAlertShown = true;
+        _triggerZoneAlert(insideZone);
+      }
     } else { 
       _currentZone = ZoneModel(
         id: 'outside', 
         name: 'Safe Area', 
         center: userLocation, 
         radius: 0, 
-        riskScore: 0, // Baseline zero risk score for safe areas
+        riskScore: 0, 
         zoneType: ZoneType.safe
       ); 
+      // Reset inside alert when we leave all risky zones
+      _isInsideAlertShown = false;
     }
 
     _checkZoneEntryAlert(userLocation, nearestZone);
@@ -176,43 +189,72 @@ class ZoneService extends ChangeNotifier {
 
   void _checkZoneEntryAlert(LatLng userLocation, ZoneModel? nearestZone) {
     if (nearestZone == null || !nearestZone.requiresAlert) return;
-    final distanceToZone = _calculateDistance(userLocation, nearestZone.center);
-    final alertDistance = nearestZone.radius + 0.05; 
-    if (distanceToZone <= alertDistance) {
-      if (_alertCooldownTimer == null || !_alertCooldownTimer!.isActive) {
+    final distanceToCenter = _calculateDistance(userLocation, nearestZone.center);
+    
+    // Proximity logic: Trigger if within 50m of the zone boundary
+    // distanceToCenter - nearestZone.radius is the distance to the boundary
+    final distanceToBoundary = distanceToCenter - nearestZone.radius;
+    
+    if (distanceToBoundary <= 0.05 && distanceToBoundary > 0) {
+      if (_lastTriggeredZoneId != nearestZone.id) {
         _triggerZoneAlert(nearestZone);
-        _alertCooldownTimer = Timer(const Duration(minutes: 2), () { _alertTriggered = false; });
+        _lastTriggeredZoneId = nearestZone.id;
+        
+        // Cooldown: After 5 minutes, we can alert for the same zone again if we leave and return
+        _alertCooldownTimer?.cancel();
+        _alertCooldownTimer = Timer(const Duration(minutes: 5), () { 
+          _lastTriggeredZoneId = null; 
+        });
       }
     }
   }
 
   void _triggerZoneAlert(ZoneModel zone) {
+    _triggeredZone = zone;
     _alertTriggered = true;
-    _notificationService.showNotification(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      title: 'Zone Alert',
-      body: zone.alertMessage,
-      payload: 'zone_alert_${zone.id}',
+    _notificationService.showZoneEntryAlert(
+      zoneName: zone.name,
+      message: zone.alertMessage,
     );
     _startSiren(zone.zoneType);
     notifyListeners();
   }
 
-  void _startSiren(ZoneType zoneType) {
+  void resetAlert() {
+    _alertTriggered = false;
+    _triggeredZone = null;
+    _isAlertPopupShowing = false;
+    notifyListeners();
+  }
+
+  void setAlertPopupShowing(bool showing) {
+    _isAlertPopupShowing = showing;
+    notifyListeners();
+  }
+
+  Future<void> _startSiren(ZoneType zoneType) async {
     int durationSeconds = 0;
     if (zoneType == ZoneType.moderate) {
       durationSeconds = 4;
-    } else if (zoneType == ZoneType.high) durationSeconds = 6;
-    else if (zoneType == ZoneType.critical) durationSeconds = 8;
+    } else if (zoneType == ZoneType.high) {
+      durationSeconds = 6;
+    } else if (zoneType == ZoneType.critical) {
+      durationSeconds = 8;
+    }
 
     if (durationSeconds > 0) {
       _isSirenPlaying = true;
-      _audioPlayer.play(UrlSource('https://actions.google.com/sounds/v1/emergency/ambulance_siren.ogg'));
-      
-      _sirenTimer?.cancel();
-      _sirenTimer = Timer(Duration(seconds: durationSeconds), () {
-        stopSiren();
-      });
+      try {
+        await _audioPlayer.setVolume(1.0);
+        await _audioPlayer.play(AssetSource('sounds/zone_alert.mp3'));
+        
+        _sirenTimer?.cancel();
+        _sirenTimer = Timer(Duration(seconds: durationSeconds), () {
+          stopSiren();
+        });
+      } catch (e) {
+        debugPrint('[ZoneService] Audio Error: $e');
+      }
       notifyListeners();
     }
   }

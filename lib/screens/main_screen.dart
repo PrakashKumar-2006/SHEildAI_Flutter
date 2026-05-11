@@ -47,6 +47,7 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
       if (mounted) {
         context.read<SOSProvider>().syncWithNative();
         context.read<VoiceProvider>().initialize();
+        context.read<SafetyProvider>().refreshProfile(); // Ensures socket connects on fresh login
       }
     });
   }

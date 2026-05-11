@@ -1,24 +1,19 @@
 """
-SHEild AI — FastAPI ML Risk Engine v4.0
+SHEild AI — FastAPI ML Risk Engine v5.0
 ========================================
-Trained on 8,888 records | 38 features | 56 police stations | 2020-2023
-Accuracy: 95.73% | CV F1: 0.955 ± 0.0045
+Trained on 15,136 records | 38 features | 104 police stations (Bhopal + Indore) | 2020-2024
+Accuracy: 96.57% | CV F1: 0.9568 ± 0.0044
 
 Run : uvicorn main:app --reload --host 0.0.0.0 --port 8000
 Docs: http://localhost:8000/docs
 
-v4.0 Changes (from v3.1)
+v5.0 Changes (from v4.0)
 --------------------------
-- Updated metrics: 8,888 records | 56 stations | 95.73% accuracy | CV F1 0.955
-- 4-zone risk system: SAFE(0-25) / MEDIUM(26-62) / HIGH(63-75) / CRITICAL(76-100)
-- Night Multiplier: automatic +2% score boost when hour ≥ 21 or < 6
-- /api/best-travel-time  — scan 24h window, return safest hour to travel
-- /api/forecast          — 3-hour ahead risk forecast for current location
-- /api/community-alert   — POST community incident report (validation + storage)
-- /api/safe-route-v2     — React Native optimised route ranker (matches RoutesScreen.tsx)
-- Pydantic v2 compatible (@field_validator + @classmethod throughout)
-- Null-safe zone feature parsing everywhere
-- Comprehensive per-endpoint error handling
+- Expanded dataset: 15,136 records (added 6,248 Indore records)
+- Support for 104 police stations (56 Bhopal + 48 Indore)
+- Accuracy improved to 96.57% | CV F1 0.9568
+- Updated model bundle: sheild_risk_model_v5.pkl (125MB)
+- Improved 4-zone risk system consistency
 """
 
 import os
@@ -44,8 +39,8 @@ import joblib
 # ─────────────────────────────────────────────────────────────────────────────
 
 DATASET_PATH = "SHEild_AI_Improved_Dataset.xlsx"
-MODEL_PATH = "models/sheild_risk_model.pkl"
-VERSION = "4.0.0"
+MODEL_PATH = "sheild_risk_model.pkl"
+VERSION = "5.0.0"
 
 # 4-zone risk thresholds (updated from v3.1's 3-zone)
 RISK_THRESHOLDS = {
@@ -346,7 +341,7 @@ def load_everything():
         f"   CV F1         : {m.get('cv_f1_mean', 0):.3f} ± {m.get('cv_f1_std', 0):.4f}"
     )
     print(f"   Training recs : {m.get('training_records', '?'):,}")
-    print(f"   Stations      : {m.get('total_stations', 56)}")
+    print(f"   Stations      : {m.get('total_stations', 104)} ({m.get('bhopal_stations', 56)} Bhopal, {m.get('indore_stations', 48)} Indore)")
     print(f"   Features      : {len(FEATURES)}")
 
     # ── Dataset lookups ───────────────────────────────────────────────────────
@@ -356,8 +351,9 @@ def load_everything():
 
     print("🔄 Loading zone + time lookups…")
     try:
+        # Correct sheet names for V5 dataset
         df_zones = pd.read_excel(
-            DATASET_PATH, sheet_name="2_Station_Zone_Profile", header=1
+            DATASET_PATH, sheet_name="4_Station_Zone_Profiles", header=1
         )
         for _, row in df_zones.iterrows():
             zid = str(row.get("Zone_ID", "")).strip()
@@ -367,8 +363,9 @@ def load_everything():
         print(f"⚠️  Zone sheet error: {exc}")
 
     try:
+        # Correct sheet name for V5 dataset
         df_time = pd.read_excel(
-            DATASET_PATH, sheet_name="3_Time_Environment_Factors", header=1
+            DATASET_PATH, sheet_name="5_Time_Environment_Factors", header=1
         )
         for _, row in df_time.iterrows():
             try:
@@ -427,14 +424,14 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="SHEild AI — ML Risk Engine API v4.0",
+    title="SHEild AI — ML Risk Engine API v5.0",
     description="""
-## 🛡️ SHEild AI — Women Safety ML Risk Prediction System, Bhopal
+## 🛡️ SHEild AI — Women Safety ML Risk Prediction System, Bhopal & Indore
 
 **Model**: Random Forest (n=400) + Gradient Boosting (n=250) — Soft Voting Ensemble  
-**Dataset**: 8,888 incidents | 56 stations | 4 years (2020–2023)  
-**Accuracy**: 95.73% | **CV F1**: 0.955 ± 0.0045 | **38 Features**  
-**Critical-class Recall**: 98.35% | Critical→Medium errors: 0
+**Dataset**: 15,136 incidents | 104 stations | 4 years (2020–2024)  
+**Accuracy**: 96.57% | **CV F1**: 0.9568 ± 0.0044 | **38 Features**  
+**Critical-class Recall**: 97.87% | Critical→Medium errors: 0
 
 ---
 
@@ -840,49 +837,146 @@ def _interpolate_route(
 def _score_route(
     waypoints: List[dict], hour: int, month: int, is_weekend: int = 0
 ) -> dict:
-    """Score a list of {lat, lon} waypoints using the ML model."""
-    scores = []
-    for wp in waypoints:
-        try:
-            r = RiskRequest(
-                lat=wp["lat"],
-                lon=wp["lon"],
-                hour=hour,
-                month=month,
-                is_weekend=is_weekend,
-            )
-            scores.append(ml_predict(r)["risk_score"])
-        except Exception:
-            scores.append(50.0)
+    """
+    Score a list of {lat, lon} waypoints using Vectorized Batch Prediction.
+    Matches the build_features logic EXACTLY for v5 model compatibility.
+    """
+    if not waypoints:
+        return {"average_risk_score": 50.0, "peak_risk_score": 50.0, "composite_risk_score": 50.0}
 
-    avg = round(float(np.mean(scores)), 1) if scores else 50.0
-    peak = round(float(max(scores)), 1) if scores else 50.0
-    comp = round(avg * 0.6 + peak * 0.4, 1)
-    lbl, col = route_danger_label(comp)
+    try:
+        # 1. Pre-calculate common environmental factors
+        hd = hour_map.get(
+            hour % 24, {"additive": 0.0, "incident_pct": 10.0, "time_slot": "Unknown"}
+        )
+        time_add = _safe_float(hd.get("additive"), 0.0)
+        inc_share = _safe_float(hd.get("incident_pct"), 10.0)
+        
+        is_night = int(hour >= 21 or hour < 6)
+        is_eve = int(18 <= hour < 21)
+        is_day = int(10 <= hour < 16)
+        is_wknd = is_weekend
+        
+        hour_sin = np.sin(2 * np.pi * hour / 24)
+        hour_cos = np.cos(2 * np.pi * hour / 24)
+        month_sin = np.sin(2 * np.pi * month / 12)
+        month_cos = np.cos(2 * np.pi * month / 12)
+        
+        severity = 7.0 # Default for route planning
+        nm = night_multiplier(hour)
 
-    return {
-        "average_risk_score": avg,
-        "peak_risk_score": peak,
-        "composite_risk_score": comp,
-        "waypoint_scores": [round(s, 1) for s in scores],
-        "danger_label": lbl,
-        "danger_color": col,
-        # Legacy fields for backward compatibility
-        "safety_label": (
-            "✅ Safest"
-            if comp <= 25
-            else (
-                "🟡 Moderate"
-                if comp <= 50
-                else "🔴 Risky" if comp <= 75 else "🚫 Avoid"
-            )
-        ),
-        "safety_color": (
-            "#2ECC71"
-            if comp <= 25
-            else "#F39C12" if comp <= 50 else "#E74C3C" if comp <= 75 else "#8B0000"
-        ),
-    }
+        batch_features = []
+        for wp in waypoints:
+            zone = find_nearest_zone(wp["lat"], wp["lon"])
+            station = str(zone.get("Police_Station", ""))
+            zf = zone_feat_lookup.get(station, {})
+            
+            # Extract zone metrics
+            z_psd_raw = zone.get("Nearest_PS_Dist_km") or zone.get("distance_to_zone_km")
+            z_psd = _safe_float(z_psd_raw, 2.0)
+            if z_psd <= 0: z_psd = 2.0
+            
+            z_base = _safe_float(zf.get("zone_base") or zone.get("Zone_Base_Score"), 25.0)
+            z_risk = _safe_float(zf.get("zone_risk") or zone.get("Overall_Risk_Score_Display"), 50.0)
+            z_cctv = _safe_float(zf.get("zone_cctv") or zone.get("CCTV_Coverage_Pct"), 20.0)
+            z_ps_dist = _safe_float(zf.get("zone_ps_dist") or zone.get("Nearest_PS_Dist_km"), 2.0)
+            if z_ps_dist <= 0: z_ps_dist = 2.0
+            
+            drug_raw = zf.get("drug_nearby")
+            if drug_raw is None:
+                drug_raw = 1 if str(zone.get("Drug_Alcohol_Nearby", "no")).lower() == "yes" else 0
+            drug_nearby = int(_safe_float(drug_raw, 0.0))
+            
+            slum_area = _safe_float(zf.get("slum_area") or parse_slum(str(zone.get("Slum_Area", "no"))), 0.0)
+            isolation = _safe_float(zf.get("isolation") or parse_isolation(str(zone.get("Isolated_Roads", "low"))), 1.0)
+            pop_density = _safe_float(zf.get("pop_density") or parse_pop(str(zone.get("Population_Density", "medium"))), 3.0)
+            
+            cctv_num = parse_cctv(zone.get("CCTV_Coverage", "No"))
+            light_num = parse_lighting(zone.get("Lighting_Conditions", "Moderate"))
+
+            # Build feature dict matching FEATURES order
+            feat = {
+                "hour_24": float(hour),
+                "crime_severity": severity,
+                "police_dist_km": z_psd,
+                "cctv_numeric": float(cctv_num),
+                "lighting_numeric": float(light_num),
+                "is_night": float(is_night),
+                "is_evening": float(is_eve),
+                "is_daytime": float(is_day),
+                "is_weekend": float(is_wknd),
+                "hour_sin": float(hour_sin),
+                "hour_cos": float(hour_cos),
+                "month_sin": float(month_sin),
+                "month_cos": float(month_cos),
+                "time_additive": float(time_add),
+                "incident_share": float(inc_share),
+                "zone_base": float(z_base),
+                "zone_risk": float(z_risk),
+                "zone_cctv": float(z_cctv),
+                "zone_ps_dist": float(z_ps_dist),
+                "drug_nearby": float(drug_nearby),
+                "slum_area": float(slum_area),
+                "isolation": float(isolation),
+                "pop_density": float(pop_density),
+                "crime_enc": float(encode_safe("crime_type", "Molestation/Assault")),
+                "zone_enc": float(encode_safe("zone", str(zone.get("Zone", "")))),
+                "area_enc": float(encode_safe("area_type", str(zone.get("Area_Type", "")))),
+                "victim_enc": float(encode_safe("victim_age", "18-25")),
+                "rel_enc": float(encode_safe("relation", "Stranger")),
+                "loc_enc": float(encode_safe("location", "Public Street")),
+                "weather_enc": float(encode_safe("weather", "Clear")),
+                "night_isolation": float(is_night * isolation),
+                "night_no_cctv": float(is_night * (1 - cctv_num)),
+                "evening_isolation": float(is_eve * isolation),
+                "severity_x_night": float(severity * is_night),
+                "zone_risk_x_time": float(z_base * time_add),
+                "dist_x_isolation": float(z_ps_dist * isolation),
+                "weekend_x_night": float(is_wknd * is_night),
+                "severity_x_evening": float(severity * is_eve),
+            }
+            batch_features.append([feat.get(f, 0.0) for f in FEATURES])
+
+        # 2. Batch Inference
+        X = np.array(batch_features)
+        X_scaled = scaler.transform(X)
+        
+        # We need the class probabilities to calculate the weighted score just like ml_predict
+        proba = model.predict_proba(X_scaled)
+        classes = model.classes_
+        base_map = {1: 28, 2: 55, 3: 82}
+        base_weights = np.array([base_map.get(int(c), 50) for c in classes])
+        
+        # Weighted risk score across all classes
+        scores = np.dot(proba, base_weights) * nm
+        scores = np.clip(scores, 0.0, 100.0)
+        scores = [round(float(s), 1) for s in scores]
+
+        # 3. Aggregates
+        avg = round(float(np.mean(scores)), 1)
+        peak = round(float(max(scores)), 1)
+        comp = round(avg * 0.6 + peak * 0.4, 1)
+        lbl, col = route_danger_label(comp)
+
+        return {
+            "average_risk_score": avg,
+            "peak_risk_score": peak,
+            "composite_risk_score": comp,
+            "waypoint_scores": scores,
+            "danger_label": lbl,
+            "danger_color": col,
+            "safety_label": "Safest" if comp <= 25 else "Moderate" if comp <= 50 else "Risky" if comp <= 75 else "Avoid",
+            "safety_color": "#2ECC71" if comp <= 25 else "#F39C12" if comp <= 50 else "#E74C3C" if comp <= 75 else "#8B0000",
+        }
+    except Exception as e:
+        print(f"⚠️ Batch scoring error: {e}")
+        return {
+            "average_risk_score": 50.0,
+            "peak_risk_score": 50.0,
+            "composite_risk_score": 50.0,
+            "waypoint_scores": [50.0] * len(waypoints),
+            "error": str(e)
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -899,7 +993,7 @@ async def root():
         "message": "🛡️ SHEild AI ML Risk Engine is running",
         "version": VERSION,
         "model": "Random Forest (n=400) + Gradient Boosting (n=250) — Soft Voting",
-        "dataset": "8,888 incidents | 56 stations | 2020-2023",
+        "dataset": "15,136 incidents | 104 stations | 2020-2024",
         "accuracy": f"{m.get('accuracy', 0) * 100:.2f}%",
         "cv_f1": f"{m.get('cv_f1_mean', 0):.3f} ± {m.get('cv_f1_std', 0):.4f}",
         "zones": len(zone_lookup),
