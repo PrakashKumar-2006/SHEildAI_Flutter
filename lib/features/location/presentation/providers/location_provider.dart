@@ -59,6 +59,8 @@ class LocationProvider extends ChangeNotifier {
         );
         _isLoading = false;
         notifyListeners();
+        // Instantly sync location so backend knows we are here for Sentinel Alerts
+        _syncLocation();
       });
     } catch (e) {
       debugPrint('[LocationProvider] Permission error: $e');
@@ -84,6 +86,7 @@ class LocationProvider extends ChangeNotifier {
         _isLoading = false;
         _errorMessage = null;
         notifyListeners();
+        _syncLocation();
       },
       onError: (e) {
         _errorMessage = e.toString();

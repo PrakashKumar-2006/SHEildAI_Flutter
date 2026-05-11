@@ -62,7 +62,8 @@ class SentinelProvider extends ChangeNotifier {
       final event = data['event'];
       
       if (event == 'sentinel_alert') {
-        _handleSentinelAlert(data);
+        final payload = data['data'] ?? data;
+        _handleSentinelAlert(payload);
       } else if (event == 'community_feed_update' || event == 'new_community_report') {
         _handleFeedUpdate(data);
       }

@@ -317,7 +317,7 @@ class SafetyProvider extends ChangeNotifier {
       final event = data['event'];
       debugPrint('[SafetyProvider] Received socket event: $event');
       try {
-        if (event == 'emergency_nearby' || event == 'sos_broadcast') {
+        if (event == 'sentinel_alert' || event == 'emergency_nearby' || event == 'sos_broadcast') {
           final payload = data['data'] ?? data;
           final double victimLat = (payload['latitude'] ?? payload['lat'] as num?)?.toDouble() ?? 0.0;
           final double victimLng = (payload['longitude'] ?? payload['lng'] as num?)?.toDouble() ?? 0.0;
