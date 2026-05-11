@@ -8,6 +8,7 @@ import '../../domain/models/sos_model.dart';
 import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/services/sms_service.dart';
 import '../../../../features/contacts/data/repositories/contact_repository_impl.dart';
+import '../../../../core/services/socket_service.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
