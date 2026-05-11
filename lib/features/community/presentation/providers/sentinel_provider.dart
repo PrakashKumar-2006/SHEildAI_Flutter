@@ -26,15 +26,15 @@ class SentinelAlert {
 
   factory SentinelAlert.fromJson(Map<String, dynamic> json) {
     return SentinelAlert(
-      sosId: json['sosId'] ?? '',
-      userId: json['userId'] ?? '',
-      name: json['name'] ?? 'Someone',
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      message: json['message'] ?? 'Emergency SOS!',
-      distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
+      sosId: json['sosId']?.toString() ?? '',
+      userId: json['userId']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Someone',
+      latitude: double.tryParse(json['latitude']?.toString() ?? '0') ?? 0.0,
+      longitude: double.tryParse(json['longitude']?.toString() ?? '0') ?? 0.0,
+      message: json['message']?.toString() ?? 'Emergency SOS!',
+      distance: double.tryParse(json['distance']?.toString() ?? '0') ?? 0.0,
       timestamp: json['timestamp'] != null 
-          ? DateTime.parse(json['timestamp']) 
+          ? DateTime.tryParse(json['timestamp'].toString()) ?? DateTime.now() 
           : DateTime.now(),
     );
   }

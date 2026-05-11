@@ -319,8 +319,8 @@ class SafetyProvider extends ChangeNotifier {
       try {
         if (event == 'sentinel_alert' || event == 'emergency_nearby' || event == 'sos_broadcast') {
           final payload = data['data'] ?? data;
-          final double victimLat = (payload['latitude'] ?? payload['lat'] as num?)?.toDouble() ?? 0.0;
-          final double victimLng = (payload['longitude'] ?? payload['lng'] as num?)?.toDouble() ?? 0.0;
+          final double victimLat = double.tryParse(payload['latitude']?.toString() ?? payload['lat']?.toString() ?? '0') ?? 0.0;
+          final double victimLng = double.tryParse(payload['longitude']?.toString() ?? payload['lng']?.toString() ?? '0') ?? 0.0;
           final String victimName = data['name'] ?? data['title']?.toString().replaceFirst('🚨 Emergency Alert Nearby', '').trim() ?? 'Someone';
           final String sosId = (payload['sosId'] ?? payload['sos_id'])?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
           
@@ -352,7 +352,6 @@ class SafetyProvider extends ChangeNotifier {
   void _addCommunitySOSAlert(String name, double lat, double lng, String id, double distance) {
     if (_alerts.any((a) => a.id == 'comm_sos_$id')) return;
     _alerts.insert(0, AlertItem(id: 'comm_sos_$id', type: 'COMMUNITY_SOS', title: '🚨 SOS: $name needs help! 🚨', body: 'Emergency triggered within ${(distance / 1000).toStringAsFixed(1)}km of your location.', timestamp: DateTime.now(), riskLevel: 'CRITICAL', latitude: lat, longitude: lng));
-    NotificationService().showCommunitySOSNotification(name: name, distanceMeters: distance);
     _pendingSOSAlert = _alerts.first;
     notifyListeners();
   }
@@ -378,6 +377,10 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> refreshProfile() async {
     await _loadUserProfile();
+    if (_userProfile.phone.isNotEmpty && !SocketService().isConnected) {
+      await SocketService().connect(_userProfile.phone);
+      _listenToSocket();
+    }
     notifyListeners();
   }
 
