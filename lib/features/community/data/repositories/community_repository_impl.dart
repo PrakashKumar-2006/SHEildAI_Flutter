@@ -25,8 +25,8 @@ class CommunityRepositoryImpl implements CommunityRepository {
     try {
       final reportData = {
         'phone': phone,
-        'lat': latitude,
-        'lon': longitude,
+        'latitude': latitude,
+        'longitude': longitude,
         'incident_type': incidentType,
         'description': description,
         'severity': severity,

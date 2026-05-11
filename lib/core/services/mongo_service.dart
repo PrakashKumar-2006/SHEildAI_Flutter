@@ -122,7 +122,13 @@ class MongoService {
 
   Future<bool> insertOne(String collection, Map<String, dynamic> document, {bool useAuth = false}) async {
     return executeWithRetry(() async {
+      debugPrint('[MongoService] Inserting into $collection: ${document.keys.toList()}');
       final result = await getCollection(collection).insertOne(document);
+      if (result.isSuccess) {
+        debugPrint('[MongoService] SUCCESS: Inserted into $collection.');
+      } else {
+        debugPrint('[MongoService] FAILED: Insert into $collection failed. Error: ${result.errmsg}');
+      }
       return result.isSuccess;
     });
   }
@@ -213,15 +219,33 @@ class MongoService {
 
   // ─── SOS & Community Methods ──────────────────────────────────────────────
 
-  Future<bool> createSOS(Map<String, dynamic> sosData) => insertOne('sos_history', sosData);
+  Future<bool> createSOS(Map<String, dynamic> sosData) async {
+    // Ensure GeoJSON location for better querying
+    if (sosData.containsKey('latitude') && sosData.containsKey('longitude')) {
+      final lat = (sosData['latitude'] as num).toDouble();
+      final lon = (sosData['longitude'] as num).toDouble();
+      sosData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
+    }
+    if (!sosData.containsKey('timestamp')) {
+      sosData['timestamp'] = DateTime.now().toIso8601String();
+    }
+    return insertOne('sos_history', sosData);
+  }
 
   Future<List<Map<String, dynamic>>> getUserSOSHistory(String phone) => find('sos_history', where.eq('user_phone', phone));
 
   Future<bool> updateSOSStatus(String sosId, String status) async {
     try {
-      return await updateOne('sos_history', where.eq('_id', ObjectId.parse(sosId)), modify.set('status', status));
+      // Try by MongoDB ObjectId first
+      if (sosId.length == 24) {
+        final result = await updateOne('sos_history', where.eq('_id', ObjectId.parse(sosId)), modify.set('status', status));
+        if (result) return true;
+      }
+      // Fallback to custom sos_id field
+      return updateOne('sos_history', where.eq('sos_id', sosId), modify.set('status', status));
     } catch (e) {
-      return updateOne('sos_history', where.eq('id', sosId), modify.set('status', status));
+      debugPrint('[MongoService] updateSOSStatus error: $e');
+      return updateOne('sos_history', where.eq('id', sosId).or(where.eq('sos_id', sosId)), modify.set('status', status));
     }
   }
 
@@ -309,8 +333,8 @@ class MongoService {
 
   Future<bool> submitCommunityReport(Map<String, dynamic> reportData) async {
     try {
-      final latValue = reportData['lat'] ?? reportData['latitude'];
-      final lonValue = reportData['lon'] ?? reportData['longitude'];
+      final latValue = reportData['latitude'] ?? reportData['lat'];
+      final lonValue = reportData['longitude'] ?? reportData['lon'];
       
       if (latValue == null || lonValue == null) {
         debugPrint('[MongoService] Error: lat/lon missing in reportData');
@@ -320,16 +344,21 @@ class MongoService {
       final lat = (latValue as num).toDouble();
       final lon = (lonValue as num).toDouble();
       
+      // Ensure both are present for compatibility with all backends
+      reportData['latitude'] = lat;
+      reportData['longitude'] = lon;
+      reportData['lat'] = lat;
+      reportData['lon'] = lon;
+      
       reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
       reportData['timestamp'] = DateTime.now().toIso8601String();
       
+      if (!reportData.containsKey('id')) {
+        reportData['id'] = DateTime.now().millisecondsSinceEpoch.toString();
+      }
+      
       debugPrint('[MongoService] Submitting report to community_reports collection');
       final success = await insertOne('community_reports', reportData);
-      if (success) {
-        debugPrint('[MongoService] SUCCESS: Report stored in database.');
-      } else {
-        debugPrint('[MongoService] FAILED: insertOne returned false for community_report.');
-      }
       return success;
     } catch (e) {
       debugPrint('[MongoService] submitCommunityReport exception: $e');

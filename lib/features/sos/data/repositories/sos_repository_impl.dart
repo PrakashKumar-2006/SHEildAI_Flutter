@@ -67,7 +67,7 @@ class SOSRepositoryImpl implements SOSRepository {
       });
 
       // Persist to MongoDB Atlas exclusively
-      await _mongoService.createSOS({
+      final dbSuccess = await _mongoService.createSOS({
         'sos_id': sosId,
         'user_phone': phone,
         'name': userName,
@@ -77,6 +77,13 @@ class SOSRepositoryImpl implements SOSRepository {
         'timestamp': DateTime.now().toIso8601String(),
         'contacts': contacts,
       });
+
+      if (!dbSuccess) {
+        debugPrint('[SOS] FAILED to store SOS in MongoDB.');
+        // We still proceed with real-time alerting but log the failure
+      } else {
+        debugPrint('[SOS] SUCCESS: SOS record stored in MongoDB.');
+      }
 
       // Standard API trigger (Render)
       ApiService.triggerCloudSOS(phone, latitude, longitude).catchError((_) => null);
