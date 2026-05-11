@@ -78,9 +78,9 @@ class SentinelProvider extends ChangeNotifier {
       _pendingPopup = alert;
       
       // Also trigger a system notification for background awareness
-      NotificationService().showSOSNotification(
-        message: '🚨 SENTINEL ALERT: ${alert.name} needs help nearby!',
-        location: '${alert.distance.toStringAsFixed(2)}km away',
+      NotificationService().showCommunitySOSNotification(
+        name: alert.name,
+        distanceMeters: alert.distance * 1000,
       );
       
       notifyListeners();

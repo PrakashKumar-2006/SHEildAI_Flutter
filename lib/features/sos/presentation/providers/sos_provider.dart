@@ -254,7 +254,26 @@ class SOSProvider extends ChangeNotifier {
           _startDurationTimer();
           notifyListeners();
 
-          // Build precise Google Maps link
+          // 4. Trigger Community Sentinel - Broadcast SOS to nearby users via Socket Bridge
+          try {
+            final userName = StorageService().getString('user_name') ?? 'Someone';
+            final userPhone = StorageService().getString('user_phone') ?? '';
+            
+            SocketService().emitSOSAlert({
+              'sosId': sos.id,
+              'userId': userPhone,
+              'name': userName,
+              'latitude': lat,
+              'longitude': lon,
+              'message': customMessage ?? 'Emergency SOS! I need help at my current location.',
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+            debugPrint('[SOS] Community Sentinel broadcast emitted.');
+          } catch (e) {
+            debugPrint('[SOS] Sentinel broadcast failed (non-fatal): $e');
+          }
+
+          // 5. Send SMS to Trusted Contacts
           final locationUrl = lat != 0.0
               ? 'https://www.google.com/maps?q=$lat,$lon'
               : 'Location unavailable';
@@ -262,9 +281,7 @@ class SOSProvider extends ChangeNotifier {
               '🚨 EMERGENCY SOS 🚨\nI need help! My live location:\n$locationUrl\n(Sent via SHEild AI Safety App)';
 
           debugPrint('[SOS] Sending SMS to: ${contacts.join(", ")}');
-          debugPrint('[SOS] Message: $message');
-
-          // Send SMS in background - do NOT await to avoid blocking UI
+          
           SMSService().sendBulkSMS(
             phoneNumbers: contacts,
             message: message,
@@ -273,9 +290,6 @@ class SOSProvider extends ChangeNotifier {
           }).catchError((e) {
             debugPrint('[SOS] SMS error: $e');
           });
-
-          // The native SOS layer handles background video/audio recording automatically.
-          // No need for duplicate recording on the Flutter side.
         },
       );
     } catch (e) {

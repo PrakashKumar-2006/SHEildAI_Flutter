@@ -52,12 +52,15 @@ class CommunityRepositoryImpl implements CommunityRepository {
         );
         
         // Broadcast to other users via Socket for real-time visibility
+        // Ensure anonymity in the broadcast
         SocketService().emitCommunityReport({
           'latitude': latitude,
           'longitude': longitude,
           'incidentType': incidentType,
           'description': description,
           'severity': severity,
+          'anonymous': anonymous,
+          'reporterName': anonymous ? 'Anonymous' : (StorageService().getString('user_name') ?? 'Community Member'),
           'timestamp': DateTime.now().toIso8601String(),
         });
 

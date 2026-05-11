@@ -324,7 +324,13 @@ class MongoService {
       reportData['timestamp'] = DateTime.now().toIso8601String();
       
       debugPrint('[MongoService] Submitting report to community_reports collection');
-      return await insertOne('community_reports', reportData);
+      final success = await insertOne('community_reports', reportData);
+      if (success) {
+        debugPrint('[MongoService] SUCCESS: Report stored in database.');
+      } else {
+        debugPrint('[MongoService] FAILED: insertOne returned false for community_report.');
+      }
+      return success;
     } catch (e) {
       debugPrint('[MongoService] submitCommunityReport exception: $e');
       return false;
