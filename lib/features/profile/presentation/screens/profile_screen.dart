@@ -6,7 +6,7 @@ import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/providers/ml_provider.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
-
+import 'package:permission_handler/permission_handler.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -112,7 +112,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         iconColor: const Color(0xFF009688),
                         iconBg: const Color(0xFFE4F8F4),
                         title: 'System Permissions',
-                        onTap: () {},
+                        onTap: () {
+                          openAppSettings();
+                        },
                       ),
                       _buildThemeToggle(context),
                     ]),

@@ -9,6 +9,8 @@ import 'language_screen.dart';
 import 'notifications_settings_screen.dart';
 import 'paywall_screen.dart';
 import '../core/services/storage_service.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'system_permissions_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -132,7 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           iconColor: const Color(0xFF009688),
                           label: 'System Permissions',
                           onTap: () {
-                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Manage Permissions')));
+                             Navigator.push(context, MaterialPageRoute(builder: (_) => const SystemPermissionsScreen()));
                           },
                           theme: theme,
                         ),

@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.nexus.sheildai.sheild_ai.dualcamera.DualCameraConstants
+import com.nexus.sheildai.sheild_ai.dualcamera.DualCameraViewFactory
 import com.nexus.sheildai.sheild_ai.sos.SMSTestConfig
 import com.nexus.sheildai.sheild_ai.sos.SmsHelper
 import com.nexus.sheildai.sheild_ai.sos.SOSEventChannel
@@ -82,6 +84,22 @@ class MainActivity : FlutterActivity() {
         registerSOSDebugChannel(flutterEngine)   // full state machine channel
         registerSOSEventChannel(flutterEngine)   // real-time event push channel
         registerSmsTestChannel(flutterEngine)    // isolated SMS smoke-test channel
+        registerDualCameraView(flutterEngine)    // dual-camera PlatformView
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DUAL CAMERA PLATFORM VIEW  — "com.nexus.sheildai/dual_camera_view"
+    // Registers the native PreviewView factory so Flutter can embed it via
+    // AndroidView. Each view instance manages its own MethodChannel and
+    // EventChannel, namespaced by viewId.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private fun registerDualCameraView(flutterEngine: FlutterEngine) {
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            DualCameraConstants.VIEW_TYPE_ID,
+            DualCameraViewFactory(flutterEngine.dartExecutor.binaryMessenger)
+        )
+        Log.d(TAG, "DualCameraViewFactory registered — type: ${DualCameraConstants.VIEW_TYPE_ID}")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

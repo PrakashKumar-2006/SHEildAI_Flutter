@@ -33,6 +33,14 @@ android {
         
         val mapsApiKey = project.findProperty("MAPS_API_KEY") as? String ?: ""
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
     }
 
     buildTypes {
@@ -60,13 +68,29 @@ dependencies {
     // FusedLocationProviderClient - used by LocationProvider.kt
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
-    // CameraX - used by VideoRecordingService.kt
-    val cameraxVersion = "1.3.4"
+    // CameraX — used by VideoRecordingService.kt and DualCameraRecorder (dual camera)
+    // 1.5.1 is the first stable release containing CompositionSettings and the
+    // ConcurrentCamera.SingleCameraConfig constructor that accepts CompositionSettings.
+    // Both classes are in androidx.camera.core (not camera-lifecycle as in earlier alphas).
+    val cameraxVersion = "1.5.1"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // Vosk - offline speech recognition for voice keyword trigger
     implementation("com.alphacephei:vosk-android:0.3.47")
+
+    // ── Test dependencies ─────────────────────────────────────────────────────
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test:runner:1.6.2")
+    testImplementation("androidx.test:rules:1.6.1")
+    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
 

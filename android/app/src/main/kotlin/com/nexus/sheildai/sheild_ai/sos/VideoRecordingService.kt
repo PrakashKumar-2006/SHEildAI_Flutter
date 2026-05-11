@@ -10,6 +10,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.SurfaceTexture
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -17,8 +18,13 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.MediaStore
 import android.util.Log
+import android.view.Surface
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ConcurrentCamera.SingleCameraConfig
+import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.CompositionSettings
 import androidx.camera.video.MediaStoreOutputOptions
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
@@ -110,6 +116,8 @@ class VideoRecordingService : Service() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var activeRecording: Recording? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    /** Off-screen SurfaceTexture used by the dual-camera Preview use-case. Released in releaseCamera(). */
+    private var offScreenSurfaceTexture: android.graphics.SurfaceTexture? = null
 
     // ═════════════════════════════════════════════════════════════════════════
     // Service lifecycle
@@ -193,37 +201,129 @@ class VideoRecordingService : Service() {
                 val provider = cameraProviderFuture.get()
                 cameraProvider = provider
 
-                // Build Recorder with HD quality (falls back to lower if unsupported)
-                val recorder = Recorder.Builder()
-                    .setQualitySelector(
-                        QualitySelector.from(
-                            Quality.HD,
-                            androidx.camera.video.FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
-                        )
-                    )
-                    .build()
-
-                val videoCapture = VideoCapture.withOutput(recorder)
-
-                // Prefer front camera (user-facing evidence), fallback to back
-                val cameraSelector = if (provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
-                    CameraSelector.DEFAULT_FRONT_CAMERA
-                } else {
-                    CameraSelector.DEFAULT_BACK_CAMERA
+                // Check whether the device ISP supports simultaneous front + rear camera access
+                val supportsDualCamera = provider.availableConcurrentCameraInfos.any { cameraInfoSet ->
+                    val hasFront = cameraInfoSet.any { it.lensFacing == CameraSelector.LENS_FACING_FRONT }
+                    val hasBack  = cameraInfoSet.any { it.lensFacing == CameraSelector.LENS_FACING_BACK }
+                    hasFront && hasBack
                 }
 
-                // Bind to our custom LifecycleOwner (service-managed)
-                provider.unbindAll()
-                lifecycleOwner.start()
-                provider.bindToLifecycle(lifecycleOwner, cameraSelector, videoCapture)
+                if (supportsDualCamera) {
+                    // Bug fix: use concurrent dual-camera binding on capable devices
+                    setupDualCameraAndRecord(provider)
+                } else {
+                    // Existing single-camera path — unchanged for non-concurrent devices
+                    val recorder = Recorder.Builder()
+                        .setQualitySelector(
+                            QualitySelector.from(
+                                Quality.HD,
+                                androidx.camera.video.FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                            )
+                        )
+                        .build()
 
-                startRecordingToMediaStore(videoCapture)
+                    val videoCapture = VideoCapture.withOutput(recorder)
+
+                    // Prefer rear camera for the single-camera fallback (evidence of surroundings)
+                    val cameraSelector = if (provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    } else {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    }
+
+                    provider.unbindAll()
+                    lifecycleOwner.start()
+                    provider.bindToLifecycle(lifecycleOwner, cameraSelector, videoCapture)
+
+                    startRecordingToMediaStore(videoCapture)
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Camera setup failed: ${e.message}", e)
                 handleStop()
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /**
+     * Sets up concurrent dual-camera recording using CameraX's [ProcessCameraProvider.bindToLifecycle]
+     * concurrent overload. Called when [provider.availableConcurrentCameraInfos] confirms the device
+     * ISP supports simultaneous front + rear camera access.
+     *
+     * The front camera stream is composited into the top half (offset 0,0 / scale 1×0.5) and the
+     * rear camera stream into the bottom half (offset 0,0.5 / scale 1×0.5) of a single 720×1440 MP4.
+     *
+     * An off-screen [SurfaceTexture] satisfies CameraX's [Preview] surface requirement without
+     * needing a visible View — the service has no UI. The texture is stored in [offScreenSurfaceTexture]
+     * and released in [releaseCamera] to prevent GPU texture leaks.
+     */
+    private fun setupDualCameraAndRecord(provider: ProcessCameraProvider) {
+        // Shared Recorder — same quality selector as the single-camera path
+        val recorder = Recorder.Builder()
+            .setQualitySelector(
+                QualitySelector.from(
+                    Quality.HD,
+                    androidx.camera.video.FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
+                )
+            )
+            .build()
+
+        val videoCapture = VideoCapture.withOutput(recorder)
+
+        // Preview use-case is required by CameraX concurrent binding.
+        // Use an off-screen SurfaceTexture instead of a PreviewView (service has no UI).
+        val preview = Preview.Builder().build()
+        val surfaceTexture = SurfaceTexture(0).also { offScreenSurfaceTexture = it }
+        preview.setSurfaceProvider { request ->
+            // Give the off-screen texture a valid size — without this the compositor
+            // may produce blank/stalled frames on some devices.
+            surfaceTexture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
+            val surface = Surface(surfaceTexture)
+            request.provideSurface(surface, ContextCompat.getMainExecutor(this)) { surface.release() }
+        }
+
+        // CompositionSettings: front camera → top half, rear camera → bottom half
+        val frontComposition = CompositionSettings.Builder()
+            .setOffset(0.0f, 0.0f)
+            .setScale(1.0f, 0.5f)
+            .build()
+        val backComposition = CompositionSettings.Builder()
+            .setOffset(0.0f, 0.5f)
+            .setScale(1.0f, 0.5f)
+            .build()
+
+        // Each SingleCameraConfig MUST receive its own UseCaseGroup wrapper even though
+        // they share the same underlying UseCase instances (preview + videoCapture).
+        // Passing the exact same UseCaseGroup object to both configs causes CameraX to
+        // consume the use cases for the first camera only, resulting in a single-stream output.
+        val frontUseCaseGroup = UseCaseGroup.Builder()
+            .addUseCase(preview)
+            .addUseCase(videoCapture)
+            .build()
+        val backUseCaseGroup = UseCaseGroup.Builder()
+            .addUseCase(preview)
+            .addUseCase(videoCapture)
+            .build()
+
+        val frontConfig = SingleCameraConfig(
+            CameraSelector.DEFAULT_FRONT_CAMERA,
+            frontUseCaseGroup,
+            frontComposition,
+            lifecycleOwner
+        )
+        val backConfig = SingleCameraConfig(
+            CameraSelector.DEFAULT_BACK_CAMERA,
+            backUseCaseGroup,
+            backComposition,
+            lifecycleOwner
+        )
+
+        provider.unbindAll()
+        lifecycleOwner.start()
+        provider.bindToLifecycle(listOf(frontConfig, backConfig))
+
+        // Reuse the existing MediaStore recording method unchanged
+        startRecordingToMediaStore(videoCapture)
     }
 
     @androidx.annotation.OptIn(androidx.camera.video.ExperimentalPersistentRecording::class)
@@ -300,6 +400,8 @@ class VideoRecordingService : Service() {
             Handler(Looper.getMainLooper()).post {
                 cameraProvider?.unbindAll()
                 cameraProvider = null
+                offScreenSurfaceTexture?.release()
+                offScreenSurfaceTexture = null
                 lifecycleOwner.stop()
             }
         } catch (e: Exception) {
@@ -417,7 +519,8 @@ class VideoRecordingService : Service() {
 
         fun start() {
             Handler(Looper.getMainLooper()).post {
-                registry.currentState = Lifecycle.State.STARTED
+                // RESUMED is required for CameraX to open cameras (matches DualCameraRecorder.RecorderLifecycleOwner)
+                registry.currentState = Lifecycle.State.RESUMED
             }
         }
 
