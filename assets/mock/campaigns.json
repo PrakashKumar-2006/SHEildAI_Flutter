@@ -1,0 +1,18 @@
+[
+  {
+    "id": "c_1",
+    "title": "Women Safety Awareness Camp",
+    "venue": "Community Hall, Downtown",
+    "date": "2024-05-20",
+    "distance": "2.5 km",
+    "description": "Join local authorities for an interactive session on personal safety and self-defense techniques."
+  },
+  {
+    "id": "c_2",
+    "title": "Cyber Crime Prevention Workshop",
+    "venue": "City Tech Hub",
+    "date": "2024-05-25",
+    "distance": "5.0 km",
+    "description": "Learn how to protect yourself against online harassment and digital scams."
+  }
+]

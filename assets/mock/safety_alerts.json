@@ -1,0 +1,26 @@
+[
+  {
+    "id": "sa_1",
+    "title": "Unsafe Area Reported",
+    "description": "Multiple reports of harassment in this poorly lit area.",
+    "location": "Bhanvarkuan Square",
+    "timestamp": "2024-05-12T20:15:00Z",
+    "severity": "high"
+  },
+  {
+    "id": "sa_2",
+    "title": "Heavy Crowd Warning",
+    "description": "Unusually dense crowd reported due to a local festival.",
+    "location": "Rajwada Market",
+    "timestamp": "2024-05-12T18:30:00Z",
+    "severity": "medium"
+  },
+  {
+    "id": "sa_3",
+    "title": "Night Safety Warning",
+    "description": "Streetlights are malfunctioning on the main road.",
+    "location": "AB Road bypass",
+    "timestamp": "2024-05-12T22:00:00Z",
+    "severity": "low"
+  }
+]

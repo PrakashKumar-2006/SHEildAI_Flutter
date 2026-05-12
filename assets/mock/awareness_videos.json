@@ -1,0 +1,66 @@
+[
+  {
+    "id": "av_1",
+    "title": "System Diagnostic: Security Verification",
+    "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "thumbnailUrl": "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
+    "duration": "03:32",
+    "category": "System"
+  },
+  {
+    "id": "av_2",
+    "title": "Self Defense: Practical Techniques (The Quint)",
+    "videoUrl": "https://www.youtube.com/watch?v=6qT-6vYQvY8",
+    "thumbnailUrl": "https://img.youtube.com/vi/6qT-6vYQvY8/hqdefault.jpg",
+    "duration": "05:45",
+    "category": "Self Defense"
+  },
+  {
+    "id": "av_3",
+    "title": "Delhi Police: Women Safety Awareness",
+    "videoUrl": "https://www.youtube.com/watch?v=NH-9tN7iEsg",
+    "thumbnailUrl": "https://img.youtube.com/vi/NH-9tN7iEsg/hqdefault.jpg",
+    "duration": "04:20",
+    "category": "Awareness"
+  },
+  {
+    "id": "av_4",
+    "title": "Public Transport Safety Tips (The Quint)",
+    "videoUrl": "https://www.youtube.com/watch?v=L-W0H7zX6t8",
+    "thumbnailUrl": "https://img.youtube.com/vi/L-W0H7zX6t8/hqdefault.jpg",
+    "duration": "04:40",
+    "category": "Commute Safety"
+  },
+  {
+    "id": "av_5",
+    "title": "Situational Awareness (TEDx)",
+    "videoUrl": "https://www.youtube.com/watch?v=kV_wS6E36vI",
+    "thumbnailUrl": "https://img.youtube.com/vi/kV_wS6E36vI/hqdefault.jpg",
+    "duration": "06:30",
+    "category": "Awareness"
+  },
+  {
+    "id": "av_6",
+    "title": "Women Safety: Use of Technology",
+    "videoUrl": "https://www.youtube.com/watch?v=9iU_p4mI8-k",
+    "thumbnailUrl": "https://img.youtube.com/vi/9iU_p4mI8-k/hqdefault.jpg",
+    "duration": "08:15",
+    "category": "Safety Tech"
+  },
+  {
+    "id": "av_7",
+    "title": "Empowerment & Mental Resilience",
+    "videoUrl": "https://www.youtube.com/watch?v=_7z0f9g876E",
+    "thumbnailUrl": "https://img.youtube.com/vi/_7z0f9g876E/hqdefault.jpg",
+    "duration": "14:40",
+    "category": "Awareness"
+  },
+  {
+    "id": "av_8",
+    "title": "Travel Safe: Tips for the Solo Journey",
+    "videoUrl": "https://www.youtube.com/watch?v=_jM0F2C2U3A",
+    "thumbnailUrl": "https://img.youtube.com/vi/_jM0F2C2U3A/hqdefault.jpg",
+    "duration": "09:55",
+    "category": "Travel Safety"
+  }
+]

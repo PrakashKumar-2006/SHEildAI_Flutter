@@ -22,6 +22,7 @@ import 'features/contacts/presentation/providers/contact_provider.dart';
 import 'features/community/data/repositories/community_repository_impl.dart';
 import 'features/community/presentation/providers/community_provider.dart';
 import 'features/community/presentation/providers/sentinel_provider.dart';
+import 'features/feed/presentation/providers/feed_provider.dart';
 import 'features/alerts/data/repositories/alert_repository_impl.dart';
 import 'features/profile/data/repositories/profile_repository_impl.dart';
 import 'features/security/data/repositories/security_repository_impl.dart';
@@ -161,6 +162,7 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<VoiceProvider>(
           create: (_) => VoiceProvider(),
         ),
+        ChangeNotifierProvider<FeedProvider>(create: (_) => FeedProvider()),
         ChangeNotifierProvider<AuthProvider>(
           create: (context) => AuthProvider(context.read<StorageService>()),
         ),

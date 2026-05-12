@@ -1,0 +1,26 @@
+[
+  {
+    "id": "st_1",
+    "icon": "location_on_rounded",
+    "title": "Share Live Location",
+    "description": "Always share your live location with trusted contacts when traveling alone at night."
+  },
+  {
+    "id": "st_2",
+    "icon": "headphones_rounded",
+    "title": "Stay Alert",
+    "description": "Avoid using noise-canceling headphones while walking in isolated areas."
+  },
+  {
+    "id": "st_3",
+    "icon": "group_rounded",
+    "title": "Crowd Awareness",
+    "description": "Stay vigilant in crowded places to prevent theft and harassment."
+  },
+  {
+    "id": "st_4",
+    "icon": "contact_phone_rounded",
+    "title": "Update Contacts",
+    "description": "Ensure your emergency contacts are up to date in the SHEild AI app."
+  }
+]

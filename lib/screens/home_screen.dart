@@ -9,6 +9,8 @@ import '../features/community/presentation/providers/community_provider.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
 import 'profile_screen.dart';
+import 'main_screen.dart';
+import 'alerts_screen.dart';
 import '../shared/widgets/crowd_risk_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -98,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         const SizedBox(height: 8),
                         _buildSafetyScoreCard(riskLabel, riskScore, riskColor, isDark, theme, lang, safety),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 16),
                         _buildSafetyInsightsCard(theme, isDark, safety),
                         const SizedBox(height: 20),
                         if (alerts.isNotEmpty) _buildRiskAlertsList(theme, alerts, isDark),
@@ -108,6 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         _buildVoiceCard(theme, lang, safety, isDark),
                         const SizedBox(height: 14),
                         _buildMapCard(theme, safety, markers),
+                        const SizedBox(height: 16),
+                        _buildExploreFeedCard(theme, context),
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -822,6 +826,78 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildExploreFeedCard(ThemeProvider theme, BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [theme.accent.withOpacity(0.8), theme.accent],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: theme.accent.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                child: const Icon(Icons.explore_rounded, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'STAY UPDATED. STAY SAFE.',
+                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Check safety alerts, tips, and campaigns.',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: theme.accent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: const Text('Explore Feed', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

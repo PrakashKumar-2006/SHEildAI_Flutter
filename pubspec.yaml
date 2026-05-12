@@ -88,6 +88,10 @@ dependencies:
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   ionicons: ^0.2.2
+  youtube_player_iframe: 5.2.2
+  youtube_player_flutter: ^9.1.1
+  cached_network_image: 3.4.1
+  carousel_slider: 5.0.0
 
   # Utilities
   intl: ^0.20.2
@@ -127,6 +131,7 @@ flutter:
     - assets/risk_data.json
     - assets/translations/
     - assets/sounds/
+    - assets/mock/
     - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
