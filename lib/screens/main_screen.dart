@@ -10,6 +10,7 @@ import 'alerts_screen.dart';
 import 'profile_screen.dart';
 import '../core/providers/location_permission_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../features/feed/presentation/widgets/feed_floating_button.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -82,9 +83,16 @@ class _MainScreenState extends State<MainScreen> with TickerProviderStateMixin, 
 
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
+          // Feed floating button — visible on all tabs except Home
+          if (_currentIndex != 0)
+            const FeedFloatingButton(),
+        ],
       ),
       bottomNavigationBar: _buildBottomNav(theme, lang, safety),
     );

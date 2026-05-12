@@ -5,11 +5,7 @@ import '../widgets/notification_bell_popup.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../features/routes/presentation/screens/routes_screen.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import '../features/feed/presentation/providers/feed_provider.dart';
-import '../features/feed/data/models/feed_models.dart';
-import '../features/feed/presentation/widgets/safety_tip_card.dart';
-import '../features/feed/presentation/widgets/video_card.dart';
-import '../features/feed/presentation/widgets/campaign_card.dart';
+
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -80,7 +76,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final theme = context.watch<ThemeProvider>();
     final lang = context.watch<LanguageProvider>();
     final safety = context.watch<SafetyProvider>();
-    final FeedProvider feed = context.watch<FeedProvider>();
     final isDark = theme.isDarkMode;
 
     return Scaffold(
@@ -101,17 +96,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
                         _buildObservationCard(theme, lang),
                         // Alert feed
                         _buildAlertFeed(theme, lang, safety, isDark),
-                        const SizedBox(height: 20),
-
-                        // Safety Feed Module
-                        if (feed.isLoading)
-                          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
-                        else ...[
-                          _buildStaticAlerts(theme, feed),
-                          _buildSafetyTips(theme, feed),
-                          _buildAwarenessVideos(theme, feed),
-                          _buildCampaigns(theme, feed),
-                        ],
                         const SizedBox(height: 40),
                       ],
                     ),
@@ -562,174 +546,5 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
   }
 
-  Widget _buildStaticAlerts(ThemeProvider theme, FeedProvider feed) {
-    if (feed.alerts.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'General Safety Alerts',
-            style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 12),
-          ...feed.alerts.map<Widget>((StaticSafetyAlert alert) {
-            Color severityColor = alert.severity == 'high' ? theme.danger : (alert.severity == 'medium' ? Colors.orange : Colors.amber);
-            return GestureDetector(
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    backgroundColor: theme.surface,
-                    title: Row(
-                      children: [
-                        Icon(Icons.info_outline_rounded, color: severityColor),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(alert.title, style: TextStyle(color: theme.textPrimary, fontWeight: FontWeight.bold))),
-                      ],
-                    ),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.location_on_rounded, size: 16, color: theme.textSecondary),
-                            const SizedBox(width: 4),
-                            Expanded(child: Text(alert.location, style: TextStyle(color: theme.textSecondary, fontWeight: FontWeight.w600))),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(alert.description, style: TextStyle(color: theme.textPrimary, fontSize: 14)),
-                        const SizedBox(height: 16),
-                        Text("This alert is dynamically generated based on recent reports in your area.", style: TextStyle(color: theme.textSecondary, fontSize: 12, fontStyle: FontStyle.italic)),
-                      ],
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text('Close', style: TextStyle(color: theme.accent)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: theme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border(left: BorderSide(color: severityColor, width: 4)),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4)],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline_rounded, color: severityColor, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            alert.title,
-                            style: TextStyle(color: theme.textPrimary, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(alert.description, style: TextStyle(color: theme.textSecondary, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.location_on_rounded, size: 12, color: theme.textSecondary),
-                        const SizedBox(width: 4),
-                        Text(alert.location, style: TextStyle(color: theme.textSecondary, fontSize: 11)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }).toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSafetyTips(ThemeProvider theme, FeedProvider feed) {
-    if (feed.tips.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Text(
-            'Daily Safety Tips',
-            style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-        ),
-        SizedBox(
-          height: 160,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: feed.tips.length,
-            itemBuilder: (context, index) {
-              return SafetyTipCard(tip: feed.tips[index], theme: theme);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAwarenessVideos(ThemeProvider theme, FeedProvider feed) {
-    if (feed.videos.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-          child: Text(
-            'Today\'s Top Awareness Videos',
-            style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-        ),
-        CarouselSlider.builder(
-          itemCount: feed.videos.length,
-          itemBuilder: (context, index, realIndex) {
-            return VideoCard(video: feed.videos[index], theme: theme);
-          },
-          options: CarouselOptions(
-            height: 250,
-            viewportFraction: 0.85,
-            enableInfiniteScroll: false,
-            enlargeCenterPage: true,
-            padEnds: false,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCampaigns(ThemeProvider theme, FeedProvider feed) {
-    if (feed.campaigns.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Local Campaigns & Events',
-            style: TextStyle(color: theme.textPrimary, fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 12),
-          ...feed.campaigns.map<Widget>((SafetyCampaign campaign) => CampaignCard(campaign: campaign, theme: theme)).toList(),
-        ],
-      ),
-    );
-  }
 }
+

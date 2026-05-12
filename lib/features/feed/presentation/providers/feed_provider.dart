@@ -23,6 +23,9 @@ class FeedProvider extends ChangeNotifier {
     _loadAllFeedData();
   }
 
+  /// Public method: called by the floating button to ensure data is loaded / refreshed.
+  Future<void> refresh() => _loadAllFeedData();
+
   Future<void> _loadAllFeedData() async {
     _isLoading = true;
     notifyListeners();
