@@ -103,38 +103,6 @@ class _AlertsScreenState extends State<AlertsScreen> {
                 ),
               ],
             ),
-            // Floating SOS button
-            Positioned(
-              bottom: 20,
-              right: 20,
-              child: GestureDetector(
-                onTap: safety.isSOSActive ? safety.confirmSafe : safety.triggerSOSFlow,
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: safety.isSOSActive
-                          ? [const Color(0xFF1B5E20), const Color(0xFF43A047)]
-                          : [const Color(0xFFCC0000), const Color(0xFFFF0000)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (safety.isSOSActive ? const Color(0xFF43A047) : const Color(0xFFFF0000)).withOpacity(0.4),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    safety.isSOSActive ? Icons.shield_rounded : Icons.navigation_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-              ),
-            ),
             // Report modal
             if (_showReportModal) _buildReportModal(theme, lang, isDark),
           ],

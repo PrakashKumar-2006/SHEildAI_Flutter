@@ -6,11 +6,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import '../providers/providers.dart';
 import '../features/community/presentation/providers/community_provider.dart';
+import '../features/feed/presentation/providers/feed_provider.dart';
+import '../features/feed/presentation/widgets/feed_floating_button.dart';
 import '../core/app_theme.dart';
 import '../widgets/notification_bell_popup.dart';
 import 'profile_screen.dart';
 import 'main_screen.dart';
-import 'alerts_screen.dart';
 import '../shared/widgets/crowd_risk_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -882,9 +883,13 @@ class _HomeScreenState extends State<HomeScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AlertsScreen()),
+                // Refresh feed data then open the Safety Feed sheet
+                context.read<FeedProvider>().refresh();
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (ctx) => const FeedSheet(),
                 );
               },
               style: ElevatedButton.styleFrom(

@@ -46,14 +46,14 @@ class _FeedFloatingButtonState extends State<FeedFloatingButton>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => const _FeedSheet(),
+      builder: (ctx) => const FeedSheet(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      bottom: 110,
+      bottom: 140,
       right: 18,
       child: ScaleTransition(
         scale: _pulseAnimation,
@@ -105,14 +105,15 @@ class _FeedFloatingButtonState extends State<FeedFloatingButton>
   }
 }
 
-class _FeedSheet extends StatefulWidget {
-  const _FeedSheet();
+/// Public: used by both the floating button and the Explore Feed card on Home screen.
+class FeedSheet extends StatefulWidget {
+  const FeedSheet();
 
   @override
-  State<_FeedSheet> createState() => _FeedSheetState();
+  State<FeedSheet> createState() => FeedSheetState();
 }
 
-class _FeedSheetState extends State<_FeedSheet> {
+class FeedSheetState extends State<FeedSheet> {
   int _videoIndex = 0;
   Timer? _autoSwipeTimer;
   final PageController _videoPageController = PageController(viewportFraction: 0.9);
