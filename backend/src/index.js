@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const sosRoutes = require('./routes/sosRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const userRoutes = require('./routes/userRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 // Load env vars
 dotenv.config();
@@ -28,23 +29,29 @@ const io = new Server(server, {
 });
 
 // Security Middleware
-app.use(helmet());
-app.use(cors());
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:5173', '*'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-trace-id'],
+}));
 app.use(express.json({ limit: '10kb' }));
 
-// Rate Limiting
+// Rate Limiting (Increased for admin dashboard polling)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  limit: 5000,
+  max: 5000,
   message: 'Too many requests from this IP, please try again after 15 minutes'
 });
-app.use('/api', limiter);
+// app.use('/api', limiter); // Disabled for development/dashboard polling
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Root route
 app.get('/', (req, res) => {
