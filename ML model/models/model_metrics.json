@@ -1,9 +1,12 @@
 {
-  "accuracy": 0.9573,
-  "f1_weighted": 0.9565,
-  "cv_f1_mean": 0.9544,
-  "cv_f1_std": 0.0042,
-  "training_records": 7110,
-  "test_records": 1778,
-  "total_features": 38
+  "accuracy": 0.952,
+  "f1_weighted": 0.9521,
+  "cv_f1_mean": 0.9511,
+  "cv_f1_std": 0.004,
+  "training_records": 12416,
+  "test_records": 3104,
+  "total_features": 38,
+  "total_stations": 108,
+  "bhopal_stations": 56,
+  "indore_stations": 52
 }

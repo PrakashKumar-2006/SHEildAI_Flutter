@@ -28,9 +28,9 @@ print("=" * 60)
 
 # ── STEP 1: LOAD ──────────────────────────────────────────────────────────────
 print("\n[1/7] Loading dataset...")
-df_inc  = pd.read_excel(DATASET, sheet_name="1_Crime_Incidents",          header=1)
-df_zone = pd.read_excel(DATASET, sheet_name="2_Station_Zone_Profile",     header=1)
-df_time = pd.read_excel(DATASET, sheet_name="3_Time_Environment_Factors", header=1)
+df_inc  = pd.read_excel(DATASET, sheet_name="1_All_Incidents_Combined",   header=1)
+df_zone = pd.read_excel(DATASET, sheet_name="5_All_Zone_Profiles",        header=1)
+df_time = pd.read_excel(DATASET, sheet_name="6_Time_Environment",         header=1)
 print(f"      Incidents : {len(df_inc):,}")
 print(f"      Zones     : {len(df_zone)}")
 print(f"      Time slots: {len(df_time)}")
@@ -147,6 +147,12 @@ y = df["Risk_Label"]
 print(f"      Feature matrix : {X.shape}")
 print(f"      Label dist     : {dict(y.value_counts().sort_index())}")
 
+# Station info for metrics
+total_stations = len(df_zone)
+bhopal_stations = len(df_zone[df_zone["City"].str.lower() == "bhopal"])
+indore_stations = len(df_zone[df_zone["City"].str.lower() == "indore"])
+print(f"      Total stations : {total_stations} ({bhopal_stations} Bhopal, {indore_stations} Indore)")
+
 # ── STEP 3: SPLIT ─────────────────────────────────────────────────────────────
 print("\n[3/7] Train/test split (80/20 stratified)...")
 X_train, X_test, y_train, y_test = train_test_split(
@@ -231,6 +237,9 @@ bundle = {
         "training_records": len(X_train),
         "test_records":     len(X_test),
         "total_features":   len(FEATURES),
+        "total_stations":   total_stations,
+        "bhopal_stations":  bhopal_stations,
+        "indore_stations":  indore_stations,
     },
     "label_map":        {1:"MEDIUM", 2:"HIGH", 3:"CRITICAL"},
     "label_thresholds": {"MEDIUM":"0-35","HIGH":"36-62","CRITICAL":"63-100"},
