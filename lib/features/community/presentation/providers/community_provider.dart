@@ -28,7 +28,8 @@ class CommunityProvider extends ChangeNotifier {
   void _listenToSocket() {
     _socketSub?.cancel();
     _socketSub = _socketService.messageStream.listen((data) {
-      if (data['event'] == 'new_community_report') {
+      final event = data['event'];
+      if (event == 'new_community_report' || event == 'community_report_broadcast') {
         _handleRealtimeReport(data);
       }
     });
@@ -36,13 +37,20 @@ class CommunityProvider extends ChangeNotifier {
 
   void _handleRealtimeReport(Map<String, dynamic> data) {
     try {
+      final payload = data['data'] ?? data;
+      
+      final double lat = double.tryParse(payload['latitude']?.toString() ?? payload['lat']?.toString() ?? '0') ?? 0.0;
+      final double lon = double.tryParse(payload['longitude']?.toString() ?? payload['lon']?.toString() ?? '0') ?? 0.0;
+      
+      if (lat == 0.0) return;
+
       final report = CommunityReportModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        latitude: (data['latitude'] ?? data['lat'] as num).toDouble(),
-        longitude: (data['longitude'] ?? data['lon'] as num).toDouble(),
-        incidentType: data['incidentType'] ?? data['type'] ?? 'Unknown',
-        description: data['description'] ?? '',
-        severity: (data['severity'] as num?)?.toInt() ?? 5,
+        latitude: lat,
+        longitude: lon,
+        incidentType: payload['incidentType'] ?? payload['type'] ?? 'Unknown',
+        description: payload['description'] ?? '',
+        severity: int.tryParse(payload['severity']?.toString() ?? '5') ?? 5,
         anonymous: true,
         timestamp: DateTime.now(),
       );

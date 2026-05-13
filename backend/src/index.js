@@ -60,23 +60,28 @@ io.on('connection', (socket) => {
 
   socket.on('update_location', (data) => {
     // data: { lat, lon, phone }
-    userLocations.set(socket.id, {
-      phone: data.phone || phone,
-      lat: data.lat,
-      lon: data.lon,
-      lastUpdate: Date.now()
-    });
+    if (data.lat && data.lon) {
+      userLocations.set(socket.id, {
+        phone: data.phone || phone || 'Unknown',
+        lat: parseFloat(data.lat),
+        lon: parseFloat(data.lon),
+        lastUpdate: Date.now()
+      });
+      // console.log(`[Socket] Location updated for ${data.phone || phone}`);
+    }
   });
 
   socket.on('sos_alert', (sosData) => {
     // sosData: { sosId, userId, name, latitude, longitude, message }
-    console.log(`[Socket] SOS Alert from ${sosData.name} (${sosData.userId})`);
+    console.log(`[Socket] SOS ALERT RECEIVED from ${sosData.name} (${sosData.userId}) at [${sosData.latitude}, ${sosData.longitude}]`);
     
     // Broadcast to nearby users (5km)
     const radiusInKm = 5.0;
+    let nearbyCount = 0;
     
     userLocations.forEach((loc, socketId) => {
       if (socketId === socket.id) return; // Skip sender
+      if (!loc.lat || !loc.lon) return; // Skip if no location
 
       const distance = calculateDistance(
         sosData.latitude, 
@@ -85,7 +90,8 @@ io.on('connection', (socket) => {
         loc.lon
       );
 
-      if (distance <= radiusInKm) {
+      if (!isNaN(distance) && distance <= radiusInKm) {
+        nearbyCount++;
         console.log(`[Socket] Sending Sentinel Alert to ${loc.phone} (Distance: ${distance.toFixed(2)}km)`);
         io.to(socketId).emit('sentinel_alert', {
           ...sosData,
@@ -94,20 +100,22 @@ io.on('connection', (socket) => {
       }
     });
 
+    console.log(`[Socket] SOS Alert processed. Sent to ${nearbyCount} nearby users out of ${userLocations.size} total active users.`);
+
     // Also broadcast to a general community feed for all
     socket.broadcast.emit('community_feed_update', {
       type: 'SOS',
       name: 'Someone', // Anonymous for feed
       latitude: sosData.latitude,
       longitude: sosData.longitude,
-      message: 'Emergency SOS Triggered!',
+      message: 'Emergency SOS Triggered Nearby!',
       timestamp: new Date().toISOString()
     });
   });
 
   socket.on('community_report', (reportData) => {
     // reportData: { type, description, lat, lon, name }
-    console.log(`[Socket] New Community Report: ${reportData.type}`);
+    console.log(`[Socket] New Community Report: ${reportData.incidentType || reportData.type} at [${reportData.latitude || reportData.lat}, ${reportData.longitude || reportData.lon}]`);
     
     // Broadcast anonymously to all users
     const anonymousReport = {
@@ -117,7 +125,9 @@ io.on('connection', (socket) => {
       timestamp: new Date().toISOString()
     };
     
+    // Emit both for backward/forward compatibility
     io.emit('new_community_report', anonymousReport);
+    io.emit('community_report_broadcast', anonymousReport);
   });
 
   socket.on('disconnect', () => {
@@ -128,17 +138,28 @@ io.on('connection', (socket) => {
 
 // Haversine formula for distance calculation
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Radius of the earth in km
-  const dLat = deg2rad(lat2 - lat1);
-  const dLon = deg2rad(lon2 - lon1);
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2)
-    ; 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-  const d = R * c; 
-  return d;
+  try {
+    const R = 6371; // Radius of the earth in km
+    const pLat1 = parseFloat(lat1);
+    const pLon1 = parseFloat(lon1);
+    const pLat2 = parseFloat(lat2);
+    const pLon2 = parseFloat(lon2);
+
+    if (isNaN(pLat1) || isNaN(pLon1) || isNaN(pLat2) || isNaN(pLon2)) return NaN;
+
+    const dLat = deg2rad(pLat2 - pLat1);
+    const dLon = deg2rad(pLon2 - pLon1);
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(deg2rad(pLat1)) * Math.cos(deg2rad(pLat2)) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2)
+      ; 
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    const d = R * c; 
+    return d;
+  } catch (e) {
+    return NaN;
+  }
 }
 
 function deg2rad(deg) {

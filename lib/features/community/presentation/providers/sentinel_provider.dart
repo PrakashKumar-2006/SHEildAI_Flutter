@@ -29,8 +29,8 @@ class SentinelAlert {
       sosId: json['sosId']?.toString() ?? '',
       userId: json['userId']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Someone',
-      latitude: double.tryParse(json['latitude']?.toString() ?? '0') ?? 0.0,
-      longitude: double.tryParse(json['longitude']?.toString() ?? '0') ?? 0.0,
+      latitude: double.tryParse(json['latitude']?.toString() ?? json['lat']?.toString() ?? '0') ?? 0.0,
+      longitude: double.tryParse(json['longitude']?.toString() ?? json['lon']?.toString() ?? '0') ?? 0.0,
       message: json['message']?.toString() ?? 'Emergency SOS!',
       distance: double.tryParse(json['distance']?.toString() ?? '0') ?? 0.0,
       timestamp: json['timestamp'] != null 
@@ -88,9 +88,9 @@ class SentinelProvider extends ChangeNotifier {
     }
   }
 
-  void _handleFeedUpdate(Map<String, dynamic> data) {
+    final payload = data['data'] ?? data;
     _communityFeed.insert(0, {
-      ...data,
+      ...payload,
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'receivedAt': DateTime.now().toIso8601String(),
     });

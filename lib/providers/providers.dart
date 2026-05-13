@@ -307,9 +307,19 @@ class SafetyProvider extends ChangeNotifier {
     if (_userProfile.phone.isNotEmpty) {
       await SocketService().connect(_userProfile.phone);
       _listenToSocket();
+      _listenToConnection();
     }
     _isAppReady = true;
     notifyListeners();
+  }
+
+  void _listenToConnection() {
+    SocketService().connectionStream.listen((connected) {
+      if (connected && latitude != null && longitude != null) {
+        debugPrint('[SafetyProvider] Socket connected, syncing initial location...');
+        SocketService().emitLocationUpdate(latitude!, longitude!);
+      }
+    });
   }
 
   void _listenToSocket() {
@@ -317,31 +327,53 @@ class SafetyProvider extends ChangeNotifier {
       final event = data['event'];
       debugPrint('[SafetyProvider] Received socket event: $event');
       try {
+        final payload = data['data'] ?? data;
+        
         if (event == 'sentinel_alert' || event == 'emergency_nearby' || event == 'sos_broadcast') {
-          final payload = data['data'] ?? data;
           final double victimLat = double.tryParse(payload['latitude']?.toString() ?? payload['lat']?.toString() ?? '0') ?? 0.0;
           final double victimLng = double.tryParse(payload['longitude']?.toString() ?? payload['lng']?.toString() ?? '0') ?? 0.0;
-          final String victimName = data['name'] ?? data['title']?.toString().replaceFirst('🚨 Emergency Alert Nearby', '').trim() ?? 'Someone';
+          final String victimName = payload['name']?.toString() ?? data['name']?.toString() ?? 'Someone';
           final String sosId = (payload['sosId'] ?? payload['sos_id'])?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
           
           if (victimLat != 0.0 && latitude != null && longitude != null) {
             final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, victimLat, victimLng);
-            if (distanceMeters <= 5000.0) _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
+            // 5km radius for sentinel alerts
+            if (distanceMeters <= 5000.0) {
+              _addCommunitySOSAlert(victimName, victimLat, victimLng, sosId, distanceMeters);
+            }
           }
-        } else if (event == 'community_report') {
+        } else if (event == 'new_community_report' || event == 'community_report' || event == 'community_report_broadcast') {
           // Handle real-time community report from another user
-          final double reportLat = (data['latitude'] as num).toDouble();
-          final double reportLng = (data['longitude'] as num).toDouble();
-          final String type = data['incidentType'] ?? 'Alert';
-          final String desc = data['description'] ?? '';
-          final int sev = (data['severity'] as num?)?.toInt() ?? 5;
+          final double reportLat = double.tryParse(payload['latitude']?.toString() ?? payload['lat']?.toString() ?? '0') ?? 0.0;
+          final double reportLng = double.tryParse(payload['longitude']?.toString() ?? payload['lng']?.toString() ?? '0') ?? 0.0;
+          final String type = payload['incidentType']?.toString() ?? payload['type']?.toString() ?? 'Safety Alert';
+          final String desc = payload['description']?.toString() ?? '';
+          final int sev = int.tryParse(payload['severity']?.toString() ?? '5') ?? 5;
           
-          if (latitude != null && longitude != null) {
+          if (reportLat != 0.0 && latitude != null && longitude != null) {
             final distanceMeters = OSRMService.calculateDistance(latitude!, longitude!, reportLat, reportLng);
-            if (distanceMeters <= 5000.0) { // 5km radius
+            if (distanceMeters <= 10000.0) { // 10km radius for general reports
               _addIncomingCommunityReport(type, desc, reportLat, reportLng, sev, distanceMeters);
             }
           }
+        } else if (event == 'community_feed_update') {
+          // General broadcast of events, even if far away
+          final String type = payload['type']?.toString() ?? 'Alert';
+          final String msg = payload['message']?.toString() ?? 'Safety alert triggered nearby';
+          final double lat = double.tryParse(payload['latitude']?.toString() ?? '0') ?? 0.0;
+          final double lon = double.tryParse(payload['longitude']?.toString() ?? '0') ?? 0.0;
+          
+          _alerts.insert(0, AlertItem(
+            id: 'feed_${DateTime.now().millisecondsSinceEpoch}',
+            type: type == 'SOS' ? 'SOS' : 'INFO',
+            title: '🚨 Community Update 🚨',
+            body: msg,
+            timestamp: DateTime.now(),
+            riskLevel: type == 'SOS' ? 'CRITICAL' : 'MEDIUM',
+            latitude: lat != 0.0 ? lat : null,
+            longitude: lon != 0.0 ? lon : null,
+          ));
+          notifyListeners();
         }
       } catch (e) {
         debugPrint('[SafetyProvider] Socket message error: $e');
