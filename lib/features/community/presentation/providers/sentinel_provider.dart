@@ -88,6 +88,7 @@ class SentinelProvider extends ChangeNotifier {
     }
   }
 
+  void _handleFeedUpdate(Map<String, dynamic> data) {
     final payload = data['data'] ?? data;
     _communityFeed.insert(0, {
       ...payload,
