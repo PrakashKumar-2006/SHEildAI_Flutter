@@ -699,7 +699,7 @@ def build_features(req: RiskRequest, zone: dict):
         "night_no_cctv": is_night * (1 - cctv_num),
         "evening_isolation": is_eve * isolation,
         "severity_x_night": severity * is_night,
-        "zone_risk_x_time": zone_base * time_add,
+        "zone_risk_x_time": zone_risk * time_add,
         "dist_x_isolation": zone_ps_dist * isolation,
         "weekend_x_night": is_wknd * is_night,
         "severity_x_evening": severity * is_eve,
