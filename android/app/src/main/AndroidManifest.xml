@@ -62,7 +62,7 @@
     <application
         android:label="SHEild AI"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/launcher_icon"
         android:requestLegacyExternalStorage="false"
         android:usesCleartextTraffic="true">
 
