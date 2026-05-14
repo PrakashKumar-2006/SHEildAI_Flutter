@@ -26,6 +26,11 @@ router.get('/analytics/incidents-by-day', adminController.incidentsByDay);
 router.get('/analytics/incidents-by-status', adminController.incidentsByStatus);
 router.get('/analytics/heatmap', adminController.getHeatmapData);
 router.get('/analytics/top-zones', adminController.getTopZones);
+router.get('/analytics/response-time', adminController.getResponseTimeAnalytics);
+
+// ─── Broadcast & Community ───────────────────────────────────────────────────
+router.post('/broadcast', adminController.sendBroadcast);
+router.get('/community-reports', adminController.getAllCommunityReports);
 
 // ─── Risk Zones (from risk_data.json — same as Flutter app) ─────────────────
 router.get('/risk-zones', adminController.getRiskZones);

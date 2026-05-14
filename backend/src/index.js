@@ -28,6 +28,9 @@ const io = new Server(server, {
   }
 });
 
+// Attach socket.io instance to the app so controllers can use it
+app.set('io', io);
+
 // Security Middleware
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({

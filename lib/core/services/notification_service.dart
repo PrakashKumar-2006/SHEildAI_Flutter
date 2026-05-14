@@ -226,6 +226,36 @@ class NotificationService {
   }
 
 
+  Future<void> showAdminBroadcastNotification({
+    required String title,
+    required String message,
+  }) async {
+    await showNotification(
+      id: 300,
+      title: '📢 $title',
+      body: message,
+      payload: 'admin_broadcast',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'sheild_ai_channel',
+          'General Notifications',
+          importance: Importance.max,
+          priority: Priority.max,
+          enableVibration: true,
+          playSound: true,
+          ticker: 'Admin Alert',
+          styleInformation: BigTextStyleInformation(message),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+      ),
+    );
+  }
+
   Future<void> cancelSOSNotifications() async {
     await cancelNotification(1);
   }

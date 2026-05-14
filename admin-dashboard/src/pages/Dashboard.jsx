@@ -10,14 +10,21 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchStats(), fetchIncidentsByDay(14)])
-      .then(([s, t]) => { setStats(s); setTrend(t) })
-      .finally(() => setLoading(false))
+    const load = () => {
+      Promise.all([fetchStats(), fetchIncidentsByDay(14)])
+        .then(([s, t]) => { setStats(s); setTrend(t) })
+        .finally(() => setLoading(false))
+    }
+    
+    load()
 
-    const interval = setInterval(() => {
-      fetchStats().then(setStats).catch(() => {})
-    }, 30000)
-    return () => clearInterval(interval)
+    const interval = setInterval(load, 30000)
+    window.addEventListener('realtime_update', load)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('realtime_update', load)
+    }
   }, [])
 
   if (loading) return (
@@ -35,7 +42,6 @@ export default function Dashboard() {
     { label: 'Active Incidents',  value: stats?.activeSOS ?? 0,         icon: <LuShieldAlert />,   color: '#ef4444', sub: 'Needs attention' },
     { label: 'Resolved',          value: stats?.resolvedSOS ?? 0,       icon: <LuCheck />,   color: '#10b981', sub: 'Successfully closed' },
     { label: 'False Alarms',      value: stats?.falseAlarmSOS ?? 0,     icon: <LuOctagonAlert />,  color: '#f59e0b', sub: 'Marked false alarm' },
-    { label: 'Emergency Contacts',value: stats?.totalContacts ?? 0,     icon: <LuPhone />,       color: '#8b5cf6', sub: 'Across all users' },
   ]
 
   const resolution = stats?.totalSOS > 0

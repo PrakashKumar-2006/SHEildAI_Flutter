@@ -4,7 +4,7 @@ import {
   MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip,
   useMap, ZoomControl,
 } from 'react-leaflet'
-import { fetchRiskZones, fetchHeatmapData } from '../api'
+import { fetchRiskZones, fetchHeatmapData, fetchMLHotspots } from '../api'
 import { Topbar } from './Dashboard'
 import { format } from 'date-fns'
 import 'leaflet/dist/leaflet.css'
@@ -46,12 +46,49 @@ export default function HeatmapPage() {
   const [filterType, setFilter]   = useState('all')
   const [liveLocation, setLiveLoc]= useState(null)
 
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([fetchRiskZones(), fetchHeatmapData()])
-      .then(([rd, sos]) => { setRiskData(rd); setSosPoints(sos) })
+  const loadData = (showLoading = false) => {
+    if (showLoading) setLoading(true)
+    Promise.all([
+      fetchRiskZones().catch(() => ({ zones: [], currentHour: 0, multiplier: 0 })), 
+      fetchHeatmapData().catch(() => []),
+      fetchMLHotspots().catch(() => [])
+    ])
+      .then(([rd, sos, mlHotspots]) => {
+        const mlZones = mlHotspots.map((z, idx) => {
+          const riskScore = z.risk_score || 56;
+          let zoneType, zoneColor, zoneLabel;
+          if (riskScore <= 25) {
+            zoneType = 'safe';      zoneColor = '#43A047'; zoneLabel = 'Safe Zone';
+          } else if (riskScore <= 50) {
+            zoneType = 'moderate';  zoneColor = '#F39C12'; zoneLabel = 'Moderate Zone';
+          } else if (riskScore <= 75) {
+            zoneType = 'high';      zoneColor = '#E74C3C'; zoneLabel = 'High Risk Zone';
+          } else {
+            zoneType = 'critical';  zoneColor = '#8B0000'; zoneLabel = 'Critical Zone';
+          }
+          return {
+              id: `ml_${z.id || z.name || idx}`,
+              name: z.name || 'ML Hotspot',
+              lat: z.lat,
+              lon: z.lon,
+              radius: z.radius || 0.8,
+              baseScore: riskScore,
+              riskScore: riskScore,
+              zoneType,
+              zoneColor,
+              zoneLabel
+          };
+        });
+        rd.zones = [...rd.zones, ...mlZones];
+        setRiskData(rd); 
+        setSosPoints(sos); 
+      })
       .catch(() => toast.error('Failed to load map data'))
-      .finally(() => setLoading(false))
+      .finally(() => { if (showLoading) setLoading(false) })
+  }
+
+  useEffect(() => {
+    loadData(true)
 
     // Fetch user's live location
     if (navigator.geolocation) {
@@ -61,13 +98,16 @@ export default function HeatmapPage() {
         { enableHighAccuracy: true }
       )
     }
-  }, [])
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      fetchRiskZones().then(setRiskData).catch(() => {})
-    }, 5 * 60 * 1000)
-    return () => clearInterval(id)
+    const handleUpdate = () => loadData(false)
+    window.addEventListener('realtime_update', handleUpdate)
+    
+    const intervalId = setInterval(() => loadData(false), 5 * 60 * 1000)
+
+    return () => {
+      window.removeEventListener('realtime_update', handleUpdate)
+      clearInterval(intervalId)
+    }
   }, [])
 
   const { zones } = riskData

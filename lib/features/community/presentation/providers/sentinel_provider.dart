@@ -64,7 +64,13 @@ class SentinelProvider extends ChangeNotifier {
       if (event == 'sentinel_alert') {
         final payload = data['data'] ?? data;
         _handleSentinelAlert(payload);
-      } else if (event == 'community_feed_update' || event == 'new_community_report') {
+      } else if (event == 'admin_broadcast') {
+        final payload = data['data'] ?? data;
+        NotificationService().showAdminBroadcastNotification(
+          title: payload['title']?.toString() ?? 'Global Alert',
+          message: payload['message']?.toString() ?? 'Important update from Admin'
+        );
+      } else if (event == 'community_feed_update' || event == 'new_community_report' || event == 'community_report_broadcast') {
         _handleFeedUpdate(data);
       }
     });

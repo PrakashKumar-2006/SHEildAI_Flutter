@@ -4,9 +4,10 @@ import {
   AreaChart, Area,
   BarChart, Bar,
   PieChart, Pie, Cell, Legend,
+  LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
 } from 'recharts'
-import { fetchIncidentsByDay, fetchIncidentsByStatus } from '../api'
+import { fetchIncidentsByDay, fetchIncidentsByStatus, fetchResponseTimeAnalytics } from '../api'
 import { Topbar } from './Dashboard'
 import { format, parseISO, subDays } from 'date-fns'
 import { LuActivity, LuTrendingUp, LuTrendingDown } from 'react-icons/lu'
@@ -20,13 +21,14 @@ const STATUS_PALETTE = {
 export default function AnalyticsPage() {
   const [trendData, setTrend]   = useState([])
   const [statusData, setStatus] = useState([])
+  const [responseTimeData, setResponseTimeData] = useState([])
   const [loading, setLoading]   = useState(true)
   const [days, setDays]         = useState(30)
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([fetchIncidentsByDay(days), fetchIncidentsByStatus()])
-      .then(([t, s]) => {
+    Promise.all([fetchIncidentsByDay(days), fetchIncidentsByStatus(), fetchResponseTimeAnalytics()])
+      .then(([t, s, r]) => {
 
         // Fill missing dates with 0
         const filled = []
@@ -37,6 +39,7 @@ export default function AnalyticsPage() {
         }
         setTrend(filled)
         setStatus(s)
+        setResponseTimeData(r)
       })
       .catch(() => toast.error('Failed to load analytics'))
       .finally(() => setLoading(false))
@@ -196,6 +199,39 @@ export default function AnalyticsPage() {
               </ResponsiveContainer>
             )}
           </div>
+        </div>
+
+        {/* Response Time Chart */}
+        <div className="card" style={{ marginTop: 24 }}>
+          <div className="card-header">
+            <div>
+              <p className="card-title">Average Response Time</p>
+              <p className="card-subtitle">Time taken to resolve SOS incidents (Minutes)</p>
+            </div>
+          </div>
+          {loading ? (
+            <div className="loading-spinner"><div className="spinner" /></div>
+          ) : responseTimeData.length === 0 ? (
+            <div className="empty-state"><p className="empty-icon"><LuActivity size={32} color="#9ca3af" /></p><p>No response time data</p></div>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart data={responseTimeData} margin={{ left: -20, top: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis 
+                  dataKey="date" 
+                  tickFormatter={d => { try { return format(parseISO(d), 'MMM d') } catch { return d } }}
+                  axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} 
+                />
+                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
+                <Tooltip 
+                  formatter={v => [`${v} mins`, 'Avg Response']}
+                  labelFormatter={l => { try { return format(parseISO(l), 'MMM d, yyyy') } catch { return l } }}
+                  contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                />
+                <Line type="monotone" dataKey="avgResponseTimeMinutes" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981', stroke: '#fff' }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
       </div>

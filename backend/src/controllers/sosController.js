@@ -25,6 +25,17 @@ const sosController = {
 
       const sos = await sosRepository.createSOS(sosData, traceId);
 
+      // Emit real-time event
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('new_sos_alert', {
+          _id: sos._id,
+          user_phone: phone,
+          location: sosData.location,
+          status: 'active'
+        });
+      }
+
       logger.info(`SOS triggered and persisted for phone: ${phone}`, traceId);
       res.status(200).json({ 
         success: true, 
@@ -51,6 +62,15 @@ const sosController = {
 
       if (!updated) {
         return res.status(404).json({ error: 'SOS record not found' });
+      }
+
+      // Emit real-time event
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('sos_status_updated', {
+          _id: sosId,
+          status: status
+        });
       }
 
       logger.info(`SOS status updated to ${status} for ID: ${sosId}`, traceId);

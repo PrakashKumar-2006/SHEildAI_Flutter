@@ -25,5 +25,14 @@ export const fetchIncidentsByStatus = ()         => API.get('/admin/analytics/in
 export const fetchHeatmapData       = ()         => API.get('/admin/analytics/heatmap').then(r => r.data)
 export const fetchTopZones          = ()         => API.get('/admin/analytics/top-zones').then(r => r.data)
 
+
 // ── Risk Zones (same as Flutter app home screen) ───────────────────────────
 export const fetchRiskZones         = ()         => API.get('/admin/risk-zones').then(r => r.data)
+
+// ── ML Hotspots (from huggingface ML model) ──────────────────────────────
+export const fetchMLHotspots        = ()         => axios.get('https://prakashkumarbiswal-sheildai-ml.hf.space/api/hotspots').then(r => r.data)
+
+// ── Community Reports & Broadcast ──────────────────────────────────────────
+export const fetchCommunityReports  = (p=1, l=50)=> API.get(`/admin/community-reports?page=${p}&limit=${l}`).then(r => r.data)
+export const sendBroadcast          = (data)     => API.post('/admin/broadcast', data).then(r => r.data)
+export const fetchResponseTimeAnalytics = ()     => API.get('/admin/analytics/response-time').then(r => r.data)

@@ -4,7 +4,7 @@ import { fetchSOS, updateSOS, deleteSOS } from '../api'
 import { Topbar } from './Dashboard'
 import { ConfirmModal } from './UsersPage'
 import { format } from 'date-fns'
-import { LuSearch, LuTriangleAlert, LuCheck, LuOctagonAlert, LuPen, LuTrash2 } from 'react-icons/lu'
+import { LuSearch, LuTriangleAlert, LuCheck, LuOctagonAlert, LuPen, LuTrash2, LuDownload } from 'react-icons/lu'
 
 const STATUS_OPTIONS = ['', 'active', 'resolved', 'false_alarm']
 
@@ -27,10 +27,15 @@ export default function SOSPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Auto-refresh active incidents every 20s
+  // Auto-refresh active incidents every 20s and on realtime updates
   useEffect(() => {
+    const handleUpdate = () => load()
+    window.addEventListener('realtime_update', handleUpdate)
     const interval = setInterval(() => { load() }, 20000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('realtime_update', handleUpdate)
+    }
   }, [load])
 
   const handleDelete = async () => {
@@ -65,6 +70,39 @@ export default function SOSPage() {
     }
   }
 
+  const handleExport = async () => {
+    try {
+      const exportData = await fetchSOS({ page: 1, limit: 10000, status: statusFilter, search })
+      if (!exportData.sos || exportData.sos.length === 0) return toast.error('No data to export')
+      
+      const csvLines = []
+      csvLines.push('ID,User Phone,Status,Message,Latitude,Longitude,Created At,Updated At')
+      exportData.sos.forEach(s => {
+        const row = [
+          s._id,
+          s.user_phone,
+          s.status,
+          `"${(s.message || '').replace(/"/g, '""')}"`,
+          s.location?.lat || '',
+          s.location?.lon || '',
+          s.createdAt || '',
+          s.updatedAt || ''
+        ]
+        csvLines.push(row.join(','))
+      })
+      
+      const blob = new Blob([csvLines.join('\n')], { type: 'text/csv' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `sos_export_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error('Export failed')
+    }
+  }
+
   return (
     <>
       <Topbar title="SOS Incidents" sub={`${data.total} total incidents`} />
@@ -72,6 +110,9 @@ export default function SOSPage() {
         <div className="card">
           <div className="card-header">
             <p className="card-title">Incident Management</p>
+            <button className="btn btn-ghost btn-sm" onClick={handleExport}>
+              <LuDownload size={14} /> Export CSV
+            </button>
           </div>
 
           <div className="filter-bar">
