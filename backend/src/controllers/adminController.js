@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const SOS = require('../models/SOS');
 const Contact = require('../models/Contact');
+const CommunityReport = require('../models/CommunityReport');
 const fs = require('fs');
 const path = require('path');
 
@@ -284,6 +285,80 @@ const adminController = {
       res.status(500).json({ error: err.message });
     }
   },
+
+  getResponseTimeAnalytics: async (req, res) => {
+    try {
+      const data = await SOS.aggregate([
+        { $match: { status: 'resolved' } },
+        {
+          $project: {
+            createdAt: 1,
+            updatedAt: 1,
+            responseTimeMs: { $subtract: ['$updatedAt', '$createdAt'] },
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+            day: { $dayOfMonth: '$createdAt' }
+          }
+        },
+        {
+          $group: {
+            _id: { year: '$year', month: '$month', day: '$day' },
+            avgResponseTimeMs: { $avg: '$responseTimeMs' },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+        { $limit: 30 }
+      ]);
+      
+      const formatted = data.map(d => ({
+        date: `${d._id.year}-${String(d._id.month).padStart(2, '0')}-${String(d._id.day).padStart(2, '0')}`,
+        avgResponseTimeMinutes: Math.round(d.avgResponseTimeMs / (1000 * 60)),
+        count: d.count
+      }));
+      
+      res.json(formatted);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
+  // ─── Broadcast ──────────────────────────────────────────────────────────────
+  sendBroadcast: async (req, res) => {
+    try {
+      const { title, message, severity } = req.body;
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('admin_broadcast', {
+          title: title || 'Global Alert',
+          message,
+          severity: severity || 'high',
+          timestamp: new Date().toISOString()
+        });
+        res.json({ success: true, message: 'Broadcast sent successfully' });
+      } else {
+        res.status(500).json({ error: 'Socket.io not initialized on server' });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
+  // ─── Community Reports ──────────────────────────────────────────────────────
+  getAllCommunityReports: async (req, res) => {
+    try {
+      const { page = 1, limit = 50 } = req.query;
+      const reports = await CommunityReport.find()
+        .sort({ timestamp: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(Number(limit));
+      const total = await CommunityReport.countDocuments();
+      res.json({ reports, total, page: Number(page), totalPages: Math.ceil(total / limit) });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
   // ─── Risk Zones (mirrors Flutter ZoneService logic) ────────────────────────
   getRiskZones: (req, res) => {
     try {
@@ -315,7 +390,7 @@ const adminController = {
           name: z.name,
           lat: z.lat,
           lon: z.lon,
-          radius: 1.0,          // 1 km — matches Flutter default
+          radius: 0.5,          // 500m — matches Flutter default
           baseScore: z.base_score,
           riskScore: Math.round(riskScore),
           zoneType,

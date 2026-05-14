@@ -733,3 +733,38 @@ td {
   .page-content { padding: 24px; }
   .stats-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Premium Dark Mode ─────────────────────────────────────────────────── */
+body.dark-mode {
+  --bg-base:    #0f172a;
+  --bg-surface: #1e293b;
+  --bg-hover:   #334155;
+  --bg-active:  #1e293b;
+  --border:     #334155;
+  --border-light: #475569;
+  --border-focus: #3b82f6;
+  --text-primary:   #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted:     #94a3b8;
+  background-image: radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.05) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%);
+}
+body.dark-mode .sidebar { background: var(--bg-surface); border-color: var(--border); box-shadow: none; }
+body.dark-mode .sidebar-logo h1 { color: var(--text-primary); }
+body.dark-mode .topbar { background: rgba(30, 41, 59, 0.75); border-color: var(--border); }
+body.dark-mode .nav-link { color: var(--text-secondary); }
+body.dark-mode .nav-link:hover { background: var(--bg-hover); color: var(--text-primary); }
+body.dark-mode .nav-link.active { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+body.dark-mode .sidebar-user { background: var(--bg-hover); border-color: var(--border); }
+body.dark-mode .sidebar-user-info p { color: var(--text-primary); }
+body.dark-mode .card, body.dark-mode .stat-card { background: var(--bg-surface); border-color: var(--border); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+body.dark-mode .stat-icon { background: var(--bg-hover); border-color: var(--border); }
+body.dark-mode .input, body.dark-mode .select { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border); }
+body.dark-mode .btn-ghost { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border); }
+body.dark-mode .btn-ghost:hover { background: #475569; }
+body.dark-mode thead { background: var(--bg-hover); }
+body.dark-mode tbody tr { background: var(--bg-surface); border-bottom-color: var(--border); }
+body.dark-mode tbody tr:hover { background: var(--bg-hover); }
+body.dark-mode .modal { background: var(--bg-surface); border-color: var(--border); }
+body.dark-mode .empty-state .empty-icon { background: var(--bg-hover); border-color: var(--border); }
+body.dark-mode .search-bar { background: var(--bg-hover); border-color: var(--border); }
+body.dark-mode .recharts-tooltip-wrapper .recharts-default-tooltip { background: var(--bg-surface) !important; color: var(--text-primary) !important; border-color: var(--border) !important; }
