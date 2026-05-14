@@ -362,9 +362,8 @@ const adminController = {
   // ─── Risk Zones (mirrors Flutter ZoneService logic) ────────────────────────
   getRiskZones: (req, res) => {
     try {
-      // Read the asset file — path from backend/src/controllers → ../../../assets/risk_data.json
-      const riskDataPath = path.join(__dirname, '..', '..', '..', 'assets', 'risk_data.json');
-      const riskData = JSON.parse(fs.readFileSync(riskDataPath, 'utf8'));
+      // Require self-contained json directly to ensure absolute path resolution on Render server
+      const riskData = require('../data/risk_data.json');
 
       const currentHour = new Date().getHours();
       const hourMultipliers = riskData.hour_multipliers || {};
