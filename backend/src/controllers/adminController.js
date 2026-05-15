@@ -360,6 +360,49 @@ const adminController = {
   },
 
   // ─── Risk Zones (mirrors Flutter ZoneService logic) ────────────────────────
+  getLiveLocations: async (req, res) => {
+    try {
+      const sinceMinutes = Math.max(1, parseInt(req.query.sinceMinutes, 10) || 120);
+      const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+      const since = new Date(Date.now() - sinceMinutes * 60 * 1000);
+
+      const users = await User.find({
+        last_lat: { $ne: null },
+        last_lon: { $ne: null },
+        last_seen: { $gte: since }
+      })
+        .select('phone name last_lat last_lon last_seen')
+        .sort({ last_seen: -1 })
+        .limit(limit)
+        .lean();
+
+      const now = Date.now();
+      const locations = users
+        .map((u) => {
+          const lat = Number(u.last_lat);
+          const lon = Number(u.last_lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+          const lastSeenTime = u.last_seen ? new Date(u.last_seen).getTime() : 0;
+          return {
+            id: u._id,
+            phone: u.phone,
+            name: u.name || 'User',
+            lat,
+            lon,
+            lastSeen: u.last_seen,
+            secondsAgo: lastSeenTime ? Math.max(0, Math.round((now - lastSeenTime) / 1000)) : null,
+            isOnline: lastSeenTime ? now - lastSeenTime <= 2 * 60 * 1000 : false
+          };
+        })
+        .filter(Boolean);
+
+      res.json({ locations, count: locations.length, sinceMinutes });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+
   getRiskZones: (req, res) => {
     try {
       // Require self-contained json directly to ensure absolute path resolution on Render server

@@ -4,7 +4,7 @@ import {
   MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip,
   useMap, ZoomControl,
 } from 'react-leaflet'
-import { fetchRiskZones, fetchHeatmapData, fetchMLHotspots } from '../api'
+import { fetchRiskZones, fetchHeatmapData, fetchMLHotspots, fetchLiveLocations } from '../api'
 import { Topbar } from './Dashboard'
 import { format } from 'date-fns'
 import 'leaflet/dist/leaflet.css'
@@ -23,17 +23,51 @@ const SOS_COLORS = {
   false_alarm: '#f59e0b',
 }
 
-// Auto-fit map to all zones
-function FitBounds({ zones }) {
+function normalizeLiveUser(loc) {
+  const lat = Number(loc?.lat ?? loc?.latitude ?? loc?.last_lat)
+  const lon = Number(loc?.lon ?? loc?.lng ?? loc?.longitude ?? loc?.last_lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+
+  return {
+    id: loc.id || loc._id || loc.phone || `${lat}_${lon}`,
+    phone: loc.phone,
+    name: loc.name || 'User',
+    lat,
+    lon,
+    lastSeen: loc.lastSeen || loc.last_seen || new Date().toISOString(),
+    isOnline: loc.isOnline ?? true,
+  }
+}
+
+function formatLastSeen(value) {
+  if (!value) return 'just now'
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return 'just now'
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000))
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  return `${Math.round(minutes / 60)}h ago`
+}
+
+// Auto-fit map to all zones and the first arriving live location
+function FitBounds({ zones, liveLocation, liveUsers }) {
   const map = useMap()
   const fitted = useRef(false)
+  const fittedWithLive = useRef(false)
 
   useEffect(() => {
-    if (zones.length === 0 || fitted.current) return
     const bounds = zones.map(z => [z.lat, z.lon])
+    if (liveLocation) bounds.push(liveLocation)
+    liveUsers.forEach(u => bounds.push([u.lat, u.lon]))
+
+    const hasLive = Boolean(liveLocation || liveUsers.length)
+    if (bounds.length === 0 || (fitted.current && (!hasLive || fittedWithLive.current))) return
+
     map.fitBounds(bounds, { padding: [40, 40] })
     fitted.current = true
-  }, [zones, map])
+    fittedWithLive.current = hasLive
+  }, [zones, liveLocation, liveUsers, map])
 
   return null
 }
@@ -45,15 +79,17 @@ export default function HeatmapPage() {
   const [layer, setLayer]         = useState('zones')
   const [filterType, setFilter]   = useState('all')
   const [liveLocation, setLiveLoc]= useState(null)
+  const [liveUsers, setLiveUsers] = useState([])
 
   const loadData = (showLoading = false) => {
     if (showLoading) setLoading(true)
     Promise.all([
       fetchRiskZones().catch(() => null), 
       fetchHeatmapData().catch(() => []),
-      fetchMLHotspots().catch(() => [])
+      fetchMLHotspots().catch(() => []),
+      fetchLiveLocations({ sinceMinutes: 240, limit: 100 }).catch(() => ({ locations: [] }))
     ])
-      .then(([rd, sos, mlHotspots]) => {
+      .then(([rd, sos, mlHotspots, live]) => {
         // Fallback default zones if live backend array is empty or deploying
         const defaultZones = [
           {"name": "Shyamla Hills", "lat": 23.245, "lon": 77.418, "baseScore": 16.0, "riskScore": 16, "zoneType": "safe", "zoneColor": "#43A047"},
@@ -94,23 +130,42 @@ export default function HeatmapPage() {
           else if (riskScore <= 75) { zoneType = 'high'; zoneColor = '#E74C3C'; zoneLabel = 'High Risk Zone'; }
           else { zoneType = 'critical'; zoneColor = '#8B0000'; zoneLabel = 'Critical Zone'; }
           return {
-            id: `ml_${z.id || z.name || idx}`,
-            name: z.name || 'ML Hotspot',
+            id: `ml_${z.id || z.zone_id || z.name || z.police_station || idx}`,
+            name: z.name || z.police_station || z.zone_name || 'ML Hotspot',
             lat: Number(z.lat) || 23.25,
             lon: Number(z.lon) || 77.41,
-            radius: Number(z.radius) || 0.8,
+            radius: Number(z.radius) || Number(z.radius_km) || (Number(z.radius_m) ? Number(z.radius_m) / 1000 : 0.8),
             baseScore: riskScore, riskScore, zoneType, zoneColor, zoneLabel
           };
         });
 
+        // Deduplicate circles based on rounded lat/lon to avoid double overlapping circles
+        const uniqueZonesMap = new Map()
+        const combinedZones = [...fetchedZones, ...mlZones]
+        combinedZones.forEach(z => {
+          if (z?.lat && z?.lon) {
+            const coordKey = `${Number(z.lat).toFixed(3)}_${Number(z.lon).toFixed(3)}`
+            if (!uniqueZonesMap.has(coordKey)) {
+              uniqueZonesMap.set(coordKey, z)
+            } else {
+              // Keep the variant with the higher calculated risk score
+              if ((z.riskScore || 0) > (uniqueZonesMap.get(coordKey).riskScore || 0)) {
+                uniqueZonesMap.set(coordKey, z)
+              }
+            }
+          }
+        })
+        const deduplicatedZones = Array.from(uniqueZonesMap.values())
+
         const finalData = {
-          zones: [...fetchedZones, ...mlZones],
+          zones: deduplicatedZones,
           currentHour: rd?.currentHour || new Date().getHours(),
           multiplier: rd?.multiplier || 0
         }
 
         setRiskData(finalData); 
         setSosPoints(Array.isArray(sos) ? sos : []); 
+        setLiveUsers((Array.isArray(live?.locations) ? live.locations : []).map(normalizeLiveUser).filter(Boolean))
       })
       .catch((err) => {
         console.error(err)
@@ -122,23 +177,44 @@ export default function HeatmapPage() {
   useEffect(() => {
     loadData(true)
 
-    // Fetch user's live location
+    // Continuously watch user's live location with max high-accuracy settings
+    let watchId;
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setLiveLoc([pos.coords.latitude, pos.coords.longitude]),
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (pos?.coords?.latitude && pos?.coords?.longitude) {
+            setLiveLoc([pos.coords.latitude, pos.coords.longitude])
+          }
+        },
         (err) => console.warn("Could not get live location", err),
-        { enableHighAccuracy: true }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       )
     }
 
     const handleUpdate = () => loadData(false)
+    const handleLiveLocationUpdate = (event) => {
+      const user = normalizeLiveUser(event.detail)
+      if (!user) return
+
+      setLiveUsers((prev) => {
+        const key = user.phone || user.id
+        const withoutUser = prev.filter((item) => (item.phone || item.id) !== key)
+        return [user, ...withoutUser].slice(0, 100)
+      })
+    }
+
     window.addEventListener('realtime_update', handleUpdate)
+    window.addEventListener('live_location_update', handleLiveLocationUpdate)
     
     const intervalId = setInterval(() => loadData(false), 5 * 60 * 1000)
 
     return () => {
       window.removeEventListener('realtime_update', handleUpdate)
+      window.removeEventListener('live_location_update', handleLiveLocationUpdate)
       clearInterval(intervalId)
+      if (watchId && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId)
+      }
     }
   }, [])
 
@@ -201,6 +277,7 @@ export default function HeatmapPage() {
                 <p className="card-title">🗺️ Live Safety Zone Map</p>
                 <p className="card-subtitle">
                   {filteredZones.length} zones &nbsp;·&nbsp;
+                  {liveUsers.length} live users &nbsp;·&nbsp;
                   Hour: {riskData.currentHour}:00 &nbsp;·&nbsp;
                   Multiplier: {riskData.multiplier >= 0 ? '+' : ''}{riskData.multiplier}
                   {riskData.multiplier > 5 && <span style={{ color: '#ef4444' }}> ⬆ High-risk hours</span>}
@@ -247,7 +324,7 @@ export default function HeatmapPage() {
                     maxZoom={19}
                   />
                   <ZoomControl position="bottomright" />
-                  <FitBounds zones={filteredZones} />
+                  <FitBounds zones={filteredZones} liveLocation={liveLocation} liveUsers={liveUsers} />
 
                   {/* ── Admin's Live Location (Blue Dot) ────────────────── */}
                   {liveLocation && (
@@ -268,6 +345,25 @@ export default function HeatmapPage() {
                       </Popup>
                     </CircleMarker>
                   )}
+
+                  {/* Mobile users' latest backend locations */}
+                  {liveUsers.map((user) => (
+                    <CircleMarker
+                      key={user.phone || user.id}
+                      center={[user.lat, user.lon]}
+                      radius={7}
+                      pathOptions={{
+                        fillColor: user.isOnline ? '#10b981' : '#64748b',
+                        fillOpacity: 0.95,
+                        color: '#ffffff',
+                        weight: 2,
+                      }}
+                    >
+                      <Popup closeButton={false}>
+                        <LiveUserPopup user={user} />
+                      </Popup>
+                    </CircleMarker>
+                  ))}
 
                   {/* ── Risk Zone Circles — exact replica of Flutter app ── */}
                   {(layer === 'zones' || layer === 'both') && filteredZones.map(zone => (
@@ -343,6 +439,7 @@ export default function HeatmapPage() {
               {(layer === 'sos' || layer === 'both') && Object.entries(SOS_COLORS).map(([k, c]) => (
                 <LegendDot key={k} color={c} label={k.replace('_', ' ')} filled />
               ))}
+              <LegendDot color="#10b981" label="Live mobile user" filled />
             </div>
           </div>
 
@@ -466,6 +563,27 @@ function SOSPopupContent({ point }) {
           {format(new Date(point.createdAt), 'MMM d, yyyy HH:mm')}
         </p>
       )}
+    </div>
+  )
+}
+
+function LiveUserPopup({ user }) {
+  return (
+    <div style={{ fontFamily: 'Inter, sans-serif', minWidth: 190 }}>
+      <p style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, color: user.isOnline ? '#047857' : '#475569' }}>
+        Live mobile location
+      </p>
+      {[
+        ['User', user.name || 'User'],
+        ['Phone', user.phone || 'Unknown'],
+        ['Coordinates', `${user.lat.toFixed(4)}, ${user.lon.toFixed(4)}`],
+        ['Updated', formatLastSeen(user.lastSeen)],
+      ].map(([k, v]) => (
+        <p key={k} style={{ fontSize: 12, marginBottom: 2 }}>
+          <span style={{ color: '#4b5563' }}>{k}: </span>
+          <span style={{ fontWeight: 600, color: '#111827' }}>{v}</span>
+        </p>
+      ))}
     </div>
   )
 }

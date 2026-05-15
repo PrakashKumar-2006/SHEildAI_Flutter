@@ -31,6 +31,7 @@ router.get('/analytics/response-time', adminController.getResponseTimeAnalytics)
 // ─── Broadcast & Community ───────────────────────────────────────────────────
 router.post('/broadcast', adminController.sendBroadcast);
 router.get('/community-reports', adminController.getAllCommunityReports);
+router.get('/live-locations', adminController.getLiveLocations);
 
 // ─── Risk Zones (from risk_data.json — same as Flutter app) ─────────────────
 router.get('/risk-zones', adminController.getRiskZones);
