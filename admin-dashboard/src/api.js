@@ -34,5 +34,6 @@ export const fetchMLHotspots        = ()         => axios.get('https://prakashku
 
 // ── Community Reports & Broadcast ──────────────────────────────────────────
 export const fetchCommunityReports  = (p=1, l=50)=> API.get(`/admin/community-reports?page=${p}&limit=${l}`).then(r => r.data)
+export const fetchLiveLocations      = (params)   => API.get('/admin/live-locations', { params }).then(r => r.data)
 export const sendBroadcast          = (data)     => API.post('/admin/broadcast', data).then(r => r.data)
 export const fetchResponseTimeAnalytics = ()     => API.get('/admin/analytics/response-time').then(r => r.data)

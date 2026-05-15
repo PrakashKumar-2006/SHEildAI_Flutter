@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react'
 import { fetchCommunityReports } from '../api'
 import { LuMessageSquare, LuMapPin, LuClock, LuTriangleAlert } from 'react-icons/lu'
 
+function getReportCoordinates(report) {
+  const geo = report.location?.coordinates
+  const lat = Number(report.latitude ?? report.lat ?? (Array.isArray(geo) ? geo[1] : undefined))
+  const lon = Number(report.longitude ?? report.lon ?? report.lng ?? (Array.isArray(geo) ? geo[0] : undefined))
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  return { lat, lon }
+}
+
 export default function CommunityReportsPage() {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +60,7 @@ export default function CommunityReportsPage() {
               </thead>
               <tbody>
                 {reports.map((r, i) => {
+                  const coords = getReportCoordinates(r)
                   const isAnon = r.anonymous !== false && r.anonymous !== 'false' && !r.reporterName
                   const reporterText = isAnon ? '🔒 Anonymous' : (r.reporterName || r.phone || '👤 Citizen')
                   
@@ -83,7 +92,7 @@ export default function CommunityReportsPage() {
                       </td>
                       <td className="td-mono" style={{ fontSize: 12 }}>
                         <LuMapPin size={12} style={{ marginRight: 4, color: '#3b82f6' }} /> 
-                        {r.latitude?.toFixed(4)}, {r.longitude?.toFixed(4)}
+                        {coords ? `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}` : '—'}
                       </td>
                       <td className="td-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                         <LuClock size={12} style={{ marginRight: 4 }} />

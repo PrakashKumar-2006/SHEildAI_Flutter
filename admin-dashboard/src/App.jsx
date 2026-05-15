@@ -45,6 +45,18 @@ export default function App() {
       window.dispatchEvent(new Event('realtime_update'))
     })
 
+    socket.on('new_community_report', () => {
+      window.dispatchEvent(new Event('realtime_update'))
+    })
+
+    socket.on('community_report_broadcast', () => {
+      window.dispatchEvent(new Event('realtime_update'))
+    })
+
+    socket.on('user_location_updated', (data) => {
+      window.dispatchEvent(new CustomEvent('live_location_update', { detail: data }))
+    })
+
     return () => {
       clearInterval(interval)
       socket.disconnect()

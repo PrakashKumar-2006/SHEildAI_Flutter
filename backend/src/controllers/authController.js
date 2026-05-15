@@ -55,6 +55,19 @@ const authController = {
         await userRepository.updateLastLocation(phone, latitude, longitude, traceId);
       }
 
+      const io = req.app.get('io');
+      const lat = Number(latitude);
+      const lon = Number(longitude);
+      if (io && Number.isFinite(lat) && Number.isFinite(lon)) {
+        io.emit('user_location_updated', {
+          phone,
+          name: name || user.name || 'User',
+          lat,
+          lon,
+          lastSeen: new Date().toISOString()
+        });
+      }
+
       res.status(200).json({ success: true, message: 'Location updated' });
     } catch (error) {
       logger.error('updateLocation error', traceId, error);

@@ -12,6 +12,7 @@ const sosRoutes = require('./routes/sosRoutes');
 const contactRoutes = require('./routes/contactRoutes');
 const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const userRepository = require('./repositories/UserRepository');
 
 // Load env vars
 dotenv.config();
@@ -64,20 +65,58 @@ app.get('/', (req, res) => {
 // --- Real-time Socket Logic ---
 const userLocations = new Map(); // socketId -> { phone, lat, lon }
 
+function normalizeLiveLocation(data = {}, fallbackPhone) {
+  const lat = Number(data.lat ?? data.latitude);
+  const lon = Number(data.lon ?? data.lng ?? data.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const phone = data.phone || data.user_id || fallbackPhone || 'Unknown';
+  return {
+    phone,
+    name: data.name || 'User',
+    lat,
+    lon,
+    lastUpdate: Date.now(),
+  };
+}
+
 io.on('connection', (socket) => {
   const phone = socket.handshake.query.phone;
   console.log(`[Socket] User connected: ${phone} (${socket.id})`);
 
-  socket.on('update_location', (data) => {
+  socket.on('update_location', async (data) => {
     // data: { lat, lon, phone }
-    if (data.lat && data.lon) {
-      userLocations.set(socket.id, {
-        phone: data.phone || phone || 'Unknown',
-        lat: parseFloat(data.lat),
-        lon: parseFloat(data.lon),
-        lastUpdate: Date.now()
-      });
-      // console.log(`[Socket] Location updated for ${data.phone || phone}`);
+    const location = normalizeLiveLocation(data, phone);
+    if (!location) return;
+
+    userLocations.set(socket.id, location);
+
+    io.emit('user_location_updated', {
+      phone: location.phone,
+      name: location.name,
+      lat: location.lat,
+      lon: location.lon,
+      lastSeen: new Date(location.lastUpdate).toISOString(),
+      socketId: socket.id
+    });
+
+    if (location.phone && location.phone !== 'Unknown') {
+      try {
+        const existing = await userRepository.findByPhone(location.phone);
+        if (existing) {
+          await userRepository.updateLastLocation(location.phone, location.lat, location.lon);
+        } else {
+          await userRepository.createUser({
+            phone: location.phone,
+            name: location.name,
+            last_lat: location.lat,
+            last_lon: location.lon,
+            last_seen: new Date(location.lastUpdate)
+          });
+        }
+      } catch (err) {
+        console.error('[Socket] Failed to persist live location:', err.message);
+      }
     }
   });
 
