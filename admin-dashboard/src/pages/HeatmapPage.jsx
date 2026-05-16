@@ -102,7 +102,12 @@ export default function HeatmapPage() {
 
         let fetchedZones = Array.isArray(rd?.zones) ? rd.zones : (Array.isArray(rd) ? rd : [])
         if (fetchedZones.length === 0) {
+          console.warn("Using fallback default zones. API might be unreachable or returning empty data.");
           fetchedZones = defaultZones
+          if (!rd) toast.error("Live risk data unreachable. Showing cached baseline.", { id: 'api-error' });
+        } else {
+          // If we got real data, clear any previous error toasts
+          toast.success("Syncing live risk data", { id: 'api-success', duration: 1000 });
         }
 
         const safeMLArr = Array.isArray(mlHotspots) ? mlHotspots : (Array.isArray(mlHotspots?.hotspots) ? mlHotspots.hotspots : (Array.isArray(mlHotspots?.data) ? mlHotspots.data : []))
