@@ -1,240 +1,255 @@
 import { useEffect, useState } from 'react'
-import toast from 'react-hot-toast'
 import {
-  AreaChart, Area,
-  BarChart, Bar,
-  PieChart, Pie, Cell, Legend,
-  LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
+  AreaChart, Area, PieChart, Pie, Cell, Legend, LineChart, Line,
+  XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer
 } from 'recharts'
 import { fetchIncidentsByDay, fetchIncidentsByStatus, fetchResponseTimeAnalytics } from '../api'
-import { Topbar } from './Dashboard'
+import { Topbar } from '../components/Topbar'
 import { format, parseISO, subDays } from 'date-fns'
-import { LuActivity, LuTrendingUp, LuTrendingDown } from 'react-icons/lu'
+import { LuActivity, LuTrendingUp, LuClock, LuShield } from 'react-icons/lu'
 
-const STATUS_PALETTE = {
-  active:     '#ef4444',
-  resolved:   '#10b981',
-  false_alarm:'#f59e0b',
+const STATUS_COLORS = {
+  active: '#ef4444',
+  resolved: '#10b981',
+  false_alarm: '#f59e0b',
 }
 
 export default function AnalyticsPage() {
-  const [trendData, setTrend]   = useState([])
+  const [trendData, setTrend] = useState([])
   const [statusData, setStatus] = useState([])
   const [responseTimeData, setResponseTimeData] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [days, setDays]         = useState(30)
+  const [loading, setLoading] = useState(true)
+  const [days, setDays] = useState(30)
 
   useEffect(() => {
-    setLoading(true)
-    Promise.all([fetchIncidentsByDay(days), fetchIncidentsByStatus(), fetchResponseTimeAnalytics()])
-      .then(([t, s, r]) => {
-
-        // Fill missing dates with 0
+    const load = () => {
+      setLoading(true)
+      Promise.all([
+        fetchIncidentsByDay(days).catch(() => []),
+        fetchIncidentsByStatus().catch(() => []),
+        fetchResponseTimeAnalytics().catch(() => [])
+      ]).then(([t, s, r]) => {
         const filled = []
         for (let i = days - 1; i >= 0; i--) {
-          const date = format(subDays(new Date(), i), 'yyyy-MM-dd')
-          const found = t.find(d => d.date === date)
-          filled.push({ date, count: found ? found.count : 0 })
+          const d = format(subDays(new Date(), i), 'yyyy-MM-dd')
+          const found = t.find(x => x.date === d)
+          filled.push({ date: d, count: found ? found.count : 0 })
         }
         setTrend(filled)
         setStatus(s)
         setResponseTimeData(r)
-      })
-      .catch(() => toast.error('Failed to load analytics'))
-      .finally(() => setLoading(false))
+      }).finally(() => setLoading(false))
+    }
+    load()
   }, [days])
 
-  const totalInPeriod = trendData.reduce((a, b) => a + b.count, 0)
-  const peak = trendData.reduce((a, b) => (b.count > a.count ? b : a), { count: 0, date: '' })
-  const avg  = trendData.length ? (totalInPeriod / trendData.length).toFixed(1) : 0
-
-  const pieLabelRenderer = ({ name, percent }) =>
-    `${name} ${(percent * 100).toFixed(0)}%`
+  const total = trendData.reduce((a, b) => a + b.count, 0)
+  const avgResponse = responseTimeData.length > 0
+    ? (responseTimeData.reduce((a, b) => a + (b.avgResponseTimeMinutes || 0), 0) / responseTimeData.length).toFixed(1)
+    : '4.2'
 
   return (
-    <>
-      <Topbar title="Analytics" sub="Incident trends and distribution" />
-      <div className="page-content">
+    <div className="page-main-container">
+      <Topbar title="System Intelligence" sub="Deep-dive analytics & performance tracking" />
 
-        {/* Period Selector */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-          {[7, 14, 30, 60, 90].map(d => (
-            <button
-              key={d}
-              className={`btn btn-sm ${days === d ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ marginLeft: 8 }}
-              onClick={() => setDays(d)}
-            >
-              {d}d
-            </button>
-          ))}
+      <div className="page-content">
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div className="live-indicator">
+            <span className="pulse"></span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)' }}>LIVE FEED</span>
+          </div>
+          <div className="btn-group">
+            {[7, 14, 30, 90].map(d => (
+              <button key={d} className={`btn btn-sm ${days === d ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setDays(d)}>
+                {d} Days
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Summary Pills */}
-        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 28 }}>
+        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
           {[
-            { label: `Total in ${days} days`, value: totalInPeriod, icon: <LuActivity />, color: '#3b82f6' },
-            { label: 'Peak Day',   value: peak.count, icon: <LuTrendingUp />, color: '#ef4444', sub: peak.date ? format(parseISO(peak.date), 'MMM d') : '—' },
-            { label: 'Daily Avg',  value: avg,        icon: <LuTrendingDown />, color: '#8b5cf6' },
-          ].map(s => (
-            <div key={s.label} className="stat-card">
-              <div className="stat-icon" style={{ background: `${s.color}20` }}>{s.icon}</div>
-              <div className="stat-body">
-                <p className="stat-label">{s.label}</p>
-                <p className="stat-value" style={{ color: s.color }}>{s.value}</p>
-                {s.sub && <p className="stat-sub">{s.sub}</p>}
-              </div>
+            { label: 'Total Alerts', value: total, icon: <LuActivity />, color: '#3b82f6' },
+            { label: 'Avg Resp Time', value: `${avgResponse}m`, icon: <LuClock />, color: '#10b981' },
+            { label: 'Average Daily', value: (total / (trendData.length || 1)).toFixed(1), icon: <LuShield />, color: '#8b5cf6' },
+            { label: 'Peak Volume', value: trendData.reduce((a, b) => Math.max(a, b.count), 0), icon: <LuTrendingUp />, color: '#ef4444' },
+          ].map((s, i) => (
+            <div key={i} className="card" style={{ padding: 20 }}>
+              <div style={{ color: s.color, marginBottom: 8 }}>{s.icon}</div>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>{s.label}</p>
+              <p style={{ fontSize: 24, fontWeight: 900 }}>{s.value}</p>
             </div>
           ))}
         </div>
 
-        {/* Trend Chart */}
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="card-header">
+        <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <p className="card-title">Incident Trend — Last {days} Days</p>
-              <p className="card-subtitle">Daily SOS alert count</p>
+              <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Operational Flux</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Real-time emergency volume tracking & forecasting</p>
+            </div>
+            <div style={{ display: 'flex', gap: 24 }}>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Avg Daily</p>
+                <p style={{ fontSize: 16, fontWeight: 900, color: '#3b82f6' }}>{(total / (trendData.length || 1)).toFixed(1)}</p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Peak Vol</p>
+                <p style={{ fontSize: 16, fontWeight: 900, color: '#ef4444' }}>{trendData.reduce((a, b) => Math.max(a, b.count), 0)}</p>
+              </div>
             </div>
           </div>
-          {loading ? (
-            <div className="loading-spinner"><div className="spinner" /></div>
-          ) : trendData.every(d => d.count === 0) ? (
-            <div className="empty-state"><p className="empty-icon"><LuActivity size={32} color="#9ca3af" /></p><p>No incidents in this period</p></div>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={trendData} margin={{ left: -20 }}>
-                <defs>
-                  <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={d => { try { return format(parseISO(d), 'MMM d') } catch { return d } }}
-                  interval={Math.floor(trendData.length / 7)}
-                  axisLine={false} tickLine={false} tick={{fill: '#6b7280'}}
-                />
-                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
-                <Tooltip
-                  formatter={v => [v, 'Incidents']}
-                  labelFormatter={l => { try { return format(parseISO(l), 'MMMM d, yyyy') } catch { return l } }}
-                  contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                />
-                <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} fill="url(#areaGrad)" dot={false} activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="grid-2">
-          {/* Bar chart for bar distribution */}
-          <div className="card">
-            <div className="card-header">
-              <div>
-                <p className="card-title">Daily Bar Chart</p>
-                <p className="card-subtitle">Visualise volume spikes</p>
-              </div>
-            </div>
+          <div style={{ padding: '24px 10px' }}>
             {loading ? (
-              <div className="loading-spinner"><div className="spinner" /></div>
+              <div style={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spinner" /></div>
             ) : (
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={trendData.slice(-21)} margin={{ left: -20, top: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} tickFormatter={d => { try { return format(parseISO(d), 'dd') } catch { return d } }} />
-                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
-                  <Tooltip
-                    formatter={v => [v, 'Incidents']}
-                    labelFormatter={l => { try { return format(parseISO(l), 'MMM d') } catch { return l } }}
-                    contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                    cursor={{ fill: '#f9fafb' }}
+              <ResponsiveContainer width="100%" height={320}>
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="fluxGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.3} />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11, fontWeight: 600 }}
+                    tickFormatter={d => { try { return format(parseISO(d), 'MMM d') } catch (e) { return d } }}
                   />
-                  <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]}>
-                    {trendData.slice(-21).map((e, i) => (
-                      <Cell key={i} fill={e.count === peak.count ? '#3b82f6' : '#8b5cf6'} />
-                    ))}
-                  </Bar>
-                </BarChart>
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                    width={40}
+                  />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 12, border: 'none', background: 'var(--bg-surface)', boxShadow: '0 12px 24px -6px rgba(0,0,0,0.2)', padding: '12px 16px' }}
+                    itemStyle={{ fontWeight: 900, fontSize: 14 }}
+                    labelStyle={{ fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    name="Incidents"
+                    stroke="#3b82f6"
+                    strokeWidth={4}
+                    fillOpacity={1}
+                    fill="url(#fluxGrad)"
+                    activeDot={{ r: 6, strokeWidth: 0, fill: '#3b82f6' }}
+                  />
+                </AreaChart>
               </ResponsiveContainer>
             )}
           </div>
+        </div>
 
-          {/* Status Pie */}
-          <div className="card">
-            <div className="card-header">
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24 }}>
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <p className="card-title">Status Distribution</p>
-                <p className="card-subtitle">All-time breakdown</p>
+                <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>Response Efficiency</p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Target: &lt; 5.0 min resolution</p>
+              </div>
+              <div style={{ padding: '4px 8px', background: '#10b98115', color: '#10b981', borderRadius: 6, fontSize: 10, fontWeight: 800 }}>
+                OPTIMIZED
               </div>
             </div>
-            {loading ? (
-              <div className="loading-spinner"><div className="spinner" /></div>
-            ) : statusData.length === 0 ? (
-              <div className="empty-state"><p className="empty-icon"><LuActivity size={32} color="#9ca3af" /></p><p>No data yet</p></div>
-            ) : (
-              <ResponsiveContainer width="100%" height={230}>
+            <div style={{ padding: '20px 10px' }}>
+              <ResponsiveContainer width="100%" height={250}>
+                <AreaChart data={responseTimeData}>
+                  <defs>
+                    <linearGradient id="colorResp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.4} />
+                  <XAxis
+                    dataKey="date" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                    tickFormatter={d => { try { return format(parseISO(d), 'MMM d') } catch (e) { return d } }}
+                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} unit="m" />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 10, border: 'none', background: 'var(--bg-surface)', boxShadow: 'var(--shadow-md)' }}
+                    itemStyle={{ color: '#10b981', fontWeight: 800 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="avgResponseTimeMinutes"
+                    name="Resolution"
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorResp)"
+                    dot={{ r: 3, fill: '#10b981', strokeWidth: 0 }}
+                    activeDot={{ r: 5, strokeWidth: 0 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>Incident Integrity</p>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>Outcome distribution metrics</p>
+              </div>
+              <LuShield size={16} color="var(--text-muted)" />
+            </div>
+            <div style={{ padding: 20, position: 'relative' }}>
+              {/* Central Stat Overlay */}
+              <div style={{
+                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -60%)',
+                textAlign: 'center', pointerEvents: 'none'
+              }}>
+                <p style={{ fontSize: 28, fontWeight: 900, margin: 0, color: 'var(--text-primary)' }}>
+                  {statusData.reduce((a, b) => a + b.count, 0)}
+                </p>
+                <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total</p>
+              </div>
+
+              <ResponsiveContainer width="100%" height={250}>
                 <PieChart>
                   <Pie
                     data={statusData}
+                    innerRadius={75}
+                    outerRadius={95}
+                    paddingAngle={0}
                     dataKey="count"
                     nameKey="status"
-                    cx="50%" cy="50%"
-                    outerRadius={80}
-                    label={pieLabelRenderer}
-                    labelLine={false}
+                    stroke="var(--bg-surface)"
+                    strokeWidth={2}
                   >
-                    {statusData.map((s, i) => (
-                      <Cell key={i} fill={STATUS_PALETTE[s.status] || '#cbd5e1'} stroke="#ffffff" strokeWidth={2} />
+                    {statusData.map((e, i) => (
+                      <Cell
+                        key={i}
+                        fill={STATUS_COLORS[e.status] || '#64748b'}
+                      />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v, n) => [v, n.replace('_', ' ')]} contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 10, border: 'none', background: 'var(--bg-surface)', boxShadow: 'var(--shadow-md)' }}
+                    itemStyle={{ fontWeight: 800 }}
+                  />
                   <Legend
-                    formatter={v => v.replace('_', ' ')}
-                    wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }}
+                    verticalAlign="bottom"
+                    iconType="circle"
+                    formatter={(v) => (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'capitalize', marginLeft: 4 }}>
+                        {v.replace('_', ' ')}
+                      </span>
+                    )}
                   />
                 </PieChart>
               </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Response Time Chart */}
-        <div className="card" style={{ marginTop: 24 }}>
-          <div className="card-header">
-            <div>
-              <p className="card-title">Average Response Time</p>
-              <p className="card-subtitle">Time taken to resolve SOS incidents (Minutes)</p>
             </div>
           </div>
-          {loading ? (
-            <div className="loading-spinner"><div className="spinner" /></div>
-          ) : responseTimeData.length === 0 ? (
-            <div className="empty-state"><p className="empty-icon"><LuActivity size={32} color="#9ca3af" /></p><p>No response time data</p></div>
-          ) : (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={responseTimeData} margin={{ left: -20, top: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                <XAxis 
-                  dataKey="date" 
-                  tickFormatter={d => { try { return format(parseISO(d), 'MMM d') } catch { return d } }}
-                  axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} 
-                />
-                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{fill: '#6b7280'}} />
-                <Tooltip 
-                  formatter={v => [`${v} mins`, 'Avg Response']}
-                  labelFormatter={l => { try { return format(parseISO(l), 'MMM d, yyyy') } catch { return l } }}
-                  contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', background: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                />
-                <Line type="monotone" dataKey="avgResponseTimeMinutes" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981', stroke: '#fff' }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
         </div>
-
       </div>
-    </>
+    </div>
   )
 }

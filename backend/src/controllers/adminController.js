@@ -406,9 +406,12 @@ const adminController = {
   getRiskZones: (req, res) => {
     try {
       // Require self-contained json directly to ensure absolute path resolution on Render server
-      const riskData = require('../data/risk_data.json');
+      // Read file dynamically instead of require() to avoid caching when file updates
+      const riskDataPath = path.join(__dirname, '../data/risk_data.json');
+      const riskData = JSON.parse(fs.readFileSync(riskDataPath, 'utf8'));
 
-      const currentHour = new Date().getHours();
+      // Use IST (UTC+5:30) for hour calculation to match Indian cities dataset
+      const currentHour = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getHours();
       const hourMultipliers = riskData.hour_multipliers || {};
       const multiplier = parseFloat(hourMultipliers[String(currentHour)] ?? 0);
 

@@ -2,6 +2,16 @@ import axios from 'axios'
 
 const API = axios.create({ baseURL: (import.meta.env.VITE_API_BASE_URL || '') + '/api' })
 
+// Add a request interceptor for Auth
+API.interceptors.request.use(config => {
+  const token = localStorage.getItem('admin_token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+export const login                = (data)       => API.post('/admin/login', data).then(r => r.data)
+
 // ── Stats ─────────────────────────────────────────────────────────────────
 export const fetchStats           = ()           => API.get('/admin/stats').then(r => r.data)
 

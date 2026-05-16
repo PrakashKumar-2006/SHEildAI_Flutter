@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { fetchContacts, deleteContact } from '../api'
-import { Topbar } from './Dashboard'
+import { Topbar } from '../components/Topbar'
 import { ConfirmModal } from './UsersPage'
 import { format } from 'date-fns'
 import { LuSearch, LuPhone, LuTrash2, LuStar } from 'react-icons/lu'
 
 export default function ContactsPage() {
-  const [data, setData]           = useState({ contacts: [], total: 0, totalPages: 1 })
-  const [page, setPage]           = useState(1)
-  const [search, setSearch]       = useState('')
-  const [loading, setLoading]     = useState(true)
+  const [data, setData] = useState({ contacts: [], total: 0, totalPages: 1 })
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
   const [deleteTarget, setDelete] = useState(null)
 
   const load = useCallback(() => {
@@ -35,7 +35,7 @@ export default function ContactsPage() {
   }
 
   return (
-    <>
+    <div className="page-main-container">
       <Topbar title="Emergency Contacts" sub={`${data.total} contacts across all users`} />
       <div className="page-content">
         <div className="card">
@@ -101,7 +101,7 @@ export default function ContactsPage() {
           )}
 
           <div className="pagination">
-            <span>Showing {Math.min(((page-1)*15)+1, data.total)}–{Math.min(page*15, data.total)} of {data.total}</span>
+            <span>Showing {Math.min(((page - 1) * 15) + 1, data.total)}–{Math.min(page * 15, data.total)} of {data.total}</span>
             <div className="pagination-controls">
               <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
               <button className="btn btn-ghost btn-sm" disabled={page >= data.totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
@@ -119,6 +119,6 @@ export default function ContactsPage() {
           onConfirm={handleDelete}
         />
       )}
-    </>
+    </div>
   )
 }
