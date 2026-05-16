@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { fetchUsers, updateUser, deleteUser } from '../api'
-import { Topbar } from './Dashboard'
+import { Topbar } from '../components/Topbar'
 import { format } from 'date-fns'
 import { LuSearch, LuUsers, LuPen, LuTrash2, LuTriangleAlert } from 'react-icons/lu'
 
 export default function UsersPage() {
-  const [data, setData]         = useState({ users: [], total: 0, totalPages: 1 })
-  const [page, setPage]         = useState(1)
-  const [search, setSearch]     = useState('')
-  const [loading, setLoading]   = useState(true)
-  const [editUser, setEditUser]  = useState(null)
+  const [data, setData] = useState({ users: [], total: 0, totalPages: 1 })
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [editUser, setEditUser] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
   const load = useCallback(() => {
@@ -46,7 +46,7 @@ export default function UsersPage() {
   }
 
   return (
-    <>
+    <div className="page-main-container">
       <Topbar title="Users" sub={`${data.total} registered users`} />
       <div className="page-content">
         <div className="card">
@@ -87,28 +87,48 @@ export default function UsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.users.map(u => (
-                    <tr key={u._id}>
-                      <td style={{ fontWeight: 600 }}>{u.name || '—'}</td>
-                      <td className="td-mono">{u.phone}</td>
-                      <td className="td-muted">{u.email || '—'}</td>
-                      <td className="td-muted" style={{ fontSize: 11 }}>
-                        {u.last_seen ? format(new Date(u.last_seen), 'MMM d, HH:mm') : '—'}
-                      </td>
-                      <td className="td-mono" style={{ fontSize: 11 }}>
-                        {u.last_lat ? `${u.last_lat.toFixed(4)}, ${u.last_lon?.toFixed(4)}` : '—'}
-                      </td>
-                      <td className="td-muted" style={{ fontSize: 11 }}>
-                        {u.createdAt ? format(new Date(u.createdAt), 'MMM d, yyyy') : '—'}
-                      </td>
-                      <td>
-                        <div className="action-btns">
-                          <button className="btn btn-ghost btn-sm" onClick={() => setEditUser(u)}><LuPen size={16} /> Edit</button>
-                          <button className="btn btn-danger btn-sm" onClick={() => setDeleteTarget(u)}><LuTrash2 size={16} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {data.users.map(u => {
+                    const isEmailInPhone = u.phone?.includes('@');
+                    const displayPhone = isEmailInPhone ? '—' : (u.phone || '—');
+                    const displayEmail = u.email || (isEmailInPhone ? u.phone : '—');
+
+                    return (
+                      <tr key={u._id}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div className="sidebar-avatar" style={{ width: 32, height: 32, fontSize: 13 }}>
+                              {(u.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{u.name || 'Anonymous User'}</span>
+                          </div>
+                        </td>
+                        <td className="td-mono" style={{ color: 'var(--brand-secondary)', fontWeight: 600 }}>{displayPhone}</td>
+                        <td className="td-muted" style={{ fontWeight: 500 }}>{displayEmail}</td>
+                        <td className="td-muted" style={{ fontSize: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ width: 6, height: 6, borderRadius: '50%', background: u.last_seen ? '#10b981' : '#94a3b8' }} />
+                            {u.last_seen ? format(new Date(u.last_seen), 'MMM d, HH:mm') : 'Never'}
+                          </div>
+                        </td>
+                        <td className="td-mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          {u.last_lat ? `${u.last_lat.toFixed(4)}, ${u.last_lon?.toFixed(4)}` : 'No Location'}
+                        </td>
+                        <td className="td-muted" style={{ fontSize: 12 }}>
+                          {u.createdAt ? format(new Date(u.createdAt), 'MMM d, yyyy') : '—'}
+                        </td>
+                        <td>
+                          <div className="action-btns">
+                            <button className="btn btn-ghost btn-sm" style={{ padding: '6px 10px' }} onClick={() => setEditUser(u)}>
+                              <LuPen size={14} />
+                            </button>
+                            <button className="btn btn-danger btn-sm" style={{ padding: '6px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: 'none' }} onClick={() => setDeleteTarget(u)}>
+                              <LuTrash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -140,7 +160,7 @@ export default function UsersPage() {
           onConfirm={handleDelete}
         />
       )}
-    </>
+    </div>
   )
 }
 

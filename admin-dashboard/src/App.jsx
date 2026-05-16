@@ -1,84 +1,71 @@
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { Toaster, toast } from 'react-hot-toast'
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
-import { fetchStats } from './api'
-import { LuLayoutDashboard, LuTrendingUp, LuMap, LuTriangleAlert, LuUsers, LuPhone, LuShieldCheck, LuMessageSquare, LuMegaphone, LuMoon, LuSun } from 'react-icons/lu'
-import { sendBroadcast } from './api'
+import { fetchStats, sendBroadcast } from './api'
+import {
+  LuLayoutDashboard, LuTrendingUp, LuMap, LuTriangleAlert,
+  LuUsers, LuPhone, LuShieldCheck, LuMessageSquare,
+  LuMegaphone, LuMoon, LuSun, LuLogOut, LuX, LuChevronRight
+} from 'react-icons/lu'
 
-import Dashboard  from './pages/Dashboard'
-import UsersPage  from './pages/UsersPage'
-import SOSPage    from './pages/SOSPage'
-import HeatmapPage  from './pages/HeatmapPage'
+import Dashboard from './pages/Dashboard'
+import UsersPage from './pages/UsersPage'
+import SOSPage from './pages/SOSPage'
+import HeatmapPage from './pages/HeatmapPage'
 import AnalyticsPage from './pages/AnalyticsPage'
-import ProfilePage   from './pages/ProfilePage'
+import ProfilePage from './pages/ProfilePage'
 import CommunityReportsPage from './pages/CommunityReportsPage'
+import ContactsPage from './pages/ContactsPage'
+import LoginPage from './pages/LoginPage'
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('admin_auth'))
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('admin_user')
+    return saved ? JSON.parse(saved) : { name: 'Admin Maurya', role: 'Global Administrator' }
+  })
   const [activeSOS, setActiveSOS] = useState(0)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [showBroadcast, setShowBroadcast] = useState(false)
   const [broadcastData, setBroadcastData] = useState({ title: '', message: '', severity: 'high' })
 
   useEffect(() => {
-    const load = () => fetchStats().then(s => setActiveSOS(s.activeSOS || 0)).catch(() => {})
+    if (!isAuthenticated) return
+    const load = () => fetchStats().then(s => setActiveSOS(s.activeSOS || 0)).catch(() => { })
     load()
     const interval = setInterval(load, 30000)
-
     const socket = io(import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000')
-    
-    socket.on('new_sos_alert', (data) => {
-      toast.error(`New SOS Alert from ${data.user_phone || 'User'}!`, {
-        icon: '🚨',
-        style: {
-          border: '1px solid #ef4444',
-          background: '#fee2e2',
-          color: '#b91c1c'
-        }
-      })
+    socket.on('new_sos_alert', () => {
+      toast.error(`New SOS Alert!`, { icon: '🚨' })
       load()
-      window.dispatchEvent(new Event('realtime_update'))
     })
-
-    socket.on('sos_status_updated', () => {
-      load()
-      window.dispatchEvent(new Event('realtime_update'))
-    })
-
-    socket.on('new_community_report', () => {
-      window.dispatchEvent(new Event('realtime_update'))
-    })
-
-    socket.on('community_report_broadcast', () => {
-      window.dispatchEvent(new Event('realtime_update'))
-    })
-
-    socket.on('user_location_updated', (data) => {
-      window.dispatchEvent(new CustomEvent('live_location_update', { detail: data }))
-    })
-
     return () => {
       clearInterval(interval)
       socket.disconnect()
     }
-  }, [])
+  }, [isAuthenticated])
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.body.classList.add('dark-mode')
-    } else {
-      document.body.classList.remove('dark-mode')
-    }
+    if (isDarkMode) document.body.classList.add('dark-mode')
+    else document.body.classList.remove('dark-mode')
   }, [isDarkMode])
+
+  const logout = () => {
+    localStorage.removeItem('admin_auth')
+    localStorage.removeItem('admin_token')
+    localStorage.removeItem('admin_user')
+    setIsAuthenticated(false)
+    toast.success('Session Terminated')
+  }
 
   const handleBroadcastSubmit = (e) => {
     e.preventDefault()
-    if (!broadcastData.message) return toast.error('Message is required')
     sendBroadcast(broadcastData).then(() => {
-      toast.success('Global broadcast sent successfully')
+      toast.success('Broadcast sent')
       setShowBroadcast(false)
       setBroadcastData({ title: '', message: '', severity: 'high' })
-    }).catch(() => toast.error('Failed to send broadcast'))
+    }).catch(() => toast.error('Broadcast failed'))
   }
 
   return (
@@ -86,164 +73,136 @@ export default function App() {
       <Toaster
         position="top-right"
         toastOptions={{
-          style: {
-            background: 'var(--bg-surface)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-hover)',
-            borderRadius: 'var(--radius-sm)',
-            fontFamily: 'var(--font-sans)',
-            fontSize: '13px',
-            fontWeight: 600,
-          },
+          style: { background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: '12px' }
         }}
       />
-      <div className="layout">
-        <Sidebar 
-          activeSOS={activeSOS} 
-          isDarkMode={isDarkMode} 
-          setIsDarkMode={setIsDarkMode} 
-          setShowBroadcast={setShowBroadcast}
-        />
-        <div className="main">
-          <Routes>
-            <Route path="/"           element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard"  element={<Dashboard />} />
-            <Route path="/users"      element={<UsersPage />} />
-            <Route path="/sos"        element={<SOSPage />} />
-            <Route path="/community"  element={<CommunityReportsPage />} />
-            <Route path="/heatmap"    element={<HeatmapPage />} />
-            <Route path="/analytics"  element={<AnalyticsPage />} />
-            <Route path="/profile"    element={<ProfilePage />} />
-          </Routes>
-        </div>
-      </div>
-      
-      {showBroadcast && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowBroadcast(false)}>
-          <div className="modal">
-            <div className="modal-header">
-              <div>
-                <p className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  📢 Send Global Broadcast
-                </p>
-                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Pushes a real-time urgent alert notification to all active Flutter mobile application users.
-                </p>
-              </div>
-              <button className="modal-close" onClick={() => setShowBroadcast(false)}>✕</button>
-            </div>
-            
-            <form onSubmit={handleBroadcastSubmit} className="modal-form">
-              <div className="input-group">
-                <label className="input-label">Alert Title (Optional)</label>
-                <input 
-                  type="text" 
-                  className="input" 
-                  value={broadcastData.title} 
-                  onChange={e => setBroadcastData({...broadcastData, title: e.target.value})}
-                  placeholder="e.g., Severe Flood Warning / Evacuation Alert"
-                />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Emergency Message *</label>
-                <textarea 
-                  className="input" 
-                  rows="4"
-                  value={broadcastData.message} 
-                  onChange={e => setBroadcastData({...broadcastData, message: e.target.value})}
-                  placeholder="Clearly state the required citizen action or safety warning details..."
-                  required
-                />
-              </div>
-              <div className="modal-actions" style={{ marginTop: 12 }}>
-                <button type="button" className="btn btn-ghost" onClick={() => setShowBroadcast(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" style={{ background: '#ef4444', borderColor: '#ef4444' }}>
-                  Send Alert Now
-                </button>
-              </div>
-            </form>
+
+      {!isAuthenticated ? (
+        <Routes>
+          <Route path="*" element={<LoginPage onLogin={() => setIsAuthenticated(true)} />} />
+        </Routes>
+      ) : (
+        <div className="layout">
+          <Sidebar
+            user={user}
+            activeSOS={activeSOS}
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setIsDarkMode}
+            onShowBroadcast={() => setShowBroadcast(true)}
+          />
+
+          <div className="main">
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/users" element={<UsersPage />} />
+              <Route path="/sos" element={<SOSPage />} />
+              <Route path="/community" element={<CommunityReportsPage />} />
+              <Route path="/heatmap" element={<HeatmapPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/contacts" element={<ContactsPage />} />
+              <Route path="/profile" element={<ProfilePage user={user} setUser={setUser} onLogout={logout} />} />
+            </Routes>
           </div>
+
+          {showBroadcast && (
+            <div className="modal-overlay" style={{
+              position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+              background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+            }} onClick={() => setShowBroadcast(false)}>
+              <div className="modal" style={{ width: '100%', maxWidth: 500, background: 'var(--bg-surface)', borderRadius: 24, padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+                <div className="modal-header" style={{ padding: '24px 32px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 className="modal-title" style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Emergency Broadcast</h3>
+                  <button onClick={() => setShowBroadcast(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    <LuX size={24} />
+                  </button>
+                </div>
+                <form className="modal-form" style={{ padding: 32 }} onSubmit={handleBroadcastSubmit}>
+                  <div className="input-group" style={{ marginBottom: 24 }}>
+                    <label className="input-label" style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Severity Level</label>
+                    <select className="input" style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-hover)' }} value={broadcastData.severity} onChange={e => setBroadcastData({ ...broadcastData, severity: e.target.value })}>
+                      <option value="high">🚨 Critical / SOS</option>
+                      <option value="medium">⚠️ Warning</option>
+                      <option value="low">ℹ️ Information</option>
+                    </select>
+                  </div>
+                  <div className="input-group" style={{ marginBottom: 32 }}>
+                    <label className="input-label" style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Broadcast Content</label>
+                    <textarea className="input" style={{ width: '100%', height: 120, padding: '12px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-hover)', resize: 'none' }} value={broadcastData.message} onChange={e => setBroadcastData({ ...broadcastData, message: e.target.value })} placeholder="Message will be sent to all active users..." required />
+                  </div>
+                  <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '16px', borderRadius: 16, fontWeight: 800, background: '#ef4444', border: 'none', color: '#fff' }}>
+                    Initiate Global Broadcast
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
-
     </BrowserRouter>
   )
 }
 
-function Sidebar({ activeSOS, isDarkMode, setIsDarkMode, setShowBroadcast }) {
+function Sidebar({ user, activeSOS, isDarkMode, setIsDarkMode, onShowBroadcast }) {
   const links = [
-    { to: '/dashboard',  icon: <LuLayoutDashboard />, label: 'Dashboard' },
-    { to: '/analytics',  icon: <LuTrendingUp />,      label: 'Analytics' },
-    { to: '/heatmap',    icon: <LuMap />,             label: 'Safety Zone Map' },
-    { divider: 'Management' },
-    { to: '/sos',        icon: <LuTriangleAlert />,   label: 'SOS Incidents', badge: activeSOS > 0 ? activeSOS : null },
-    { to: '/community',  icon: <LuMessageSquare />,   label: 'Community Feed' },
-    { to: '/users',      icon: <LuUsers />,           label: 'Users' },
+    { to: '/dashboard', icon: <LuLayoutDashboard />, label: 'Dashboard' },
+    { to: '/analytics', icon: <LuTrendingUp />, label: 'Analytics' },
+    { to: '/heatmap', icon: <LuMap />, label: 'Safety Zones' },
+    { to: '/sos', icon: <LuTriangleAlert />, label: 'SOS Alerts', badge: activeSOS > 0 ? activeSOS : null },
+    { to: '/community', icon: <LuMessageSquare />, label: 'Community' },
+    { to: '/users', icon: <LuUsers />, label: 'Users' },
   ]
 
   return (
-    <nav className="sidebar">
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-icon"><LuShieldCheck size={20} /></div>
-        <h1>SHEildAI</h1>
-      </div>
-
-      <div className="sidebar-nav">
-        {links.map((l, i) =>
-          l.divider ? (
-            <p key={i} className="sidebar-section-label">{l.divider}</p>
-          ) : (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            >
-              <span className="nav-icon">{l.icon}</span>
-              {l.label}
-              {l.badge && <span className="nav-badge">{l.badge}</span>}
-            </NavLink>
-          )
-        )}
-      </div>
-
-      <div style={{ padding: '0 20px', marginBottom: 20 }}>
-        <button 
-          className="btn btn-primary" 
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#ef4444', borderColor: '#ef4444' }}
-          onClick={() => setShowBroadcast(true)}
-        >
-          <LuMegaphone size={16} /> Broadcast Alert
+    <nav className="sidebar" style={{ width: 280 }}>
+      <div className="sidebar-logo" style={{ padding: '32px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 12px rgba(37,99,235,0.2)' }}>
+            <LuShieldCheck size={20} />
+          </div>
+          <h1 style={{ fontSize: 19, fontWeight: 900, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>SHEildAI</h1>
+        </div>
+        <button onClick={() => setIsDarkMode(!isDarkMode)} style={{ background: 'var(--bg-hover)', border: '1px solid var(--border)', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-primary)' }}>
+          {isDarkMode ? <LuSun size={18} /> : <LuMoon size={18} />}
         </button>
       </div>
 
-      <div className="sidebar-footer">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 15, marginBottom: 15, borderBottom: '1px solid var(--border)' }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Dark Mode</span>
-          <div 
-            style={{ 
-              width: 40, height: 22, background: isDarkMode ? '#3b82f6' : '#e5e7eb', borderRadius: 20, 
-              position: 'relative', cursor: 'pointer', transition: 'all 0.3s' 
-            }}
-            onClick={() => setIsDarkMode(!isDarkMode)}
-          >
-            <div style={{
-              width: 18, height: 18, background: '#fff', borderRadius: '50%',
-              position: 'absolute', top: 2, left: isDarkMode ? 20 : 2, transition: 'all 0.3s',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDarkMode ? '#3b82f6' : '#9ca3af'
-            }}>
-              {isDarkMode ? <LuMoon size={11} /> : <LuSun size={11} />}
-            </div>
-          </div>
-        </div>
+      <div className="sidebar-nav" style={{ padding: '0 12px' }}>
+        {links.map((l, i) => (
+          <NavLink key={l.to} to={l.to} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} style={{ marginBottom: 4 }}>
+            {l.icon} {l.label}
+            {l.badge && <span className="badge pulse" style={{ marginLeft: 'auto', background: '#ef4444', color: '#fff', fontSize: 10, padding: '2px 8px' }}>{l.badge}</span>}
+          </NavLink>
+        ))}
 
-        <NavLink to="/profile" style={{ textDecoration: 'none', display: 'block' }}>
-          <div className="sidebar-user">
-            <div className="sidebar-avatar">A</div>
-            <div className="sidebar-user-info">
-              <p>Admin</p>
-              <span>Super Administrator</span>
+        <div style={{ padding: '16px 12px 0' }}>
+          <button onClick={onShowBroadcast} className="btn btn-primary" style={{
+            width: '100%', borderRadius: 14, gap: 10, background: '#ef4444', height: 48,
+            border: 'none', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 16px',
+            fontSize: 14, fontWeight: 700
+          }}>
+            <LuMegaphone size={18} /> Global Broadcast
+          </button>
+        </div>
+      </div>
+
+      <div className="sidebar-footer" style={{ marginTop: 'auto', padding: '24px 20px', borderTop: '1px solid var(--border)' }}>
+        <NavLink to="/profile" style={{ textDecoration: 'none' }}>
+          <div className="sidebar-user" style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '12px',
+            borderRadius: 16, background: 'var(--bg-hover)', border: '1px solid var(--border)',
+            transition: 'all 0.2s ease'
+          }}>
+            <div className="sidebar-avatar" style={{ width: 42, height: 42, borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #6366f1)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, border: '2px solid var(--bg-surface)' }}>
+              {user.name.charAt(0)}
             </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</p>
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0, fontWeight: 600 }}>{user.role}</p>
+            </div>
+            <LuChevronRight size={16} color="var(--text-muted)" />
           </div>
         </NavLink>
       </div>
