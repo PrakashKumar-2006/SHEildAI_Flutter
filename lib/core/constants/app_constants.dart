@@ -23,6 +23,8 @@ class AppConstants {
   static const String keyLocationHistory = 'location_history';
   static const String keySosHistory = 'sos_history';
   static const String keyVoiceTriggerEnabled = 'voice_trigger_enabled';
+  static const String keyShakeTriggerEnabled = 'shake_trigger_enabled';
+  static const String keySmartwatchAlertsEnabled = 'smartwatch_alerts_enabled';
   static const String keyLastSosTime = 'last_sos_time';
   static const String keyUserName = 'user_name';
   static const String keyUserPhone = 'user_phone';

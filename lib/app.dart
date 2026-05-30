@@ -17,6 +17,10 @@ import 'features/location/presentation/providers/location_provider.dart';
 import 'features/sos/data/repositories/sos_repository_impl.dart';
 import 'features/sos/presentation/providers/sos_provider.dart';
 import 'features/voice/presentation/providers/voice_provider.dart';
+import 'features/shake_sos/providers/shake_sos_provider.dart';
+import 'features/shake_sos/services/shake_detection_service.dart';
+import 'features/shake_sos/services/shake_settings_service.dart';
+import 'features/shake_sos/services/shake_listener_manager.dart';
 import 'features/contacts/data/repositories/contact_repository_impl.dart';
 import 'features/contacts/presentation/providers/contact_provider.dart';
 import 'features/community/data/repositories/community_repository_impl.dart';
@@ -47,6 +51,10 @@ import 'providers/providers.dart';
 import 'providers/permission_provider.dart';
 import 'shared/widgets/location_blocking_overlay.dart';
 import 'core/app_theme.dart' as new_theme;
+import 'features/wearable/providers/wearable_settings_provider.dart';
+import 'features/wearable/services/wearable_alert_manager.dart';
+import 'features/demo_zone/presentation/providers/demo_zone_provider.dart';
+import 'features/demo_zone/utils/demo_zone_config.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -73,7 +81,7 @@ class App extends StatelessWidget {
         ),
         Provider<BackgroundMonitorService>(create: (_) => BackgroundMonitorService()..initialize()),
         Provider<MongoService>(
-          create: (_) => MongoService()..connect(),
+          create: (_) => MongoService(),
           dispose: (_, service) => service.disconnect(),
         ),
 
@@ -162,6 +170,12 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<VoiceProvider>(
           create: (_) => VoiceProvider(),
         ),
+        ChangeNotifierProvider<ShakeSosProvider>(
+          create: (context) => ShakeSosProvider(
+            detectionService: ShakeDetectionService(),
+            settingsService: ShakeSettingsService(),
+          ),
+        ),
         ChangeNotifierProvider<FeedProvider>(create: (_) => FeedProvider()),
         ChangeNotifierProvider<AuthProvider>(
           create: (context) => AuthProvider(context.read<StorageService>()),
@@ -187,11 +201,23 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<PermissionProvider>(create: (_) => PermissionProvider()),
         ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
         ChangeNotifierProvider<LanguageProvider>(create: (_) => LanguageProvider()),
+        ChangeNotifierProvider<WearableSettingsProvider>(
+          create: (_) => WearableSettingsProvider(),
+        ),
         ChangeNotifierProxyProvider6<SOSProvider, LocationProvider, MLProvider, ZoneService, VoiceProvider, CommunityProvider, SafetyProvider>(
           create: (context) => SafetyProvider(),
           update: (context, sos, loc, ml, zone, voice, community, safety) {
+            final shake = Provider.of<ShakeSosProvider>(context);
             final provider = safety ?? SafetyProvider();
-            provider.update(sos, loc, ml, zone, voice, community);
+            provider.update(sos, loc, ml, zone, voice, community, shake);
+            return provider;
+          },
+        ),
+        ChangeNotifierProxyProvider2<LocationProvider, SafetyProvider, DemoZoneProvider>(
+          create: (context) => DemoZoneProvider(),
+          update: (context, location, safety, demoZone) {
+            final provider = demoZone ?? DemoZoneProvider();
+            provider.checkZone(location, safety);
             return provider;
           },
         ),
@@ -200,6 +226,7 @@ class App extends StatelessWidget {
         builder: (context, themeProvider, langProvider, child) {
           return MaterialApp(
             title: AppConstants.appName,
+            navigatorKey: NotificationService.navigatorKey,
             debugShowCheckedModeBanner: false,
             theme: new_theme.buildLightTheme(),
             darkTheme: new_theme.buildDarkTheme(),
@@ -235,6 +262,13 @@ class AppBootstrap extends StatelessWidget {
     final safety = context.watch<SafetyProvider>();
     final sentinel = context.watch<SentinelProvider>();
     final zoneService = context.watch<ZoneService>();
+    final wearableSettings = context.watch<WearableSettingsProvider>();
+
+    // Initialize wearable alerts
+    WearableAlertManager().initialize(wearableSettings);
+
+    // Initialize global shake listener
+    ShakeListenerManager.initialize(context);
 
     // Listen for zone alerts to show popup
     if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
@@ -243,6 +277,17 @@ class AppBootstrap extends StatelessWidget {
         if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
           zoneService.setAlertPopupShowing(true);
           _showZoneAlertPopup(context, zoneService);
+        }
+      });
+    }
+
+    // Listen for demo zone alerts
+    final demoZone = context.watch<DemoZoneProvider>();
+    if (demoZone.alertTriggered && !demoZone.isAlertPopupShowing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (demoZone.alertTriggered && !demoZone.isAlertPopupShowing) {
+          demoZone.setAlertPopupShowing(true);
+          _showDemoZoneAlertPopup(context, demoZone);
         }
       });
     }
@@ -322,6 +367,64 @@ class AppBootstrap extends StatelessWidget {
           ),
         ],
 
+      ),
+    );
+  }
+
+  void _showDemoZoneAlertPopup(BuildContext context, DemoZoneProvider demoZone) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('DEMO ZONE ALERT', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              DemoZoneConfig.alertTitle,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            SizedBox(height: 12),
+            Text(DemoZoneConfig.alertBody),
+            SizedBox(height: 16),
+            Text(
+              'This is a local demo risk zone for evaluation.',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              context.read<SafetyProvider>().stopSiren();
+              demoZone.resetAlert();
+              Navigator.pop(context);
+            },
+            child: const Text('DISMISS', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              context.read<SafetyProvider>().stopSiren();
+              demoZone.resetAlert();
+              Navigator.pop(context);
+              context.read<SafetyProvider>().triggerSOSFlow();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('SEND SOS', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }

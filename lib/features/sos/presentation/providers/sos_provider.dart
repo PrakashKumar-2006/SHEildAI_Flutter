@@ -9,6 +9,7 @@ import '../../../location/presentation/providers/location_provider.dart';
 import '../../../../core/services/sms_service.dart';
 import '../../../../features/contacts/data/repositories/contact_repository_impl.dart';
 import '../../../../core/services/socket_service.dart';
+import '../../../../features/wearable/services/wearable_alert_manager.dart';
 
 class SOSProvider extends ChangeNotifier {
   final SOSRepositoryImpl _sosRepository;
@@ -106,21 +107,30 @@ class SOSProvider extends ChangeNotifier {
     switch (event.type) {
       case SOSEventName.bufferStarted:
         _startBufferCountdown(event.bufferMs);
+        break;
 
       case SOSEventName.recordingStarted:
       case SOSEventName.videoStarted:
         _cancelBufferTimer();
         _startDurationTimer();
+        // Trigger wearable notification
+        WearableAlertManager().onSosTriggered('Location Shared | Recording Started');
+        break;
 
       case SOSEventName.sessionEnded:
         _cancelBufferTimer();
         _cancelCooldownTimer();
+        WearableAlertManager().cancelSOS();
+        break;
 
       case SOSEventName.cooldownStarted:
         _startCooldownCountdown(event.cooldownMs);
+        break;
 
       case SOSEventName.idle:
         _cancelCooldownTimer();
+        WearableAlertManager().cancelSOS();
+        break;
     }
 
     notifyListeners();

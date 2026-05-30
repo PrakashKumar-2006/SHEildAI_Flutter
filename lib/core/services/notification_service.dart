@@ -1,4 +1,6 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../../features/wearable/utils/wearable_action_handler.dart';
+import 'package:flutter/material.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -9,6 +11,8 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  
   bool _initialized = false;
 
   Future<void> initialize() async {
@@ -30,7 +34,17 @@ class NotificationService {
       iOS: initializationSettingsDarwin,
     );
 
-    await _notificationsPlugin.initialize(initializationSettings);
+    await _notificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        if (response.actionId != null) {
+          final context = navigatorKey.currentContext;
+          if (context != null) {
+            WearableActionHandler.handleAction(context, response.actionId!);
+          }
+        }
+      },
+    );
 
     // Create high-priority channels explicitly for Android
     final androidPlugin = _notificationsPlugin

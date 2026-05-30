@@ -7,7 +7,7 @@ import 'sos_contacts_screen.dart';
 import 'language_screen.dart';
 import 'notifications_settings_screen.dart';
 import 'paywall_screen.dart';
-import '../core/services/storage_service.dart';
+import '../features/wearable/providers/wearable_settings_provider.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -174,6 +174,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             activeThumbColor: const Color(0xFF3F51B5),
                           ),
                         ],
+                      ),
+                    ),
+                    // Shake SOS row
+                    Container(
+                      margin: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: theme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE0F2F1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.vibration_rounded,
+                              color: Color(0xFF00796B),
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Shake to Trigger SOS',
+                                  style: TextStyle(color: theme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                                ),
+                                const Text(
+                                  'Shake phone 3 times to trigger',
+                                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: safety.isShakeTriggerEnabled,
+                            onChanged: (val) => safety.setShakeTrigger(val),
+                            activeThumbColor: const Color(0xFF00796B),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Smartwatch Alerts row
+                    Consumer<WearableSettingsProvider>(
+                      builder: (context, wearable, _) => Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6)],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE3F2FD),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.watch_rounded,
+                                color: Color(0xFF1976D2),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Smartwatch Alerts',
+                                    style: TextStyle(color: theme.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
+                                  ),
+                                  const Text(
+                                    'Mirror alerts to connected watch',
+                                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: wearable.isSmartwatchEnabled,
+                              onChanged: (val) => wearable.toggleSmartwatchAlerts(val),
+                              activeThumbColor: const Color(0xFF1976D2),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),

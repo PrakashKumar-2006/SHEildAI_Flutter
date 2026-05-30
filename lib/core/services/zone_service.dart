@@ -8,6 +8,7 @@ import '../models/zone_model.dart';
 import 'location_service.dart';
 import 'notification_service.dart';
 import 'api_service.dart';
+import '../../features/wearable/services/wearable_alert_manager.dart';
 
 class ZoneService extends ChangeNotifier {
   final LocationService _locationService;
@@ -216,6 +217,7 @@ class ZoneService extends ChangeNotifier {
       zoneName: zone.name,
       message: zone.alertMessage,
     );
+    WearableAlertManager().onRiskZoneEntry(zone.name, 'Stay Alert - Unsafe Area');
     _startSiren(zone.zoneType);
     notifyListeners();
   }
@@ -224,12 +226,18 @@ class ZoneService extends ChangeNotifier {
     _alertTriggered = false;
     _triggeredZone = null;
     _isAlertPopupShowing = false;
+    WearableAlertManager().cancelRisk();
     notifyListeners();
   }
 
   void setAlertPopupShowing(bool showing) {
     _isAlertPopupShowing = showing;
     notifyListeners();
+  }
+
+  /// Public method to trigger siren for demo zone
+  void startDemoSiren() {
+    _startSiren(ZoneType.high);
   }
 
   Future<void> _startSiren(ZoneType zoneType) async {
@@ -263,6 +271,7 @@ class ZoneService extends ChangeNotifier {
     _isSirenPlaying = false;
     _audioPlayer.stop();
     _sirenTimer?.cancel();
+    WearableAlertManager().cancelRisk();
     notifyListeners();
   }
 

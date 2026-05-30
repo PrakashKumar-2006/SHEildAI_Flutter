@@ -13,6 +13,7 @@ import '../widgets/notification_bell_popup.dart';
 import 'profile_screen.dart';
 import 'main_screen.dart';
 import '../shared/widgets/crowd_risk_indicator.dart';
+import '../features/demo_zone/presentation/providers/demo_zone_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -36,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Color(int.parse(hex, radix: 16));
   }
 
-  void _updateCircles(SafetyProvider safety) {
+  void _updateCircles(SafetyProvider safety, DemoZoneProvider demoZone) {
     _circles.clear();
     for (final zone in safety.zones) {
       final color = _parseHexColor(zone.zoneColor);
@@ -51,6 +52,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
+    
+    // Add Demo High-Risk Zone Circle
+    if (demoZone.demoCircle != null) {
+      _circles.add(demoZone.demoCircle!);
+    }
   }
 
   @override
@@ -59,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final lang = context.watch<LanguageProvider>();
     final safety = context.watch<SafetyProvider>();
     final community = context.watch<CommunityProvider>();
+    final demoZone = context.watch<DemoZoneProvider>();
     final isDark = theme.isDarkMode;
 
     final riskLabel = safety.riskLabel;
@@ -66,7 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final riskColor = _parseHexColor(safety.riskColor);
     final alerts = safety.riskAlerts;
 
-    _updateCircles(safety);
+    _updateCircles(safety, demoZone);
     
     // Add markers - ONLY user position as requested. Community reports are hidden.
     final Set<Marker> markers = {

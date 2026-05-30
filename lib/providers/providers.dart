@@ -14,6 +14,7 @@ import '../core/services/location_service.dart';
 import '../core/services/sos_platform_service.dart';
 import '../core/services/zone_service.dart';
 import '../features/voice/presentation/providers/voice_provider.dart';
+import '../features/shake_sos/providers/shake_sos_provider.dart';
 import '../features/sos/domain/models/sos_model.dart';
 import '../core/models/zone_model.dart';
 import '../core/services/sms_service.dart';
@@ -23,6 +24,7 @@ import '../core/services/socket_service.dart';
 import '../core/services/osrm_service.dart';
 import '../core/services/notification_service.dart';
 import '../core/services/mongo_service.dart';
+import '../features/wearable/services/wearable_alert_manager.dart';
 
 // ─── Theme Provider ────────────────────────────────────────────────────────────
 class ThemeProvider extends ChangeNotifier {
@@ -116,6 +118,7 @@ class SafetyProvider extends ChangeNotifier {
   MLProvider? _mlProvider;
   ZoneService? _zoneService;
   VoiceProvider? _voiceProvider;
+  ShakeSosProvider? _shakeSosProvider;
   CommunityProvider? _communityProvider;
 
   bool get isAppReady => _isAppReady;
@@ -177,6 +180,7 @@ class SafetyProvider extends ChangeNotifier {
   Map<String, dynamic>? get forecast => _mlProvider?.forecast;
   String get readableAddress => _readableAddress;
   bool get isSafetyModeActive => _voiceProvider?.isEnabled ?? false;
+  bool get isShakeTriggerEnabled => _shakeSosProvider?.isEnabled ?? false;
   bool get isSirenPlaying => _zoneService?.isSirenPlaying ?? false;
 
   List<AlertItem> get alerts {
@@ -232,7 +236,7 @@ class SafetyProvider extends ChangeNotifier {
 
   void _onSOSStateChanged() => notifyListeners();
 
-  void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community) {
+  void update(SOSProvider sos, LocationProvider loc, MLProvider ml, ZoneService zone, VoiceProvider voice, CommunityProvider community, ShakeSosProvider shake) {
     // Re-subscribe only when the SOSProvider instance actually changes.
     if (_sosProvider != sos) {
       _sosProvider?.removeListener(_onSOSStateChanged);
@@ -243,6 +247,7 @@ class SafetyProvider extends ChangeNotifier {
     _mlProvider = ml;
     _zoneService = zone;
     _voiceProvider = voice;
+    _shakeSosProvider = shake;
     _communityProvider = community;
     _syncCommunityReports();
     _syncWithLocation();
@@ -385,6 +390,7 @@ class SafetyProvider extends ChangeNotifier {
     if (_alerts.any((a) => a.id == 'comm_sos_$id')) return;
     _alerts.insert(0, AlertItem(id: 'comm_sos_$id', type: 'COMMUNITY_SOS', title: '🚨 SOS: $name needs help! 🚨', body: 'Emergency triggered within ${(distance / 1000).toStringAsFixed(1)}km of your location.', timestamp: DateTime.now(), riskLevel: 'CRITICAL', latitude: lat, longitude: lng));
     _pendingSOSAlert = _alerts.first;
+    WearableAlertManager().onCommunityAlert('🚨 EMERGENCY NEARBY', '$name needs help nearby!');
     notifyListeners();
   }
 
@@ -498,7 +504,9 @@ class SafetyProvider extends ChangeNotifier {
 
   void stopRecording() { notifyListeners(); }
   void setVoiceListening(bool enabled) { _voiceProvider?.toggleVoiceTrigger(enabled); notifyListeners(); }
+  void setShakeTrigger(bool enabled) { _shakeSosProvider?.toggleEnabled(enabled); notifyListeners(); }
   void stopSiren() { _zoneService?.stopSiren(); notifyListeners(); }
+  void startDemoSiren() { _zoneService?.startDemoSiren(); notifyListeners(); }
   void clearAlerts() { _alerts.clear(); notifyListeners(); }
   void removeAlert(String id) { _alerts.removeWhere((a) => a.id == id); notifyListeners(); }
   void refreshSOSState() { notifyListeners(); }
