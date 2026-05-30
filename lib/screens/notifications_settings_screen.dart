@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/providers.dart';
-import '../features/demo_zone/presentation/providers/demo_zone_provider.dart';
 
 class NotificationsSettingsScreen extends StatefulWidget {
   const NotificationsSettingsScreen({super.key});
@@ -110,17 +109,6 @@ class _NotificationsSettingsScreenState extends State<NotificationsSettingsScree
                             subtitle: lang.t('safety_check_desc'),
                             value: _safetyCheck,
                             onChanged: (v) => setState(() => _safetyCheck = v),
-                            theme: theme,
-                          ),
-                          Divider(color: theme.border, height: 1, indent: 72),
-                          _buildToggleRow(
-                            icon: Icons.notifications_active_rounded,
-                            iconBg: const Color(0xFFFFF8E1),
-                            iconColor: const Color(0xFFFFA000),
-                            title: 'Guardian Zone Alerts',
-                            subtitle: 'Notify guardians when you enter a demo high-risk zone',
-                            value: context.watch<DemoZoneProvider>().isGuardianAlertEnabled,
-                            onChanged: (v) => context.read<DemoZoneProvider>().setGuardianAlertEnabled(v),
                             theme: theme,
                             isLast: true,
                           ),

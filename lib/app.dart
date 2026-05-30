@@ -53,8 +53,6 @@ import 'shared/widgets/location_blocking_overlay.dart';
 import 'core/app_theme.dart' as new_theme;
 import 'features/wearable/providers/wearable_settings_provider.dart';
 import 'features/wearable/services/wearable_alert_manager.dart';
-import 'features/demo_zone/presentation/providers/demo_zone_provider.dart';
-import 'features/demo_zone/utils/demo_zone_config.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -213,14 +211,6 @@ class App extends StatelessWidget {
             return provider;
           },
         ),
-        ChangeNotifierProxyProvider2<LocationProvider, SafetyProvider, DemoZoneProvider>(
-          create: (context) => DemoZoneProvider(),
-          update: (context, location, safety, demoZone) {
-            final provider = demoZone ?? DemoZoneProvider();
-            provider.checkZone(location, safety);
-            return provider;
-          },
-        ),
       ],
       child: Consumer2<ThemeProvider, LanguageProvider>(
         builder: (context, themeProvider, langProvider, child) {
@@ -277,17 +267,6 @@ class AppBootstrap extends StatelessWidget {
         if (zoneService.alertTriggered && !zoneService.isAlertPopupShowing) {
           zoneService.setAlertPopupShowing(true);
           _showZoneAlertPopup(context, zoneService);
-        }
-      });
-    }
-
-    // Listen for demo zone alerts
-    final demoZone = context.watch<DemoZoneProvider>();
-    if (demoZone.alertTriggered && !demoZone.isAlertPopupShowing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (demoZone.alertTriggered && !demoZone.isAlertPopupShowing) {
-          demoZone.setAlertPopupShowing(true);
-          _showDemoZoneAlertPopup(context, demoZone);
         }
       });
     }
@@ -367,64 +346,6 @@ class AppBootstrap extends StatelessWidget {
           ),
         ],
 
-      ),
-    );
-  }
-
-  void _showDemoZoneAlertPopup(BuildContext context, DemoZoneProvider demoZone) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.red),
-            SizedBox(width: 8),
-            Text('DEMO ZONE ALERT', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              DemoZoneConfig.alertTitle,
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            SizedBox(height: 12),
-            Text(DemoZoneConfig.alertBody),
-            SizedBox(height: 16),
-            Text(
-              'This is a local demo risk zone for evaluation.',
-              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              context.read<SafetyProvider>().stopSiren();
-              demoZone.resetAlert();
-              Navigator.pop(context);
-            },
-            child: const Text('DISMISS', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              context.read<SafetyProvider>().stopSiren();
-              demoZone.resetAlert();
-              Navigator.pop(context);
-              context.read<SafetyProvider>().triggerSOSFlow();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: const Text('SEND SOS', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
