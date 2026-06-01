@@ -26,4 +26,6 @@ const sosSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+sosSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('SOS', sosSchema);

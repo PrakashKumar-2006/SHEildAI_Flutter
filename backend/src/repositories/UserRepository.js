@@ -10,6 +10,10 @@ class UserRepository extends BaseRepository {
     return await this.findOne({ email }, {}, {}, traceId);
   }
 
+  async findByFirebaseUid(firebaseUid, traceId = 'N/A') {
+    return await this.findOne({ firebase_uid: firebaseUid }, {}, {}, traceId);
+  }
+
   async findByPhone(phone, traceId = 'N/A') {
     return await this.findOne({ phone }, {}, {}, traceId);
   }

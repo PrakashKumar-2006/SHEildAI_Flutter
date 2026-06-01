@@ -23,7 +23,7 @@ class MongoService {
 
     try {
       var connectionString = (dotenv.env['MONGO_DB_CONNECTION_STRING'] ?? dotenv.env['MONGO_URI'] ?? '').trim();
-      final dbName = (dotenv.env['MONGO_DB_NAME'] ?? 'sheildai').trim();
+      final dbName = (dotenv.env['MONGO_DB_NAME'] ?? 'sheild_ai_flutter').trim();
       
       if (connectionString.isEmpty) {
         throw Exception('MongoDB connection string missing in .env (check MONGO_DB_CONNECTION_STRING or MONGO_URI)');
@@ -72,6 +72,7 @@ class MongoService {
       final users = _db!.collection('users');
       await users.createIndex(keys: {'email': 1}, unique: true, sparse: true);
       await users.createIndex(keys: {'phone': 1}, unique: true);
+      await users.createIndex(keys: {'firebase_uid': 1}, unique: true, sparse: true);
       
       final locations = _db!.collection('user_locations');
       await locations.createIndex(keys: {'location': '2dsphere'});
@@ -80,6 +81,7 @@ class MongoService {
 
       final reports = _db!.collection('community_reports');
       await reports.createIndex(keys: {'location': '2dsphere'});
+      await reports.createIndex(keys: {'reporter_phone': 1});
       
       final contacts = _db!.collection('emergency_contacts');
       await contacts.createIndex(keys: {'user_email': 1});
@@ -157,7 +159,17 @@ class MongoService {
   Future<Map<String, dynamic>?> getUserByEmail(String identifier) async {
     final byEmail = await findOne('users', where.eq('email', identifier));
     if (byEmail != null) return byEmail;
-    return await findOne('users', where.eq('phone', identifier));
+    final byPhone = await findOne('users', where.eq('phone', identifier));
+    if (byPhone != null) return byPhone;
+    return await findOne('users', where.eq('firebase_uid', identifier));
+  }
+
+  Future<Map<String, dynamic>?> getUserByPhone(String phone) async {
+    return await findOne('users', where.eq('phone', phone));
+  }
+
+  Future<Map<String, dynamic>?> getUserByFirebaseUid(String uid) async {
+    return await findOne('users', where.eq('firebase_uid', uid));
   }
 
   Future<Map<String, dynamic>?> getUser(String identifier) => getUserByEmail(identifier);
@@ -183,7 +195,14 @@ class MongoService {
     }
 
     if (hasProfileUpdates) {
-      await updateOne('users', where.eq('email', identifier).or(where.eq('phone', identifier)), modifier, upsert: true);
+      await updateOne(
+        'users', 
+        where.eq('email', identifier)
+             .or(where.eq('phone', identifier))
+             .or(where.eq('firebase_uid', identifier)), 
+        modifier, 
+        upsert: true
+      );
     }
 
     if (locationPoint != null) {
@@ -250,13 +269,24 @@ class MongoService {
   }
 
   Future<bool> addContact(String email, Map<String, dynamic> contactData) async {
+    final userPhone = contactData['user_phone'] as String? ?? '';
+    final userEmail = contactData['user_email'] as String? ?? email;
+    
+    final selector = userPhone.isNotEmpty
+        ? where.eq('user_phone', userPhone).and(where.eq('phone', contactData['phone']))
+        : where.eq('user_email', userEmail).and(where.eq('phone', contactData['phone']));
+        
+    var modifier = modify
+        .set('name', contactData['name'])
+        .set('relationship', contactData['relationship'] ?? 'Guardian')
+        .set('phone', contactData['phone'])
+        .set('user_email', userEmail)
+        .set('user_phone', userPhone);
+
     return updateOne(
       'emergency_contacts',
-      where.eq('user_email', email).and(where.eq('phone', contactData['phone'])),
-      modify.set('name', contactData['name'])
-            .set('relationship', contactData['relationship'] ?? 'Guardian')
-            .set('user_email', email)
-            .set('user_phone', contactData['user_phone'] ?? ''),
+      selector,
+      modifier,
       upsert: true,
     );
   }
@@ -294,9 +324,12 @@ class MongoService {
     }
   }
 
-  Future<bool> deleteContactByPhone(String userEmail, String phone) async {
+  Future<bool> deleteContactByPhone(String identifier, String phone) async {
     final col = getCollection('emergency_contacts');
-    final result = await col.deleteOne(where.eq('user_email', userEmail).and(where.eq('phone', phone)));
+    final selector = identifier.contains('@')
+        ? where.eq('user_email', identifier).and(where.eq('phone', phone))
+        : where.eq('user_phone', identifier).and(where.eq('phone', phone));
+    final result = await col.deleteOne(selector);
     return result.isSuccess;
   }
 
@@ -349,6 +382,10 @@ class MongoService {
       reportData['longitude'] = lon;
       reportData['lat'] = lat;
       reportData['lon'] = lon;
+      
+      if (reportData.containsKey('phone')) {
+        reportData['reporter_phone'] = reportData['phone'];
+      }
       
       reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};
       reportData['timestamp'] = DateTime.now().toIso8601String();

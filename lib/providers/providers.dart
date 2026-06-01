@@ -426,7 +426,7 @@ class SafetyProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final phone = prefs.getString(AppConstants.keyUserPhone) ?? '';
     final email = prefs.getString(AppConstants.keyUserEmail) ?? '';
-    final identifier = email.isNotEmpty ? email : phone;
+    final identifier = phone.isNotEmpty ? phone : email;
     final savedContactsJson = prefs.getStringList('trusted_contacts_full') ?? [];
     List<GuardianContact> contacts = [];
     if (savedContactsJson.isNotEmpty) {

@@ -49,13 +49,15 @@ class ContactRepositoryImpl implements ContactRepository {
   @override
   Future<Either<Failure, ContactModel>> addContact(ContactModel contact) async {
     try {
-      if (_userEmail.isEmpty) return Left(StorageFailure('User not logged in'));
+      final userPhone = _userPhone;
+      final userEmail = _userEmail;
+      if (userPhone.isEmpty && userEmail.isEmpty) return Left(StorageFailure('User not logged in'));
       
       final contactData = contact.toJson();
-      contactData['user_email'] = _userEmail;
-      // Remove local ID if it's just a timestamp, let Mongo handle it or keep it as metadata
+      contactData['user_email'] = userEmail;
+      contactData['user_phone'] = userPhone;
       
-      await _mongoService.addContact(_userEmail, contactData);
+      await _mongoService.addContact(userEmail, contactData);
       return Right(contact);
     } catch (e) {
       return Left(StorageFailure(e.toString()));

@@ -42,8 +42,9 @@ class ProfileRepositoryImpl implements ProfileRepository {
   @override
   Future<Either<Failure, UserProfileModel>> updateProfile(UserProfileModel profile) async {
     try {
+      final identifier = profile.phone.isNotEmpty ? profile.phone : profile.email;
       // Update on MongoDB
-      await _mongoService.updateUser(profile.email, {
+      await _mongoService.updateUser(identifier, {
         'name': profile.name,
         'phone': profile.phone,
         'profile': profile.toJson(),

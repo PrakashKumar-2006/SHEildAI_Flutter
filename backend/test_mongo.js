@@ -1,3 +1,10 @@
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (err) {
+  // Graceful fallback
+}
+
 require('dotenv').config();
 const mongoose = require('mongoose');
 const userRepository = require('./src/repositories/UserRepository');

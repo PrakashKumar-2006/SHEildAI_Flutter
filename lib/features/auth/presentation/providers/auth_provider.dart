@@ -275,9 +275,13 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
 
   String get userPhone {
-    if (_user == null) return '';
-    if (_user is User) return (_user as User).email ?? '';
-    if (_user is MockUser) return (_user as MockUser).email ?? '';
+    final cachedPhone = _storageService.getString(AppConstants.keyUserPhone) ?? '';
+    if (cachedPhone.isNotEmpty) return cachedPhone;
+    
+    if (_user is User) {
+      final firebasePhone = (_user as User).phoneNumber ?? '';
+      if (firebasePhone.isNotEmpty) return firebasePhone;
+    }
     return '';
   }
 
@@ -416,8 +420,13 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _persistFirebaseSession(dynamic firebaseUser, String? nameOverride) async {
     final name = nameOverride ?? firebaseUser.displayName ?? 'User';
     final email = firebaseUser.email ?? '';
+    final phone = firebaseUser is User ? (firebaseUser.phoneNumber ?? '') : '';
     await _storageService.setUserName(name);
-    await _storageService.setUserPhone(email);
+    if (phone.isNotEmpty) {
+      await _storageService.setUserPhone(phone);
+    } else {
+      await _storageService.setString(AppConstants.keyUserPhone, '');
+    }
     await _storageService.setUserEmail(email);
     await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
   }
@@ -491,8 +500,9 @@ class AuthProvider extends ChangeNotifier {
           if (userData == null) {
             // First time logging in after email verification
             await mongoService.createUser({
+              'firebase_uid': _user!.uid,
               'email': email,
-              'phone': email, // Fallback since UI might use email as phone
+              'phone': '', 
               'createdAt': DateTime.now().toIso8601String(),
               'name': _user!.displayName ?? email.split('@')[0],
               'profile': {},
@@ -502,8 +512,11 @@ class AuthProvider extends ChangeNotifier {
           
           if (userData != null && userData['name'] != null) {
             final name = userData['name'] as String;
+            final dbPhone = userData['phone'] as String? ?? '';
+            final cleanPhone = dbPhone.contains('@') ? '' : dbPhone;
+            
             await _storageService.setUserName(name);
-            await _storageService.setUserPhone(userData['phone'] ?? email);
+            await _storageService.setUserPhone(cleanPhone);
             await _storageService.setUserEmail(email);
             await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
             
@@ -618,46 +631,59 @@ class AuthProvider extends ChangeNotifier {
            }
          }
          
-         // Save to local storage for quick access
-         await _storageService.setUserPhone(_user!.email ?? '');
-         await _storageService.setUserEmail(_user!.email ?? '');
-         await _storageService.setUserName(userName);
-         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
-         
-         // Sync with MongoDB
-         try {
-           final mongoService = MongoService();
-           if (!mongoService.isConnected) {
-             await mongoService.connect();
-           }
-           
-           final existingUser = await mongoService.getUser(_user!.email ?? '');
-           if (existingUser == null) {
-             await mongoService.createUser({
-               'email': _user!.email,
-               'phone': _user!.email,
-               'createdAt': DateTime.now().toIso8601String(),
-               'name': userName,
-               'profile': {'photoUrl': _user!.photoURL},
-             });
-           } else {
-             // Update name if it's currently null, "User", or matches the email prefix exactly (suggesting a previous fallback)
-             final existingName = existingUser['name'] as String?;
-             final emailPrefix = _user!.email?.split('@')[0];
-             
-             if (existingName == null || 
-                 existingName.toLowerCase() == 'user' || 
-                 existingName == emailPrefix ||
-                 existingName == 'Safety Watcher') {
-               await mongoService.updateUser(_user!.email!, {'name': userName});
-             }
-           }
-         } catch (dbError) {
-           debugPrint("Failed to sync Google user to MongoDB: $dbError");
-         }
-         
-         // Sync full profile and contacts from MongoDB to prevent redundant setup
-         await syncUserData(_user!.email ?? '');
+         // Sync with MongoDB first to determine correct phone number
+          Map<String, dynamic>? existingUser;
+          try {
+            final mongoService = MongoService();
+            if (!mongoService.isConnected) {
+              await mongoService.connect();
+            }
+            
+            existingUser = await mongoService.getUser(_user!.email ?? '');
+            if (existingUser == null) {
+              await mongoService.createUser({
+                'firebase_uid': _user!.uid,
+                'email': _user!.email,
+                'phone': '',
+                'createdAt': DateTime.now().toIso8601String(),
+                'name': userName,
+                'profile': {'photoUrl': _user!.photoURL},
+              });
+              existingUser = await mongoService.getUser(_user!.email ?? '');
+            } else {
+              // Standardize/repair legacy record with firebase_uid
+              final updates = <String, dynamic>{};
+              if (existingUser['firebase_uid'] == null) {
+                updates['firebase_uid'] = _user!.uid;
+              }
+              
+              final existingName = existingUser['name'] as String?;
+              final emailPrefix = _user!.email?.split('@')[0];
+              if (existingName == null || 
+                  existingName.toLowerCase() == 'user' || 
+                  existingName == emailPrefix ||
+                  existingName == 'Safety Watcher') {
+                updates['name'] = userName;
+              }
+              if (updates.isNotEmpty) {
+                await mongoService.updateUser(_user!.email!, updates);
+              }
+            }
+          } catch (dbError) {
+            debugPrint("Failed to sync Google user to MongoDB: $dbError");
+          }
+          
+          // Save to local storage for quick access
+          final dbPhone = existingUser?['phone'] as String? ?? '';
+          final cleanPhone = dbPhone.contains('@') ? '' : dbPhone;
+          
+          await _storageService.setUserPhone(cleanPhone);
+          await _storageService.setUserEmail(_user!.email ?? '');
+          await _storageService.setUserName(userName);
+          await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
+          
+          // Sync full profile and contacts from MongoDB to prevent redundant setup
+          await syncUserData(_user!.email ?? '');
       }
 
       setLoading(false);
