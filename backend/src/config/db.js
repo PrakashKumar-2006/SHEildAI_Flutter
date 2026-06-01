@@ -8,31 +8,55 @@ try {
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI;
+    let mongoUri = process.env.MONGO_URI;
     const dbName = process.env.MONGO_DB_NAME || 'sheild_ai_flutter';
 
     if (!mongoUri) {
       throw new Error('MONGO_URI is not defined in environment variables');
     }
 
-    // Prepare URI with DB name and authSource=admin
+    // Safely parse and URL-encode credentials if there are special characters (like unencoded '@' in password)
     let injected = mongoUri.trim();
     if (injected.startsWith('mongodb')) {
-      const queryIndex = injected.indexOf('?');
-      let basePart = queryIndex > -1 ? injected.substring(0, queryIndex) : injected;
-      let queryPart = queryIndex > -1 ? injected.substring(queryIndex) : '';
+      const schemeIndex = injected.indexOf('://');
+      if (schemeIndex > -1) {
+        const scheme = injected.substring(0, schemeIndex + 3);
+        const rest = injected.substring(schemeIndex + 3);
 
-      // Inject Database Name if missing
-      if (!basePart.includes('.mongodb.net/')) {
-        basePart = basePart.replace('.mongodb.net', `.mongodb.net/${dbName}`);
-      } else {
-        // Handle cases where it might end in / or have a different DB name
-        const lastSlash = basePart.lastIndexOf('/');
-        const hostPart = basePart.substring(0, lastSlash);
-        basePart = `${hostPart}/${dbName}`;
+        const queryIndex = rest.indexOf('?');
+        const mainPart = queryIndex > -1 ? rest.substring(0, queryIndex) : rest;
+        const queryPart = queryIndex > -1 ? rest.substring(queryIndex) : '';
+
+        const lastAt = mainPart.lastIndexOf('@');
+        if (lastAt > -1) {
+          const credsPart = mainPart.substring(0, lastAt);
+          let hostAndDb = mainPart.substring(lastAt + 1);
+
+          // Standardize DB name injection
+          if (hostAndDb.endsWith('/')) {
+            hostAndDb = `${hostAndDb}${dbName}`;
+          } else if (!hostAndDb.includes('/')) {
+            hostAndDb = `${hostAndDb}/${dbName}`;
+          } else {
+            const parts = hostAndDb.split('/');
+            parts[parts.length - 1] = dbName;
+            hostAndDb = parts.join('/');
+          }
+
+          // Encode username and password
+          const colonIndex = credsPart.indexOf(':');
+          if (colonIndex > -1) {
+            const user = credsPart.substring(0, colonIndex);
+            const pass = credsPart.substring(colonIndex + 1);
+            const safeUser = encodeURIComponent(decodeURIComponent(user));
+            const safePass = encodeURIComponent(decodeURIComponent(pass));
+            injected = `${scheme}${safeUser}:${safePass}@${hostAndDb}${queryPart}`;
+          } else {
+            const safeUser = encodeURIComponent(decodeURIComponent(credsPart));
+            injected = `${scheme}${safeUser}@${hostAndDb}${queryPart}`;
+          }
+        }
       }
-      
-      injected = basePart + queryPart;
 
       if (!injected.includes('authSource=')) {
         const sep = injected.includes('?') ? '&' : '?';
