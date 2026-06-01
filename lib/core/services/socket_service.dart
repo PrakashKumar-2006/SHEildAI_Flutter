@@ -25,7 +25,11 @@ class SocketService {
   bool get isConnected => _isConnected;
 
   Future<void> connect(String phone) async {
-    if (_socket != null && _socket!.connected) return;
+    if (_socket != null && _socket!.connected) {
+      if (_currentUserId == phone) return;
+      debugPrint('[SocketService] Reconnecting since user changed from $_currentUserId to $phone');
+      disconnect();
+    }
     
     _currentUserId = phone;
     

@@ -113,7 +113,7 @@ class LocationProvider extends ChangeNotifier {
     final phone = _storageService.getString('user_phone') ?? '';
     final email = _storageService.getString('user_email') ?? '';
     final name = _storageService.getString('user_name') ?? 'User';
-    final identifier = email.isNotEmpty ? email : phone;
+    final identifier = phone.isNotEmpty ? phone : email;
 
     if (identifier.isEmpty) return;
 

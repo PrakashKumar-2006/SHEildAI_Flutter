@@ -415,7 +415,7 @@ class SafetyProvider extends ChangeNotifier {
 
   Future<void> refreshProfile() async {
     await _loadUserProfile();
-    if (_userProfile.phone.isNotEmpty && !SocketService().isConnected) {
+    if (_userProfile.phone.isNotEmpty) {
       await SocketService().connect(_userProfile.phone);
       _listenToSocket();
     }
