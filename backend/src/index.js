@@ -14,8 +14,9 @@ const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const userRepository = require('./repositories/UserRepository');
 
-// Load env vars
-dotenv.config();
+const path = require('path');
+// Load env vars from the root .env, overriding stale dashboard variables
+dotenv.config({ path: path.join(__dirname, '../../.env'), override: true });
 
 // Connect to database
 connectDB();
