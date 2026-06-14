@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../core/constants/app_constants.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../core/localization.dart';
@@ -436,16 +437,50 @@ class SafetyProvider extends ChangeNotifier {
       contacts = stringList.map((s) => GuardianContact(name: 'Guardian', phone: s)).toList();
     }
     _userProfile = UserProfile(name: prefs.getString(AppConstants.keyUserName) ?? '', phone: phone, trustedContacts: contacts, isComplete: prefs.getBool('@profile_complete') ?? false, isSetupComplete: prefs.getBool('@setup_complete') ?? false);
-    if (identifier.isNotEmpty) {
+    
+    try {
+      final mongo = MongoService();
+      if (!mongo.isConnected) await mongo.connect();
+      
+      Map<String, dynamic>? userDoc;
+      
+      // 1. Try resolving via Firebase UID first for absolute precision
       try {
-        final mongo = MongoService();
-        if (!mongo.isConnected) await mongo.connect();
-        final userDoc = await mongo.getUserByEmail(identifier);
-        if (userDoc != null) {
-          final mongoName = userDoc['name'] as String? ?? '';
-          if (mongoName.isNotEmpty) { _userProfile.name = mongoName; await prefs.setString(AppConstants.keyUserName, mongoName); }
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser != null) {
+          userDoc = await mongo.getUserByFirebaseUid(currentUser.uid);
         }
-        List<Map<String, dynamic>> contactsData = await mongo.getContactsByEmail(identifier);
+      } catch (authErr) {
+        debugPrint('[SafetyProvider] Firebase UID lookup skipped: $authErr');
+      }
+      
+      // 2. Fallback to Email / Phone lookup
+      if (userDoc == null && identifier.isNotEmpty) {
+        userDoc = await mongo.getUserByEmail(identifier);
+      }
+      
+      if (userDoc != null) {
+        final mongoName = userDoc['name'] as String? ?? '';
+        if (mongoName.isNotEmpty) { 
+          _userProfile.name = mongoName; 
+          await prefs.setString(AppConstants.keyUserName, mongoName); 
+        }
+        final mongoPhone = userDoc['phone'] as String? ?? '';
+        if (mongoPhone.isNotEmpty && !mongoPhone.contains('@')) {
+          _userProfile.phone = mongoPhone;
+          await prefs.setString(AppConstants.keyUserPhone, mongoPhone);
+        }
+      }
+      
+      String syncIdentifier = identifier;
+      if (userDoc != null) {
+        final dbEmail = userDoc['email'] as String? ?? '';
+        final dbPhone = userDoc['phone'] as String? ?? '';
+        syncIdentifier = dbPhone.isNotEmpty ? dbPhone : (dbEmail.isNotEmpty ? dbEmail : identifier);
+      }
+      
+      if (syncIdentifier.isNotEmpty) {
+        List<Map<String, dynamic>> contactsData = await mongo.getContactsByEmail(syncIdentifier);
         if (contactsData.isNotEmpty) {
           final mongoContacts = contactsData.where((data) => (data['phone'] as String? ?? '').isNotEmpty).map((data) => GuardianContact(name: data['name'] as String? ?? 'Guardian', phone: data['phone'] as String? ?? '')).toList();
           if (mongoContacts.isNotEmpty) {
@@ -453,8 +488,11 @@ class SafetyProvider extends ChangeNotifier {
             await prefs.setStringList('trusted_contacts_full', mongoContacts.map((c) => jsonEncode(c.toJson())).toList());
           }
         }
-      } catch (e) { debugPrint('[SafetyProvider] Deep sync error: $e'); }
+      }
+    } catch (e) { 
+      debugPrint('[SafetyProvider] Deep sync error: $e'); 
     }
+    
     _trustedContacts = _userProfile.trustedContacts;
     _inputContacts = _trustedContacts.isNotEmpty ? List.from(_trustedContacts) : [GuardianContact(name: '', phone: '')];
   }

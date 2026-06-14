@@ -7,6 +7,11 @@ const contactController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { userPhone } = req.params;
+      
+      // Ownership check: Authenticated user must own this contact resource
+      if (req.user.phone !== userPhone && req.user.email !== userPhone) {
+        return res.status(403).json({ error: 'Forbidden: You cannot access contacts for another user' });
+      }
       const contacts = await contactRepository.findByUser(userPhone, traceId);
       res.status(200).json(contacts);
     } catch (error) {
@@ -19,6 +24,11 @@ const contactController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { userPhone } = req.params;
+
+      // Ownership check: Authenticated user must own this contact resource
+      if (req.user.phone !== userPhone && req.user.email !== userPhone) {
+        return res.status(403).json({ error: 'Forbidden: You cannot access contacts for another user' });
+      }
       const { name, phone, relationship, isPrimary } = req.body;
 
       if (!name || !phone) {
@@ -47,6 +57,11 @@ const contactController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { userPhone, contactPhone } = req.params;
+
+      // Ownership check: Authenticated user must own this contact resource
+      if (req.user.phone !== userPhone && req.user.email !== userPhone) {
+        return res.status(403).json({ error: 'Forbidden: You cannot access contacts for another user' });
+      }
       await contactRepository.removeContact(userPhone, contactPhone, traceId);
       res.status(200).json({ success: true, message: 'Contact removed' });
     } catch (error) {
@@ -59,6 +74,11 @@ const contactController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { userPhone, contactPhone } = req.params;
+
+      // Ownership check: Authenticated user must own this contact resource
+      if (req.user.phone !== userPhone && req.user.email !== userPhone) {
+        return res.status(403).json({ error: 'Forbidden: You cannot access contacts for another user' });
+      }
       const updated = await contactRepository.setPrimary(userPhone, contactPhone, traceId);
       if (!updated) {
         return res.status(404).json({ error: 'Contact not found' });

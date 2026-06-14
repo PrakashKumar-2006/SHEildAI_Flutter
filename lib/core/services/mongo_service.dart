@@ -159,6 +159,12 @@ class MongoService {
   Future<Map<String, dynamic>?> getUserByEmail(String identifier) async {
     final byEmail = await findOne('users', where.eq('email', identifier));
     if (byEmail != null) return byEmail;
+    
+    if (identifier.contains('@')) {
+      final byEmailCI = await findOne('users', where.match('email', '^' + RegExp.escape(identifier) + r'$', caseInsensitive: true));
+      if (byEmailCI != null) return byEmailCI;
+    }
+
     final byPhone = await findOne('users', where.eq('phone', identifier));
     if (byPhone != null) return byPhone;
     return await findOne('users', where.eq('firebase_uid', identifier));

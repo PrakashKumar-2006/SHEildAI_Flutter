@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'storage_service.dart';
 
 class ApiService {
@@ -40,11 +41,25 @@ class ApiService {
         return cachedToken;
       }
       
-      // Generate new token
+      // Retrieve live Firebase ID Token from active session
+      String? idToken;
+      try {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser != null) {
+          idToken = await currentUser.getIdToken();
+        }
+      } catch (authError) {
+        debugPrint('[ApiService] Firebase auth state error or uninitialized: $authError');
+      }
+
+      // Generate new token by passing the verified Firebase ID Token
       final response = await _fetchWithTimeout(
         '$_backendUrl/api/auth/token',
         {'Content-Type': 'application/json'},
-        jsonEncode({'phone': phone}),
+        jsonEncode({
+          'idToken': idToken ?? 'mock_token_$phone',
+          'phone': phone
+        }),
       );
 
       if (response.statusCode == 200) {

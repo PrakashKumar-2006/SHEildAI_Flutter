@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const { protect, adminOnly } = require('../middleware/auth');
+const { adminLimiter } = require('../middleware/rateLimiter');
+
+// Protect all admin routes with authentication and admin authorization (RBAC)
+router.use(protect, adminOnly, adminLimiter);
 
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 router.get('/stats', adminController.getStats);

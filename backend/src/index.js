@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const dotenv = require('dotenv');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -14,12 +15,70 @@ const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const userRepository = require('./repositories/UserRepository');
 
-const path = require('path');
 // Load env vars from the root .env, overriding stale dashboard variables
 dotenv.config({ path: path.join(__dirname, '../../.env'), override: true });
 
+// Startup Configuration Validation
+const fs = require('fs');
+if (!process.env.MONGO_URI) {
+  console.error('==================================================');
+  console.error('           FATAL CONFIGURATION ERROR              ');
+  console.error('==================================================');
+  console.error('MONGO_URI is not configured');
+  console.error('Server startup aborted.');
+  console.error('==================================================');
+  process.exit(1);
+}
+
+if (!process.env.JWT_SECRET) {
+  console.error('==================================================');
+  console.error('           FATAL CONFIGURATION ERROR              ');
+  console.error('==================================================');
+  console.error('JWT_SECRET is not configured');
+  console.error('Server startup aborted.');
+  console.error('==================================================');
+  process.exit(1);
+}
+
+if (process.env.JWT_SECRET.length < 32) {
+  console.error('==================================================');
+  console.error('           FATAL CONFIGURATION ERROR              ');
+  console.error('==================================================');
+  console.error('JWT_SECRET must be at least 32 characters');
+  console.error('Server startup aborted.');
+  console.error('==================================================');
+  process.exit(1);
+}
+
+let hasFirebaseConfig = false;
+if (process.env.FIREBASE_CONFIG) {
+  hasFirebaseConfig = true;
+} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  if (fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+    hasFirebaseConfig = true;
+  }
+}
+
+if (!hasFirebaseConfig) {
+  console.error('==================================================');
+  console.error('           FATAL CONFIGURATION ERROR              ');
+  console.error('==================================================');
+  console.error('Firebase credentials not configured');
+  console.error('Server startup aborted.');
+  console.error('==================================================');
+  process.exit(1);
+}
+
 // Connect to database
 connectDB();
+
+// Initialize Firebase Admin SDK
+const admin = require('firebase-admin');
+if (admin.apps.length === 0) {
+  admin.initializeApp({
+    projectId: 'sheild-flutter'
+  });
+}
 
 const app = express();
 const server = http.createServer(app);

@@ -13,6 +13,11 @@ const sosController = {
         return res.status(400).json({ error: 'User ID (phone) is required' });
       }
 
+      // Ownership check: Authenticated user must own this phone session
+      if (req.user.phone !== phone && req.user.email !== phone && req.user._id.toString() !== phone) {
+        return res.status(403).json({ error: 'Forbidden: You cannot trigger SOS for another user' });
+      }
+
       const sosData = {
         user_phone: phone,
         location: {
@@ -56,6 +61,21 @@ const sosController = {
 
       if (!sosId || !status) {
         return res.status(400).json({ error: 'SOS ID and status are required' });
+      }
+
+      // Ownership check: Authenticated user must own the SOS record
+      const mongoose = require('mongoose');
+      if (!mongoose.Types.ObjectId.isValid(sosId)) {
+        return res.status(400).json({ error: 'Invalid SOS ID format' });
+      }
+
+      const sosRecord = await sosRepository.findOne({ _id: sosId }, {}, {}, traceId);
+      if (!sosRecord) {
+        return res.status(404).json({ error: 'SOS record not found' });
+      }
+
+      if (sosRecord.user_phone !== req.user.phone && sosRecord.user_phone !== req.user.email) {
+        return res.status(403).json({ error: 'Forbidden: You do not own this SOS record' });
       }
 
       const updated = await sosRepository.updateStatus(sosId, status, traceId);
