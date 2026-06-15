@@ -50,25 +50,6 @@ if (process.env.JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
-let hasFirebaseConfig = false;
-if (process.env.FIREBASE_CONFIG) {
-  hasFirebaseConfig = true;
-} else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  if (fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
-    hasFirebaseConfig = true;
-  }
-}
-
-if (!hasFirebaseConfig) {
-  console.error('==================================================');
-  console.error('           FATAL CONFIGURATION ERROR              ');
-  console.error('==================================================');
-  console.error('Firebase credentials not configured');
-  console.error('Server startup aborted.');
-  console.error('==================================================');
-  process.exit(1);
-}
-
 // Connect to database
 connectDB();
 
@@ -183,19 +164,19 @@ io.on('connection', (socket) => {
   socket.on('sos_alert', (sosData) => {
     // sosData: { sosId, userId, name, latitude, longitude, message }
     console.log(`[Socket] SOS ALERT RECEIVED from ${sosData.name} (${sosData.userId}) at [${sosData.latitude}, ${sosData.longitude}]`);
-    
+
     // Broadcast to nearby users (5km)
     const radiusInKm = 5.0;
     let nearbyCount = 0;
-    
+
     userLocations.forEach((loc, socketId) => {
       if (socketId === socket.id) return; // Skip sender
       if (!loc.lat || !loc.lon) return; // Skip if no location
 
       const distance = calculateDistance(
-        sosData.latitude, 
-        sosData.longitude, 
-        loc.lat, 
+        sosData.latitude,
+        sosData.longitude,
+        loc.lat,
         loc.lon
       );
 
@@ -225,7 +206,7 @@ io.on('connection', (socket) => {
   socket.on('community_report', (reportData) => {
     // reportData: { type, description, lat, lon, name }
     console.log(`[Socket] New Community Report: ${reportData.incidentType || reportData.type} at [${reportData.latitude || reportData.lat}, ${reportData.longitude || reportData.lon}]`);
-    
+
     // Broadcast anonymously to all users
     const anonymousReport = {
       ...reportData,
@@ -233,7 +214,7 @@ io.on('connection', (socket) => {
       phone: undefined, // Hide phone
       timestamp: new Date().toISOString()
     };
-    
+
     // Emit both for backward/forward compatibility
     io.emit('new_community_report', anonymousReport);
     io.emit('community_report_broadcast', anonymousReport);
@@ -258,13 +239,13 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
     const dLat = deg2rad(pLat2 - pLat1);
     const dLon = deg2rad(pLon2 - pLon1);
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(deg2rad(pLat1)) * Math.cos(deg2rad(pLat2)) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2)
-      ; 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-    const d = R * c; 
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(pLat1)) * Math.cos(deg2rad(pLat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+      ;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
     return d;
   } catch (e) {
     return NaN;
@@ -272,7 +253,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 
 function deg2rad(deg) {
-  return deg * (Math.PI/180);
+  return deg * (Math.PI / 180);
 }
 
 const PORT = process.env.PORT || 5000;
