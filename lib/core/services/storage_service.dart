@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
+import 'package:flutter/foundation.dart';
+import '../utils/identity_validator.dart';
 
 class StorageService {
   static final StorageService _instance = StorageService._internal();
@@ -120,11 +122,19 @@ class StorageService {
   }
 
   Future<bool> setUserPhone(String phone) async {
+    if (!IdentityValidator.isValidPhone(phone)) {
+      debugPrint('[StorageService] REGRESSION WARNING: Attempted to save email or invalid string as phone: $phone');
+      return await setString(AppConstants.keyUserPhone, '');
+    }
     return await setString(AppConstants.keyUserPhone, phone);
   }
 
   String getUserPhone() {
-    return getString(AppConstants.keyUserPhone) ?? '+919876543210';
+    final phone = getString(AppConstants.keyUserPhone) ?? '';
+    if (!IdentityValidator.isValidPhone(phone)) {
+      return '';
+    }
+    return phone;
   }
 
   Future<bool> setUserEmail(String email) async {

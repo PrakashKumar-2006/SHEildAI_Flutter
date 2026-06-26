@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/services/storage_service.dart';
 import '../../../../core/services/mongo_service.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/utils/identity_validator.dart';
 
 // Fallback user class for when Firebase is not configured
 class MockUser {
@@ -43,7 +44,7 @@ class AuthProvider extends ChangeNotifier {
       final savedPhone = _storageService.getString(AppConstants.keyUserPhone) ?? '';
       final savedEmail = _storageService.getString(AppConstants.keyUserEmail) ?? '';
       _user = MockUser(uid: savedPhone.isNotEmpty ? savedPhone : 'restored_session',
-                       email: savedEmail.isNotEmpty ? savedEmail : savedPhone,
+                       email: savedEmail.isNotEmpty ? savedEmail : '',
                        displayName: savedName);
       debugPrint('[AuthProvider] Session restored — user: $savedName');
       syncProfile(); // Ensure name is correct if it was generic
@@ -101,7 +102,14 @@ class AuthProvider extends ChangeNotifier {
         
         // Update local profile data if not already set
         if (name.isNotEmpty) await _storageService.setUserName(name);
-        if (phone.isNotEmpty) await _storageService.setUserPhone(phone);
+        if (phone.isNotEmpty) {
+          if (IdentityValidator.isValidPhone(phone)) {
+            await _storageService.setUserPhone(phone);
+          } else {
+            debugPrint('[AuthProvider] syncUserData: Invalid phone found in DB (e.g. email). Rejecting contamination.');
+            // Never overwrite Secure Storage with contamination.
+          }
+        }
         await _storageService.setUserEmail(email);
 
         // 2. Sync Trusted Contacts (full name + phone details)
@@ -276,11 +284,11 @@ class AuthProvider extends ChangeNotifier {
 
   String get userPhone {
     final cachedPhone = _storageService.getString(AppConstants.keyUserPhone) ?? '';
-    if (cachedPhone.isNotEmpty) return cachedPhone;
+    if (cachedPhone.isNotEmpty && IdentityValidator.isValidPhone(cachedPhone)) return cachedPhone;
     
     if (_user is User) {
       final firebasePhone = (_user as User).phoneNumber ?? '';
-      if (firebasePhone.isNotEmpty) return firebasePhone;
+      if (firebasePhone.isNotEmpty && IdentityValidator.isValidPhone(firebasePhone)) return firebasePhone;
     }
     return '';
   }
@@ -361,7 +369,7 @@ class AuthProvider extends ChangeNotifier {
 
         await mongoService.createUser({
           'email': email,
-          'phone': email,
+          'phone': '',
           'password': password, // Note: In production use hashing, but this is a fallback for exploration
           'createdAt': DateTime.now().toIso8601String(),
           'name': name,
@@ -369,7 +377,7 @@ class AuthProvider extends ChangeNotifier {
         });
 
         _user = MockUser(uid: email, email: email, displayName: name);
-        await _storageService.setUserPhone(email);
+        await _storageService.setUserPhone('');
         await _storageService.setUserEmail(email);
         await _storageService.setUserName(name);
         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
@@ -458,7 +466,8 @@ class AuthProvider extends ChangeNotifier {
         _user = MockUser(uid: email, email: email, displayName: name);
         
         await _storageService.setUserName(name);
-        await _storageService.setUserPhone(userData['phone'] ?? email);
+        final dbPhone = userData['phone'] as String? ?? '';
+        await _storageService.setUserPhone(IdentityValidator.isValidPhone(dbPhone) ? dbPhone : '');
         await _storageService.setUserEmail(email);
         await _storageService.setBool(AppConstants.keyIsLoggedIn, true);
         
@@ -675,7 +684,7 @@ class AuthProvider extends ChangeNotifier {
           
           // Save to local storage for quick access
           final dbPhone = existingUser?['phone'] as String? ?? '';
-          final cleanPhone = dbPhone.contains('@') ? '' : dbPhone;
+          final cleanPhone = IdentityValidator.isValidPhone(dbPhone) ? dbPhone : '';
           
           await _storageService.setUserPhone(cleanPhone);
           await _storageService.setUserEmail(_user!.email ?? '');

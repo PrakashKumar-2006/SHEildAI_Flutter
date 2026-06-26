@@ -5,6 +5,7 @@ import '../../../../core/services/storage_service.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/contact_model.dart';
 import '../../domain/repositories/contact_repository.dart';
+import '../../../../core/utils/identity_validator.dart';
 import 'package:mongo_dart/mongo_dart.dart' show ObjectId;
 
 class ContactRepositoryImpl implements ContactRepository {
@@ -13,8 +14,14 @@ class ContactRepositoryImpl implements ContactRepository {
 
   ContactRepositoryImpl(this._mongoService, this._storageService);
 
-  String get _userEmail => _storageService.getString(AppConstants.keyUserEmail) ?? '';
-  String get _userPhone => _storageService.getString(AppConstants.keyUserPhone) ?? '';
+  String get _userEmail {
+    final email = _storageService.getString(AppConstants.keyUserEmail) ?? '';
+    return IdentityValidator.isValidEmail(email) ? email : '';
+  }
+  String get _userPhone {
+    final phone = _storageService.getString(AppConstants.keyUserPhone) ?? '';
+    return IdentityValidator.isValidPhone(phone) ? phone : '';
+  }
 
   @override
   Future<Either<Failure, List<ContactModel>>> getContacts() async {

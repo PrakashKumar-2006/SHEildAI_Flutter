@@ -16,6 +16,7 @@ import '../../../../providers/providers.dart' show SafetyProvider;
 import '../../../../shared/widgets/crowd_risk_indicator.dart';
 import '../../../../widgets/notification_bell_popup.dart';
 import '../../../community/presentation/providers/community_provider.dart';
+import '../../../../features/auth/presentation/providers/auth_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,6 +28,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   GoogleMapController? _mapController;
   bool _isDarkMode = false;
+  bool _hasShownProfileGuardian = false;
 
   @override
   Widget build(BuildContext context) {
@@ -35,10 +37,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final sosProvider = context.watch<SOSProvider>();
     final voiceProvider = context.watch<VoiceProvider>();
     final mlProvider = context.watch<MLProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final currentLocation = locationProvider.currentLocation;
     final currentLat = currentLocation?.latitude;
     final currentLng = currentLocation?.longitude;
     final hasLocation = currentLat != null && currentLng != null;
+    final isPhoneMissing = authProvider.userPhone.isEmpty;
     
     // Animate map when location is first fetched
     if (hasLocation && _mapController != null) {
@@ -87,6 +91,13 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
 
+    if (isPhoneMissing && !_hasShownProfileGuardian) {
+      _hasShownProfileGuardian = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showProfileCompletenessGuardian(context);
+      });
+    }
+
     return Scaffold(
       backgroundColor: _isDarkMode ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
       body: SafeArea(
@@ -101,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
+                        if (isPhoneMissing) _buildProfileCompletenessBanner(context),
                         // Safety Indicator Circle
                         _buildSafetyCard(context, homeProvider, locationProvider),
                         const CrowdRiskIndicator(),
@@ -145,6 +157,84 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Colors.red,
         icon: const Icon(Ionicons.alert_circle, color: Colors.white),
         label: const Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  void _showProfileCompletenessGuardian(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Ionicons.warning, color: Colors.orange),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Complete Your Safety Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          ],
+        ),
+        content: const Text(
+          'Your phone number is missing.\n\nYour phone number helps ensure emergency communication and improves your overall safety experience.\n\nPlease update your Personal Information.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Later', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/profile');
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0D1B6E),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Update Now', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileCompletenessBanner(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _isDarkMode ? const Color(0xFF432B09) : Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Ionicons.warning, color: Colors.orange, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('⚠ Complete Your Safety Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 14)),
+                const SizedBox(height: 4),
+                Text(
+                  'Your phone number is missing. Emergency features will continue to work, but adding your phone number ensures reliable communication with trusted guardians.',
+                  style: TextStyle(color: _isDarkMode ? Colors.orange.shade200 : Colors.orange.shade900, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            onPressed: () => Navigator.pushNamed(context, '/profile'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Update Now', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }

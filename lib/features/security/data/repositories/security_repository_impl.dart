@@ -2,6 +2,7 @@ import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/mongo_service.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/privacy_settings_model.dart';
 import '../../domain/repositories/security_repository.dart';
 
@@ -11,7 +12,7 @@ class SecurityRepositoryImpl implements SecurityRepository {
 
   SecurityRepositoryImpl(this._mongoService, this._storageService);
 
-  String get _userEmail => _storageService.getString('user_phone') ?? '';
+  String get _userEmail => _storageService.getString(AppConstants.keyUserEmail) ?? '';
 
   @override
   Future<Either<Failure, PrivacySettingsModel>> getPrivacySettings() async {

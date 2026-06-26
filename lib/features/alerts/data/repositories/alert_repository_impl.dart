@@ -3,6 +3,7 @@ import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/services/mongo_service.dart';
 import '../../../../core/services/storage_service.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../domain/models/alert_model.dart';
 import '../../domain/repositories/alert_repository.dart';
 
@@ -13,7 +14,7 @@ class AlertRepositoryImpl implements AlertRepository {
 
   AlertRepositoryImpl(this._mongoService, this._storageService);
 
-  String get _userEmail => _storageService.getString('user_phone') ?? '';
+  String get _userEmail => _storageService.getString(AppConstants.keyUserEmail) ?? '';
 
   @override
   Stream<List<AlertModel>> get alertsStream => _alertsController.stream;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../utils/identity_validator.dart';
 
 class MongoService {
   Db? _db;
@@ -275,7 +276,8 @@ class MongoService {
   }
 
   Future<bool> addContact(String email, Map<String, dynamic> contactData) async {
-    final userPhone = contactData['user_phone'] as String? ?? '';
+    final rawUserPhone = contactData['user_phone'] as String? ?? '';
+    final userPhone = IdentityValidator.isValidPhone(rawUserPhone) ? rawUserPhone : '';
     final userEmail = contactData['user_email'] as String? ?? email;
     
     final selector = userPhone.isNotEmpty
@@ -390,7 +392,8 @@ class MongoService {
       reportData['lon'] = lon;
       
       if (reportData.containsKey('phone')) {
-        reportData['reporter_phone'] = reportData['phone'];
+        final phone = reportData['phone'] as String? ?? '';
+        reportData['reporter_phone'] = IdentityValidator.isValidPhone(phone) ? phone : '';
       }
       
       reportData['location'] = {'type': 'Point', 'coordinates': [lon, lat]};

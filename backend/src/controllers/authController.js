@@ -43,7 +43,7 @@ const authController = {
         logger.info(`Creating user from verified Firebase token for: ${email || phone || firebase_uid}`, traceId);
         user = await userRepository.createUser({
           firebase_uid,
-          phone: phone || `shadow_${Date.now()}`,
+          phone: phone || '',
           email: email || '',
           name: email ? email.split('@')[0] : 'User',
           last_seen: new Date()
@@ -90,7 +90,7 @@ const authController = {
       }
 
       // Ownership check: Authenticated user must match the target update ID
-      if (phone && req.user.phone !== phone && req.user.email !== phone && req.user._id.toString() !== phone) {
+      if (phone && req.user.phone !== phone && req.user._id.toString() !== phone) {
         return res.status(403).json({ error: 'Forbidden: You cannot update another user\'s location' });
       }
       if (firebase_uid && req.user.firebase_uid !== firebase_uid) {
@@ -101,17 +101,14 @@ const authController = {
       if (firebase_uid) {
         user = await userRepository.findByFirebaseUid(firebase_uid, traceId);
       }
-      if (!user && phone) {
+      if (!user && phone && !phone.includes('@')) {
         user = await userRepository.findByPhone(phone, traceId);
-        if (!user && phone.includes('@')) {
-          user = await userRepository.findByEmail(phone, traceId);
-        }
       }
       
       if (!user) {
         logger.info(`Creating new shadow user for phone: ${phone || 'N/A'}`, traceId);
         user = await userRepository.createUser({
-          phone: phone || `shadow_${Date.now()}`,
+          phone: (phone && !phone.includes('@')) ? phone : '',
           firebase_uid: firebase_uid,
           name: name || 'User',
           last_lat: latitude,
@@ -152,8 +149,10 @@ const authController = {
       if (req.user.phone !== userId && req.user.email !== userId && req.user.firebase_uid !== userId && req.user._id.toString() !== userId) {
         return res.status(403).json({ error: 'Forbidden: You cannot view another user\'s profile' });
       }
-      let user = await userRepository.findByPhone(userId, traceId);
-      if (!user && userId.includes('@')) {
+      let user = null;
+      if (!userId.includes('@')) {
+        user = await userRepository.findByPhone(userId, traceId);
+      } else {
         user = await userRepository.findByEmail(userId, traceId);
       }
       if (!user && userId.length > 20) {

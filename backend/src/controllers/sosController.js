@@ -7,14 +7,14 @@ const sosController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { user_id, latitude, longitude, message } = req.body;
-      const phone = user_id; // Mapping user_id to phone
+      const phone = user_id || ''; // Mapping user_id to phone, allow empty string
 
-      if (!phone) {
-        return res.status(400).json({ error: 'User ID (phone) is required' });
+      if (phone.includes('@')) {
+        return res.status(400).json({ error: 'Valid User ID (phone) is required. Emails are not allowed.' });
       }
 
       // Ownership check: Authenticated user must own this phone session
-      if (req.user.phone !== phone && req.user.email !== phone && req.user._id.toString() !== phone) {
+      if (req.user.phone !== phone) {
         return res.status(403).json({ error: 'Forbidden: You cannot trigger SOS for another user' });
       }
 
@@ -74,7 +74,7 @@ const sosController = {
         return res.status(404).json({ error: 'SOS record not found' });
       }
 
-      if (sosRecord.user_phone !== req.user.phone && sosRecord.user_phone !== req.user.email) {
+      if (sosRecord.user_phone !== req.user.phone) {
         return res.status(403).json({ error: 'Forbidden: You do not own this SOS record' });
       }
 
