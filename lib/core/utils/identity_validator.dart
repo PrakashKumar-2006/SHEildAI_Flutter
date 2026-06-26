@@ -9,6 +9,9 @@ class IdentityValidator {
   static bool isValidPhone(String? phone) {
     if (phone == null || phone.trim().isEmpty) return false;
     if (phone.contains('@')) return false;
-    return true;
+    if (phone.toLowerCase().contains('shadow_')) return false;
+    // Allow digits, spaces, plus, minus, parentheses
+    final validChars = RegExp(r'^[\+0-9\s\-\(\)]+$');
+    return validChars.hasMatch(phone.trim());
   }
 }

@@ -51,9 +51,7 @@ class _SigninScreenState extends State<SigninScreen> {
         // Get name from Firebase if login, otherwise use input field
         String displayName = name;
         if (_isLogin) {
-          displayName = auth.user?.displayName ?? 
-                        auth.user?.email?.split('@')[0] ?? 
-                        'User';
+          displayName = auth.user?.displayName ?? 'User';
         }
         
         await safety.updateUserProfile(UserProfile(
@@ -255,8 +253,7 @@ class _SigninScreenState extends State<SigninScreen> {
                               if (success && mounted) {
                                 final safety = context.read<SafetyProvider>();
                                 final displayName = auth.user?.displayName ?? 
-                                                  auth.user?.email?.split('@')[0] ?? 
-                                                  'Google User';
+                                                  'User';
                                                   
                                 await safety.updateUserProfile(UserProfile(
                                   name: displayName,

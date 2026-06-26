@@ -45,7 +45,7 @@ const authController = {
           firebase_uid,
           phone: phone || '',
           email: email || '',
-          name: email ? email.split('@')[0] : 'User',
+          name: 'User',
           last_seen: new Date()
         }, traceId);
       } else {
