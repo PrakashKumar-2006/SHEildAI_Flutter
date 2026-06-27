@@ -23,8 +23,8 @@ const authController = {
         return res.status(401).json({ error: 'Unauthorized: Invalid or expired Firebase ID Token' });
       }
 
-      const { uid: firebase_uid, email, phone_number } = decodedToken;
-      const phone = phone_number || '';
+      const { uid: firebase_uid, email, phone_number, name: firebase_name } = decodedToken;
+      const phone = (phone_number && !phone_number.includes('@') && !phone_number.toLowerCase().includes('shadow_')) ? phone_number : '';
 
       // Check if user exists in MongoDB using verified identifiers
       let user = null;
@@ -43,9 +43,9 @@ const authController = {
         logger.info(`Creating user from verified Firebase token for: ${email || phone || firebase_uid}`, traceId);
         user = await userRepository.createUser({
           firebase_uid,
-          phone: phone || '',
+          phone: phone, // Already validated above
           email: email || '',
-          name: 'User',
+          name: firebase_name || (email ? email.split('@')[0] : 'User'),
           last_seen: new Date()
         }, traceId);
       } else {
@@ -62,7 +62,7 @@ const authController = {
 
       const token = jwt.sign(
         { 
-          phone: user.phone || phone, 
+          phone: user.phone || phone, // user.phone is strictly validated now
           firebase_uid: user.firebase_uid || firebase_uid,
           email: user.email || email || '',
           userId: user._id 
@@ -83,10 +83,10 @@ const authController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { user_id, latitude, longitude, name, firebase_uid } = req.body;
-      const phone = user_id; // Mapping user_id to phone for this flow
+      const phone = (user_id && !user_id.includes('@') && !user_id.toLowerCase().includes('shadow_')) ? user_id : '';
       
       if (!phone && !firebase_uid) {
-        return res.status(400).json({ error: 'User ID (phone) or firebase_uid is required' });
+        return res.status(400).json({ error: 'Valid User ID (phone) or firebase_uid is required' });
       }
 
       // Ownership check: Authenticated user must match the target update ID
@@ -101,20 +101,13 @@ const authController = {
       if (firebase_uid) {
         user = await userRepository.findByFirebaseUid(firebase_uid, traceId);
       }
-      if (!user && phone && !phone.includes('@')) {
+      if (!user && phone) {
         user = await userRepository.findByPhone(phone, traceId);
       }
       
       if (!user) {
-        logger.info(`Creating new shadow user for phone: ${phone || 'N/A'}`, traceId);
-        user = await userRepository.createUser({
-          phone: (phone && !phone.includes('@')) ? phone : '',
-          firebase_uid: firebase_uid,
-          name: name || 'User',
-          last_lat: latitude,
-          last_lon: longitude,
-          last_seen: new Date()
-        }, traceId);
+        logger.warn(`Rejected location update: User not found for phone: ${phone || 'N/A'}`, traceId);
+        return res.status(404).json({ error: 'User not found. Cannot update location.' });
       } else {
         const identifierPhone = user.phone;
         await userRepository.updateLastLocation(identifierPhone, latitude, longitude, traceId);

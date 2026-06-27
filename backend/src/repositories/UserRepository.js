@@ -34,6 +34,14 @@ class UserRepository extends BaseRepository {
   }
 
   async createUser(userData, traceId = 'N/A') {
+    if (userData.phone) {
+      const phoneStr = String(userData.phone);
+      if (phoneStr.includes('@') || phoneStr.toLowerCase().includes('shadow_')) {
+        userData.phone = '';
+      }
+    } else {
+      userData.phone = '';
+    }
     return await this.create(userData, traceId);
   }
 }

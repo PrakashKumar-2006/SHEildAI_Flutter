@@ -7,10 +7,10 @@ const sosController = {
     const traceId = req.headers['x-trace-id'] || crypto.randomUUID();
     try {
       const { user_id, latitude, longitude, message } = req.body;
-      const phone = user_id || ''; // Mapping user_id to phone, allow empty string
+      let phone = user_id || ''; // Mapping user_id to phone, allow empty string
 
-      if (phone.includes('@')) {
-        return res.status(400).json({ error: 'Valid User ID (phone) is required. Emails are not allowed.' });
+      if (phone.includes('@') || phone.toLowerCase().includes('shadow_')) {
+        phone = '';
       }
 
       // Ownership check: Authenticated user must own this phone session

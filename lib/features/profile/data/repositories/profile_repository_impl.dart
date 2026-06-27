@@ -4,6 +4,7 @@ import '../../../../core/services/mongo_service.dart';
 import '../../../../core/services/api_service.dart';
 import '../../domain/models/user_profile_model.dart';
 import '../../domain/repositories/profile_repository.dart';
+import '../../../../core/utils/identity_validator.dart';
 
 class ProfileRepositoryImpl implements ProfileRepository {
   final MongoService _mongoService;
@@ -19,8 +20,16 @@ class ProfileRepositoryImpl implements ProfileRepository {
         final profileData = Map<String, dynamic>.from(userDoc['profile'] ?? {});
         profileData['id'] = userDoc['_id'].toString();
         profileData['email'] = userDoc['email'];
-        profileData['name'] = userDoc['name'];
-        profileData['phone'] = userDoc['phone'];
+        profileData['phone'] = IdentityValidator.healPhone(userDoc['phone']?.toString());
+        
+        // Name priority: 1. Firebase displayName (if we can get it, maybe passed later), 
+        // 2. Stored profile name, 3. Email prefix (Last fallback)
+        String storedName = userDoc['name']?.toString() ?? '';
+        if (storedName.isEmpty || storedName.toLowerCase() == 'user' || storedName == 'Safety Watcher') {
+          // Last fallback
+          storedName = email.split('@')[0];
+        }
+        profileData['name'] = storedName;
         
         final profile = UserProfileModel.fromJson(profileData);
         return Right(profile);
@@ -46,7 +55,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
       // Update on MongoDB
       await _mongoService.updateUser(identifier, {
         'name': profile.name,
-        'phone': profile.phone,
+        'phone': IdentityValidator.healPhone(profile.phone),
         'profile': profile.toJson(),
       });
       

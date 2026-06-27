@@ -14,4 +14,13 @@ class IdentityValidator {
     final validChars = RegExp(r'^[\+0-9\s\-\(\)]+$');
     return validChars.hasMatch(phone.trim());
   }
+
+  /// Heals a potentially contaminated phone string. Returns an empty string if invalid.
+  static String healPhone(String? phone) {
+    if (phone == null || phone.trim().isEmpty) return '';
+    if (phone.contains('@')) return '';
+    if (phone.toLowerCase().contains('shadow_')) return '';
+    if (!isValidPhone(phone)) return '';
+    return phone.trim();
+  }
 }
