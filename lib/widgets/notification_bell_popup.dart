@@ -13,14 +13,8 @@ class NotificationBellPopup extends StatefulWidget {
 }
 
 class _NotificationBellPopupState extends State<NotificationBellPopup> {
-  bool _modalVisible = false;
-
-  void _handleOpen() {
-    setState(() => _modalVisible = true);
-  }
-
-  void _handleClose() {
-    setState(() => _modalVisible = false);
+  void _handleOpen(BuildContext context, ThemeProvider theme, bool isDark, List<AlertItem> alerts) {
+    _showPopupDialog(context, theme, isDark, alerts);
   }
 
   String _getTimeAgo(DateTime date) {
@@ -42,14 +36,18 @@ class _NotificationBellPopupState extends State<NotificationBellPopup> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        GestureDetector(
-          onTap: _handleOpen,
-          child: Padding(
-            padding: const EdgeInsets.all(6.0),
-            child: Icon(
-              Icons.notifications_rounded,
-              size: 26,
-              color: widget.iconColor ?? theme.textPrimary,
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _handleOpen(context, theme, isDark, alerts),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Icon(
+                Icons.notifications_rounded,
+                size: 26,
+                color: widget.iconColor ?? theme.textPrimary,
+              ),
             ),
           ),
         ),
@@ -57,39 +55,25 @@ class _NotificationBellPopupState extends State<NotificationBellPopup> {
           Positioned(
             top: 4,
             right: 4,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF0000),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-              child: Text(
-                '$unreadCount',
-                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF0000),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: theme.surface, width: 1.5),
+                ),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                child: Text(
+                  '$unreadCount',
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ),
-        
-        // Modal logic
-        if (_modalVisible)
-          _buildModal(context, theme, isDark, alerts),
       ],
     );
-  }
-
-  Widget _buildModal(BuildContext context, ThemeProvider theme, bool isDark, List<AlertItem> alerts) {
-    // Return a dialog-like overlay since we can't easily inline a full modal in a top-appbar stack.
-    // Wait, the correct way in Flutter is to show a dialog or overlay.
-    // Let's use showDialog immediately and reset _modalVisible, or use a proper Overlay.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_modalVisible) {
-        setState(() => _modalVisible = false);
-        _showPopupDialog(context, theme, isDark, alerts);
-      }
-    });
-    return const SizedBox.shrink();
   }
 
   void _showPopupDialog(BuildContext context, ThemeProvider theme, bool isDark, List<AlertItem> alerts) {
