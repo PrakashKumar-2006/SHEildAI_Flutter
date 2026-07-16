@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:provider/provider.dart';
-import 'package:ionicons/ionicons.dart';
+import 'package:ionicons_plus/ionicons_plus.dart';
 import '../providers/home_provider.dart';
 import '../../../../features/sos/presentation/screens/sos_screen.dart';
 import '../../../location/presentation/providers/location_provider.dart';

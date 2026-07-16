@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "751857328066-aj5t89077hmea53ka44e8re64jkon97m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.shieldai.app",
+            "certificate_hash": "bf727e06ab09b80dd91d8e79f231d3ae3fbc986f"
+          }
+        },
+        {
           "client_id": "751857328066-c6b1sp7hvasnj2plfn04r07jvgluo5cn.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
