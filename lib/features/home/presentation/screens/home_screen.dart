@@ -17,7 +17,6 @@ import '../../../../shared/widgets/crowd_risk_indicator.dart';
 import '../../../../widgets/notification_bell_popup.dart';
 import '../../../community/presentation/providers/community_provider.dart';
 import '../../../../features/auth/presentation/providers/auth_provider.dart';
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
