@@ -31,7 +31,14 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         
-        val mapsApiKey = project.findProperty("MAPS_API_KEY") as? String ?: ""
+        val localProperties = java.util.Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.reader().use { reader ->
+                localProperties.load(reader)
+            }
+        }
+        val mapsApiKey = localProperties.getProperty("MAPS_API_KEY") ?: ""
         manifestPlaceholders["mapsApiKey"] = mapsApiKey
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
